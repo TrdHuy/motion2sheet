@@ -45,6 +45,7 @@ jobs:
           --directions down,left,right,up
           --canvas 320x320
           --output build/fbx
+          --keep-raw
 
       - name: Validate FBX output
         run: motion2sheet validate build/fbx
@@ -57,16 +58,22 @@ jobs:
           --directions down,left,right,up
           --canvas 320x320
           --output build/bvh
+          --keep-raw
 
       - name: Validate BVH output
         run: motion2sheet validate build/bvh
 
+      - name: Verify visual motion semantics
+        run: python tests/e2e/verify_generated_output.py build/fbx build/bvh
+
       - name: Upload generated pose sheets
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: motion2sheet-e2e-output
           path: |
             build/fbx/
             build/bvh/
+            build/fixtures/
           if-no-files-found: error
           retention-days: 7

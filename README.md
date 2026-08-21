@@ -10,7 +10,8 @@
 - Canonical 2D joint JSON is the source of truth
 - PNG skeleton frames and pose sheets are derived artifacts
 - One global normalization scale is used across all directions in a build
-- CI generates deterministic FBX/BVH fixtures, builds pose sheets, validates them, and uploads the generated output as a GitHub Actions artifact
+- Source coordinate orientation is canonicalized automatically from body landmarks
+- CI generates deterministic FBX/BVH fixtures, builds pose sheets, validates actual movement/projection, and uploads the generated output as a GitHub Actions artifact
 
 ## Pipeline
 
@@ -19,9 +20,13 @@ FBX / BVH
    ↓
 Blender headless
    ↓
-armature + animation sampling
+activate imported animation take
    ↓
 canonical bone mapping
+   ↓
+infer source right / forward / up basis
+   ↓
+sample evaluated pose matrices
    ↓
 fixed orthographic 3/4 projection
    ↓
@@ -91,7 +96,7 @@ For eight frames, each direction uses a `4 × 2` sheet by default. With a `320 �
 motion2sheet validate build/walk
 ```
 
-Validation checks include expected frame count, canonical joints, finite/in-bounds coordinates, adjacent-frame continuity, PNG dimensions, and sheet layout.
+Validation checks include expected frame count, canonical joints, finite/in-bounds coordinates, adjacent-frame continuity, skeleton projection height, actual limb motion, PNG dimensions, and sheet layout. Multi-frame output that is visually static is rejected.
 
 ## Canonical skeleton
 
@@ -107,14 +112,22 @@ right_hip / right_knee / right_ankle
 
 Common Mixamo-style names are mapped automatically. Unknown rigs fail explicitly rather than silently guessing an incorrect skeleton.
 
-## Direction convention
+## Coordinate and direction convention
 
-MVP assumption: the source rig faces Blender world `-Y`.
+The importer no longer assumes the file already uses Blender `Z-up`. At the first animation frame it derives:
+
+- character right from left/right hip landmarks (shoulders are fallback)
+- character up from pelvis to head
+- character forward from the orthogonal right/up basis
+
+Every sampled joint is transformed into this canonical body space before direction rotation and camera projection. That keeps FBX and BVH inputs from collapsing simply because their imported source axes differ.
+
+Canonical directions are:
 
 ```text
 down   0°
-left  -90°
-right  90°
+left  +90°
+right -90°
 up    180°
 ```
 
@@ -126,13 +139,12 @@ The generated pose is **not resized independently per frame**. `motion2sheet` pr
 
 ## CI
 
-`.github/workflows/ci.yml` runs on pull requests and `master` pushes. It runs unit tests, installs Blender 4.5 LTS, creates a deterministic synthetic humanoid walk, exports FBX/BVH, builds four-direction pose sheets from both formats, validates the JSON/PNG output, and uploads `motion2sheet-e2e-output` for visual inspection.
+`.github/workflows/ci.yml` runs on pull requests and `master` pushes. It runs unit tests, installs Blender 4.5 LTS, creates a deterministic synthetic humanoid walk, exports FBX/BVH, imports both formats again, builds four-direction pose sheets, rejects static/collapsed output, validates JSON/PNG structure, and uploads `motion2sheet-e2e-output` for visual inspection. Raw projected JSON and source fixtures are retained in the CI artifact for debugging.
 
 ## Current limitations
 
 - humanoid only
 - one armature per input file
-- source-forward convention assumes `-Y`
 - no retargeting yet
 - no quadruped/monster skeleton schema yet
 - PNG output is a skeleton reference, not final game art

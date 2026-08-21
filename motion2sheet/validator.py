@@ -13,12 +13,34 @@ class ValidationError(RuntimeError):
     pass
 
 
+DYNAMIC_JOINTS = (
+    "left_wrist",
+    "right_wrist",
+    "left_knee",
+    "right_knee",
+    "left_ankle",
+    "right_ankle",
+)
+
+
+def _joint_motion_span(sequence: PoseSequence, joint: str) -> float:
+    points = [frame.joints[joint] for frame in sequence.frames if joint in frame.joints]
+    if len(points) < 2:
+        return 0.0
+    max_distance = 0.0
+    for i, first in enumerate(points):
+        for second in points[i + 1 :]:
+            max_distance = max(max_distance, math.hypot(second[0] - first[0], second[1] - first[1]))
+    return max_distance
+
+
 def validate_sequence(sequence: PoseSequence, expected_frames: int | None = None) -> list[str]:
     errors: list[str] = []
     width, height = sequence.canvas
     if expected_frames is not None and len(sequence.frames) != expected_frames:
         errors.append(f"expected {expected_frames} frames, got {len(sequence.frames)}")
 
+    frame_heights: list[float] = []
     for index, frame in enumerate(sequence.frames, start=1):
         missing = missing_joints(frame)
         if missing:
@@ -28,6 +50,20 @@ def validate_sequence(sequence: PoseSequence, expected_frames: int | None = None
                 errors.append(f"frame {index}: joint {joint} is not finite")
             elif not (0 <= x < width and 0 <= y < height):
                 errors.append(f"frame {index}: joint {joint} outside canvas at ({x:.2f}, {y:.2f})")
+
+        if frame.joints:
+            ys = [point[1] for point in frame.joints.values()]
+            frame_heights.append(max(ys) - min(ys))
+        if "head" in frame.joints and "pelvis" in frame.joints:
+            if frame.joints["head"][1] >= frame.joints["pelvis"][1]:
+                errors.append(f"frame {index}: head is not visually above pelvis")
+
+    # Reject a pose that has collapsed because source axes/projector do not agree.
+    if frame_heights and min(frame_heights) < height * 0.25:
+        errors.append(
+            f"projected skeleton is too short: minimum height {min(frame_heights):.2f}px "
+            f"on {height}px canvas"
+        )
 
     max_jump = max(width, height) * 0.5
     for index in range(1, len(sequence.frames)):
@@ -39,6 +75,15 @@ def validate_sequence(sequence: PoseSequence, expected_frames: int | None = None
             x2, y2 = curr.joints[joint]
             if math.hypot(x2 - x1, y2 - y1) > max_jump:
                 errors.append(f"frame {index}->{index+1}: joint {joint} jumps too far")
+
+    # Multi-frame animation must contain actual motion. This prevents a static FBX
+    # take from passing simply because all PNGs and joints exist.
+    if len(sequence.frames) > 1:
+        moving = [joint for joint in DYNAMIC_JOINTS if _joint_motion_span(sequence, joint) >= 2.0]
+        if len(moving) < 2:
+            errors.append(
+                "animation appears static: fewer than 2 limb joints move at least 2px across the sequence"
+            )
     return errors
 
 

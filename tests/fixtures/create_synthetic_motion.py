@@ -73,46 +73,73 @@ def animate(armature):
     scene = bpy.context.scene
     scene.frame_start = 1
     scene.frame_end = 17
-    keys = [1, 3, 5, 7, 9, 11, 13, 15, 17]
-    phases = [0, math.pi/2, math.pi, 3*math.pi/2, 2*math.pi, 5*math.pi/2, 3*math.pi, 7*math.pi/2, 4*math.pi]
+
+    # Four key poses plus the loop-closing endpoint. Sampling 8 frames from this
+    # range therefore includes true in-between poses rather than only three
+    # repeated sine extrema.
+    keys = [1, 5, 9, 13, 17]
+    phases = [0.0, math.pi / 2.0, math.pi, 3.0 * math.pi / 2.0, 2.0 * math.pi]
     for frame, phase in zip(keys, phases):
         scene.frame_set(frame)
-        armature.location.z = 0.025 * (1.0 - math.cos(phase * 2.0))
-        armature.keyframe_insert(data_path="location", frame=frame)
-        swing = 0.45 * math.sin(phase)
-        for name, angle in (("LeftUpLeg", swing), ("RightUpLeg", -swing), ("LeftUpperArm", -0.7 * swing), ("RightUpperArm", 0.7 * swing)):
+        swing = 0.55 * math.sin(phase)
+        for name, angle in (
+            ("LeftUpLeg", swing),
+            ("RightUpLeg", -swing),
+            ("LeftUpperArm", -0.75 * swing),
+            ("RightUpperArm", 0.75 * swing),
+        ):
             bone = armature.pose.bones[name]
             bone.rotation_euler.x = angle
             bone.keyframe_insert(data_path="rotation_euler", frame=frame)
-        armature.pose.bones["LeftLeg"].rotation_euler.x = max(0.0, -swing) * 0.55
-        armature.pose.bones["RightLeg"].rotation_euler.x = max(0.0, swing) * 0.55
-        armature.pose.bones["LeftLeg"].keyframe_insert(data_path="rotation_euler", frame=frame)
-        armature.pose.bones["RightLeg"].keyframe_insert(data_path="rotation_euler", frame=frame)
 
-    if armature.animation_data and armature.animation_data.action:
-        for fcurve in armature.animation_data.action.fcurves:
-            for key in fcurve.keyframe_points:
-                key.interpolation = "LINEAR"
+        left_knee = armature.pose.bones["LeftLeg"]
+        right_knee = armature.pose.bones["RightLeg"]
+        left_knee.rotation_euler.x = max(0.0, -swing) * 0.65
+        right_knee.rotation_euler.x = max(0.0, swing) * 0.65
+        left_knee.keyframe_insert(data_path="rotation_euler", frame=frame)
+        right_knee.keyframe_insert(data_path="rotation_euler", frame=frame)
+
+    # Body bob is keyed at twice the step frequency.
+    for frame, z in ((1, 0.00), (3, 0.04), (5, 0.00), (7, 0.04), (9, 0.00), (11, 0.04), (13, 0.00), (15, 0.04), (17, 0.00)):
+        scene.frame_set(frame)
+        armature.location.z = z
+        armature.keyframe_insert(data_path="location", frame=frame)
+
+    action = armature.animation_data.action
+    if action is None:
+        raise RuntimeError("Synthetic fixture failed to create an action")
+    action.name = "SyntheticWalk"
+    for fcurve in action.fcurves:
+        for key in fcurve.keyframe_points:
+            key.interpolation = "LINEAR"
+    return action
 
 
 def export_files(armature, output: Path):
     output.mkdir(parents=True, exist_ok=True)
     bpy.context.view_layer.objects.active = armature
+    bpy.ops.object.select_all(action="DESELECT")
     armature.select_set(True)
+
+    # Export BVH first, then FBX. Explicit animation flags make the FBX fixture a
+    # real round-trip test instead of accidentally accepting a rest-pose-only file.
+    bpy.ops.export_anim.bvh(
+        filepath=str(output / "synthetic_walk.bvh"),
+        frame_start=1,
+        frame_end=17,
+        root_transform_only=False,
+    )
     bpy.ops.export_scene.fbx(
         filepath=str(output / "synthetic_walk.fbx"),
         use_selection=True,
         object_types={"ARMATURE"},
         add_leaf_bones=False,
         bake_anim=True,
-        bake_anim_use_all_actions=False,
+        bake_anim_use_nla_strips=False,
+        bake_anim_use_all_actions=True,
+        bake_anim_force_startend_keying=True,
+        bake_anim_step=1.0,
         bake_anim_simplify_factor=0.0,
-    )
-    bpy.ops.export_anim.bvh(
-        filepath=str(output / "synthetic_walk.bvh"),
-        frame_start=1,
-        frame_end=17,
-        root_transform_only=False,
     )
 
 

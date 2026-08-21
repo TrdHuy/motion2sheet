@@ -29,7 +29,8 @@ CANONICAL_ALIASES = {
     "right_ankle": ("rightfoot", "rightankle", "rankle", "footr"),
 }
 
-DIRECTION_YAW_DEGREES = {"down": 0.0, "left": -90.0, "right": 90.0, "up": 180.0}
+# Canonical space uses +X = character right, +Y = character forward, +Z = character up.
+DIRECTION_YAW_DEGREES = {"down": 0.0, "left": 90.0, "right": -90.0, "up": 180.0}
 
 
 def _argv() -> list[str]:
@@ -92,15 +93,46 @@ def map_bones(armature: bpy.types.Object) -> dict[str, str]:
     return result
 
 
+def activate_animation(armature: bpy.types.Object):
+    """Ensure imported animation is actually active on the armature.
+
+    FBX importers may keep a take in NLA or as an unassigned Action. BVH normally
+    assigns an action directly. We normalize both cases before sampling.
+    """
+    animation_data = armature.animation_data_create()
+    if animation_data.action is not None:
+        return animation_data.action
+
+    for track in animation_data.nla_tracks:
+        for strip in track.strips:
+            if strip.action is not None:
+                for other in animation_data.nla_tracks:
+                    other.mute = True
+                animation_data.action = strip.action
+                bpy.context.view_layer.update()
+                return strip.action
+
+    candidates = sorted(
+        list(bpy.data.actions),
+        key=lambda action: float(action.frame_range[1] - action.frame_range[0]),
+        reverse=True,
+    )
+    for action in candidates:
+        try:
+            animation_data.action = action
+            bpy.context.view_layer.update()
+            return action
+        except (RuntimeError, TypeError):
+            continue
+    raise RuntimeError("No usable animation action found for armature")
+
+
 def action_frame_range(armature: bpy.types.Object) -> tuple[float, float]:
-    action = armature.animation_data.action if armature.animation_data else None
-    if action is not None:
-        start, end = action.frame_range
-        return float(start), float(end)
-    scene = bpy.context.scene
-    if scene.frame_end <= scene.frame_start:
-        raise RuntimeError("No usable animation frame range found")
-    return float(scene.frame_start), float(scene.frame_end)
+    action = activate_animation(armature)
+    start, end = action.frame_range
+    if end <= start:
+        raise RuntimeError(f"Invalid action frame range: {start}..{end}")
+    return float(start), float(end)
 
 
 def sample_times(start: float, end: float, count: int) -> list[float]:
@@ -109,7 +141,67 @@ def sample_times(start: float, end: float, count: int) -> list[float]:
     duration = end - start
     if duration <= 0:
         raise RuntimeError(f"Invalid animation range: {start}..{end}")
+    # Loop sampling deliberately excludes the final endpoint because it commonly
+    # duplicates the first pose.
     return [start + duration * (index / count) for index in range(count)]
+
+
+def evaluated_joint_world(armature: bpy.types.Object, source_name: str) -> Vector:
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    evaluated = armature.evaluated_get(depsgraph)
+    pose_bone = evaluated.pose.bones[source_name]
+    # matrix.translation is the evaluated pose head. Using PoseBone.head is not
+    # reliable enough across FBX/BVH importer paths.
+    return evaluated.matrix_world @ pose_bone.matrix.translation
+
+
+def canonical_basis(scene, armature, bone_map, reference_frame: float):
+    base = math.floor(reference_frame)
+    scene.frame_set(int(base), subframe=reference_frame - base)
+    bpy.context.view_layer.update()
+
+    pelvis = evaluated_joint_world(armature, bone_map["pelvis"])
+    head = evaluated_joint_world(armature, bone_map["head"])
+    left_hip = evaluated_joint_world(armature, bone_map["left_hip"])
+    right_hip = evaluated_joint_world(armature, bone_map["right_hip"])
+
+    right = right_hip - left_hip
+    if right.length < 1e-6:
+        left_shoulder = evaluated_joint_world(armature, bone_map["left_shoulder"])
+        right_shoulder = evaluated_joint_world(armature, bone_map["right_shoulder"])
+        right = right_shoulder - left_shoulder
+    if right.length < 1e-6:
+        raise RuntimeError("Cannot infer character right axis from hips/shoulders")
+    right.normalize()
+
+    up_hint = head - pelvis
+    up = up_hint - right * up_hint.dot(right)
+    if up.length < 1e-6:
+        raise RuntimeError("Cannot infer character up axis from head/pelvis")
+    up.normalize()
+
+    # With a conventional Blender humanoid (+X right, +Z up), X cross Z = -Y,
+    # matching the common character-forward convention used by exported rigs.
+    forward = right.cross(up)
+    if forward.length < 1e-6:
+        raise RuntimeError("Cannot infer character forward axis")
+    forward.normalize()
+
+    return {
+        "origin": pelvis.copy(),
+        "right": right.copy(),
+        "forward": forward.copy(),
+        "up": up.copy(),
+    }
+
+
+def to_canonical(point: Vector, basis) -> Vector:
+    delta = point - basis["origin"]
+    return Vector((
+        delta.dot(basis["right"]),
+        delta.dot(basis["forward"]),
+        delta.dot(basis["up"]),
+    ))
 
 
 def rotate_z(point: Vector, degrees: float) -> Vector:
@@ -120,23 +212,28 @@ def rotate_z(point: Vector, degrees: float) -> Vector:
 
 def project_orthographic(point: Vector, elevation_degrees: float) -> tuple[float, float]:
     elevation = math.radians(elevation_degrees)
-    right = Vector((1.0, 0.0, 0.0))
-    up = Vector((0.0, math.sin(elevation), math.cos(elevation)))
-    return float(point.dot(right)), float(point.dot(up))
+    # Screen vertical combines world-up with depth. Positive character-forward
+    # moves toward the lower half of the raster after normalize.py flips Y.
+    screen_x = point.x
+    screen_y = point.z * math.cos(elevation) - point.y * math.sin(elevation)
+    return float(screen_x), float(screen_y)
 
 
-def sample_frame(scene, armature, bone_map, frame_value: float, yaw: float, elevation: float) -> dict:
+def sample_frame(scene, armature, bone_map, basis, frame_value: float, yaw: float, elevation: float) -> dict:
     base = math.floor(frame_value)
     scene.frame_set(int(base), subframe=frame_value - base)
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    evaluated = armature.evaluated_get(depsgraph)
+    bpy.context.view_layer.update()
     joints = {}
     for canonical, source_name in bone_map.items():
-        pose_bone = evaluated.pose.bones[source_name]
-        world = evaluated.matrix_world @ pose_bone.head
-        rotated = rotate_z(world, yaw)
+        world = evaluated_joint_world(armature, source_name)
+        canonical_point = to_canonical(world, basis)
+        rotated = rotate_z(canonical_point, yaw)
         joints[canonical] = list(project_orthographic(rotated, elevation))
     return joints
+
+
+def vector_list(vector: Vector) -> list[float]:
+    return [float(vector.x), float(vector.y), float(vector.z)]
 
 
 def main() -> None:
@@ -154,6 +251,8 @@ def main() -> None:
     bone_map = map_bones(armature)
     start, end = action_frame_range(armature)
     times = sample_times(start, end, args.frames)
+    scene = bpy.context.scene
+    basis = canonical_basis(scene, armature, bone_map, start)
 
     raw = {
         "source": str(input_path),
@@ -163,18 +262,25 @@ def main() -> None:
         "cameraElevation": args.camera_elevation,
         "directions": {},
         "boneMap": bone_map,
+        "canonicalBasis": {
+            "right": vector_list(basis["right"]),
+            "forward": vector_list(basis["forward"]),
+            "up": vector_list(basis["up"]),
+        },
     }
-    scene = bpy.context.scene
     for direction in directions:
         yaw = DIRECTION_YAW_DEGREES[direction]
         raw["directions"][direction] = [
-            sample_frame(scene, armature, bone_map, frame_value, yaw, args.camera_elevation)
+            sample_frame(scene, armature, bone_map, basis, frame_value, yaw, args.camera_elevation)
             for frame_value in times
         ]
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
-    print(f"motion2sheet: extracted {args.frames} frames for {len(directions)} direction(s) -> {output_path}")
+    print(
+        f"motion2sheet: extracted {args.frames} frames for {len(directions)} direction(s) "
+        f"from action range {start:.2f}..{end:.2f} -> {output_path}"
+    )
 
 
 if __name__ == "__main__":
