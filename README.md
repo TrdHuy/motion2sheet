@@ -141,6 +141,34 @@ The generated pose is **not resized independently per frame**. `motion2sheet` pr
 
 `.github/workflows/ci.yml` runs on pull requests and `master` pushes. It runs unit tests, installs Blender 4.5 LTS, creates a deterministic synthetic humanoid walk, exports FBX/BVH, imports both formats again, builds four-direction pose sheets, rejects static/collapsed output, validates JSON/PNG structure, and uploads `motion2sheet-e2e-output` for visual inspection. Raw projected JSON and source fixtures are retained in the CI artifact for debugging.
 
+## AI sprite generation skills
+
+```text
+skills/
+├── storybook-rpg-sprite-pipeline/
+│   └── SKILL.md
+└── pose-sheet-to-sprite-sheet/
+    └── SKILL.md
+```
+
+- `storybook-rpg-sprite-pipeline`: orchestrates the full flow from an existing Pose Sheet to a normalized production sprite asset.
+- `pose-sheet-to-sprite-sheet`: converts an existing Pose Sheet plus Character Reference into a raw AI-generated character sprite sheet.
+- The skill layer treats Pose Sheets as existing inputs and does not define how they are created.
+
+High-level architecture:
+
+```text
+Motion
+  ↓
+motion2sheet
+  ↓
+Pose Sheet
+  ↓
+AI sprite generation skills
+  ↓
+Sprite Sheet
+```
+
 ## Current limitations
 
 - humanoid only
