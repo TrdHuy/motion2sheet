@@ -1,11 +1,39 @@
 from __future__ import annotations
 
 import argparse
+import base64
+from io import BytesIO
 import json
 import math
 from pathlib import Path
 
 from PIL import Image, ImageOps
+
+
+def load_reference(path: Path) -> Image.Image:
+    """Load a golden reference without requiring binary GitHub writes.
+
+    `.b64` fixtures contain an exact PNG payload encoded as UTF-8 text.  This is
+    intentionally strict: malformed/truncated data must fail rather than being
+    accepted through Pillow's LOAD_TRUNCATED_IMAGES fallback.
+    """
+    if path.suffix == ".b64":
+        try:
+            raw = base64.b64decode(path.read_text(encoding="ascii"), validate=True)
+        except (OSError, ValueError) as exc:
+            raise AssertionError(f"invalid base64 golden fixture {path}: {exc}") from exc
+        try:
+            image = Image.open(BytesIO(raw))
+            image.load()
+            return image.convert("RGBA")
+        except OSError as exc:
+            raise AssertionError(f"invalid PNG payload in golden fixture {path}: {exc}") from exc
+    try:
+        image = Image.open(path)
+        image.load()
+        return image.convert("RGBA")
+    except OSError as exc:
+        raise AssertionError(f"invalid golden reference {path}: {exc}") from exc
 
 
 def split_sheet(image: Image.Image, columns: int = 4, rows: int = 2) -> list[Image.Image]:
@@ -102,7 +130,7 @@ def write_overlay(reference: Image.Image, output: Image.Image, path: Path) -> No
 
 
 def verify(reference_path: Path, output_root: Path, qa_root: Path) -> None:
-    reference_sheet = Image.open(reference_path).convert("RGBA")
+    reference_sheet = load_reference(reference_path)
     output_sheet = Image.open(output_root / "vfx_sheet.png").convert("RGBA")
     reference_frames = split_sheet(reference_sheet)
     output_frames = split_sheet(output_sheet)
@@ -136,7 +164,6 @@ def verify(reference_path: Path, output_root: Path, qa_root: Path) -> None:
     if peak_iou < 0.16 or mean_iou < 0.12:
         raise AssertionError(f"crescent silhouette is too far from golden direction: peak IoU={peak_iou:.3f}, mean IoU={mean_iou:.3f}")
 
-    # The approved reference becomes visibly rougher as it breaks apart. Require the same direction.
     if float(out_metrics[-1]["roughness"]) <= float(out_metrics[out_peak]["roughness"]) * 1.02:
         raise AssertionError("decay frame is not visibly more fragmented than the peak")
 
