@@ -23,6 +23,9 @@ motion2sheet = "motion2sheet.cli:main"
 [tool.setuptools.packages.find]
 include = ["motion2sheet*"]
 
+[tool.setuptools.package-data]
+motion2sheet = ["profiles/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
 addopts = "-q"

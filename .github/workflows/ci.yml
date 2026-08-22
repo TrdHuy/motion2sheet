@@ -37,34 +37,48 @@ jobs:
           --python tests/fixtures/create_synthetic_motion.py
           -- --output build/fixtures
 
-      - name: Build FBX pose sheets
+      - name: Build source FBX pose sheets
         run: >-
           motion2sheet build build/fixtures/synthetic_walk.fbx
-          --action walk
-          --frames 8
-          --directions down,left,right,up
-          --canvas 320x320
-          --output build/fbx
-          --keep-raw
+          --action walk --frames 8 --directions down,left,right,up
+          --canvas 320x320 --output build/fbx --keep-raw
 
-      - name: Validate FBX output
-        run: motion2sheet validate build/fbx
-
-      - name: Build BVH pose sheets
+      - name: Build source BVH pose sheets
         run: >-
           motion2sheet build build/fixtures/synthetic_walk.bvh
-          --action walk
-          --frames 8
-          --directions down,left,right,up
-          --canvas 320x320
-          --output build/bvh
-          --keep-raw
+          --action walk --frames 8 --directions down,left,right,up
+          --canvas 320x320 --output build/bvh --keep-raw
 
-      - name: Validate BVH output
-        run: motion2sheet validate build/bvh
+      - name: Build chibi FBX pose sheets
+        run: >-
+          motion2sheet build build/fixtures/synthetic_walk.fbx
+          --action walk --profile chibi_v1 --frames 8
+          --directions down,left,right,up --canvas 320x320
+          --output build/fbx_chibi --keep-raw
+
+      - name: Build chibi BVH pose sheets
+        run: >-
+          motion2sheet build build/fixtures/synthetic_walk.bvh
+          --action walk --profile chibi_v1 --frames 8
+          --directions down,left,right,up --canvas 320x320
+          --output build/bvh_chibi --keep-raw
+
+      - name: Validate all outputs
+        run: |
+          motion2sheet validate build/fbx
+          motion2sheet validate build/bvh
+          motion2sheet validate build/fbx_chibi
+          motion2sheet validate build/bvh_chibi
 
       - name: Verify visual motion semantics
-        run: python tests/e2e/verify_generated_output.py build/fbx build/bvh
+        run: >-
+          python tests/e2e/verify_generated_output.py
+          build/fbx build/bvh build/fbx_chibi build/bvh_chibi
+
+      - name: Verify proportion retarget semantics
+        run: >-
+          python tests/e2e/verify_retarget_output.py
+          build/fbx_chibi build/bvh_chibi
 
       - name: Upload generated pose sheets
         if: always()
@@ -74,6 +88,8 @@ jobs:
           path: |
             build/fbx/
             build/bvh/
+            build/fbx_chibi/
+            build/bvh_chibi/
             build/fixtures/
           if-no-files-found: error
           retention-days: 7

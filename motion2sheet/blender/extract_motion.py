@@ -11,6 +11,14 @@ from pathlib import Path
 import bpy
 from mathutils import Vector
 
+# Blender uses its own Python environment. Add the repository/package root so the
+# deterministic retarget implementation is shared with normal unit tests.
+PACKAGE_ROOT = Path(__file__).resolve().parents[2]
+if str(PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_ROOT))
+
+from motion2sheet.retarget import load_profile, retarget_frames
+
 CANONICAL_ALIASES = {
     "pelvis": ("hips", "pelvis", "root"),
     "neck": ("neck",),
@@ -45,6 +53,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--directions", default="down")
     parser.add_argument("--camera-elevation", type=float, default=35.0)
     parser.add_argument("--action", default=None)
+    parser.add_argument("--profile-file", default=None)
     return parser.parse_args(_argv())
 
 
@@ -94,11 +103,7 @@ def map_bones(armature: bpy.types.Object) -> dict[str, str]:
 
 
 def activate_animation(armature: bpy.types.Object):
-    """Ensure imported animation is actually active on the armature.
-
-    FBX importers may keep a take in NLA or as an unassigned Action. BVH normally
-    assigns an action directly. We normalize both cases before sampling.
-    """
+    """Ensure imported animation is actually active on the armature."""
     animation_data = armature.animation_data_create()
     if animation_data.action is not None:
         return animation_data.action
@@ -141,8 +146,6 @@ def sample_times(start: float, end: float, count: int) -> list[float]:
     duration = end - start
     if duration <= 0:
         raise RuntimeError(f"Invalid animation range: {start}..{end}")
-    # Loop sampling deliberately excludes the final endpoint because it commonly
-    # duplicates the first pose.
     return [start + duration * (index / count) for index in range(count)]
 
 
@@ -150,8 +153,6 @@ def evaluated_joint_world(armature: bpy.types.Object, source_name: str) -> Vecto
     depsgraph = bpy.context.evaluated_depsgraph_get()
     evaluated = armature.evaluated_get(depsgraph)
     pose_bone = evaluated.pose.bones[source_name]
-    # matrix.translation is the evaluated pose head. Using PoseBone.head is not
-    # reliable enough across FBX/BVH importer paths.
     return evaluated.matrix_world @ pose_bone.matrix.translation
 
 
@@ -180,8 +181,6 @@ def canonical_basis(scene, armature, bone_map, reference_frame: float):
         raise RuntimeError("Cannot infer character up axis from head/pelvis")
     up.normalize()
 
-    # With a conventional Blender humanoid (+X right, +Z up), X cross Z = -Y,
-    # matching the common character-forward convention used by exported rigs.
     forward = right.cross(up)
     if forward.length < 1e-6:
         raise RuntimeError("Cannot infer character forward axis")
@@ -212,22 +211,28 @@ def rotate_z(point: Vector, degrees: float) -> Vector:
 
 def project_orthographic(point: Vector, elevation_degrees: float) -> tuple[float, float]:
     elevation = math.radians(elevation_degrees)
-    # Screen vertical combines world-up with depth. Positive character-forward
-    # moves toward the lower half of the raster after normalize.py flips Y.
     screen_x = point.x
     screen_y = point.z * math.cos(elevation) - point.y * math.sin(elevation)
     return float(screen_x), float(screen_y)
 
 
-def sample_frame(scene, armature, bone_map, basis, frame_value: float, yaw: float, elevation: float) -> dict:
+def sample_canonical_frame(scene, armature, bone_map, basis, frame_value: float) -> dict[str, list[float]]:
     base = math.floor(frame_value)
     scene.frame_set(int(base), subframe=frame_value - base)
     bpy.context.view_layer.update()
-    joints = {}
+    joints: dict[str, list[float]] = {}
     for canonical, source_name in bone_map.items():
         world = evaluated_joint_world(armature, source_name)
-        canonical_point = to_canonical(world, basis)
-        rotated = rotate_z(canonical_point, yaw)
+        point = to_canonical(world, basis)
+        joints[canonical] = [float(point.x), float(point.y), float(point.z)]
+    return joints
+
+
+def project_frame(frame: dict[str, list[float]], yaw: float, elevation: float) -> dict[str, list[float]]:
+    joints: dict[str, list[float]] = {}
+    for canonical, values in frame.items():
+        point = Vector(values)
+        rotated = rotate_z(point, yaw)
         joints[canonical] = list(project_orthographic(rotated, elevation))
     return joints
 
@@ -254,6 +259,17 @@ def main() -> None:
     scene = bpy.context.scene
     basis = canonical_basis(scene, armature, bone_map, start)
 
+    canonical_frames = [
+        sample_canonical_frame(scene, armature, bone_map, basis, frame_value)
+        for frame_value in times
+    ]
+
+    retarget_metadata = {"profile": "source"}
+    if args.profile_file:
+        profile = load_profile(Path(args.profile_file).resolve())
+        canonical_frames, retarget_metadata = retarget_frames(canonical_frames, profile)
+        retarget_metadata["segments"] = profile["segments"]
+
     raw = {
         "source": str(input_path),
         "action": args.action or input_path.stem,
@@ -267,19 +283,21 @@ def main() -> None:
             "forward": vector_list(basis["forward"]),
             "up": vector_list(basis["up"]),
         },
+        "retarget": retarget_metadata,
+        "canonicalFrames": canonical_frames,
     }
     for direction in directions:
         yaw = DIRECTION_YAW_DEGREES[direction]
         raw["directions"][direction] = [
-            sample_frame(scene, armature, bone_map, basis, frame_value, yaw, args.camera_elevation)
-            for frame_value in times
+            project_frame(frame, yaw, args.camera_elevation)
+            for frame in canonical_frames
         ]
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
     print(
         f"motion2sheet: extracted {args.frames} frames for {len(directions)} direction(s) "
-        f"from action range {start:.2f}..{end:.2f} -> {output_path}"
+        f"from action range {start:.2f}..{end:.2f}; profile={retarget_metadata['profile']} -> {output_path}"
     )
 
 
