@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from .packer import compose_sheet, write_preview
-from .spec import VfxSpec
+from .spec import VfxSpec, load_profile
 from .validator import validate_output
 
 
@@ -55,6 +55,7 @@ def run_blender(spec_path: Path, output: Path, blender_name: str) -> None:
 
 
 def build(args) -> int:
+    profile = load_profile(Path(args.profile)) if args.profile else None
     spec = VfxSpec.create(
         template=args.template,
         variant=args.variant,
@@ -64,6 +65,7 @@ def build(args) -> int:
         sheet_columns=args.sheet_columns,
         seed=args.seed,
         overrides=args.set_values,
+        profile=profile,
     )
     output = Path(args.output)
     if output.exists():
@@ -88,6 +90,7 @@ def build(args) -> int:
         "seed": spec.seed,
         "background": "transparent",
         "renderer": "blender-headless",
+        "profile": str(args.profile) if args.profile else None,
     }
     write_json(output / "metadata.json", metadata)
     errors = validate_output(output)
@@ -112,13 +115,14 @@ def parser() -> argparse.ArgumentParser:
     sub = root.add_subparsers(dest="command", required=True)
 
     build_parser = sub.add_parser("build", help="Build a deterministic standalone VFX sprite sheet")
-    build_parser.add_argument("--template", choices=("slash",), required=True)
-    build_parser.add_argument("--variant", choices=("lightning",), required=True)
-    build_parser.add_argument("--frames", type=int, default=8)
-    build_parser.add_argument("--fps", type=int, default=12)
-    build_parser.add_argument("--canvas", type=parse_canvas, default=(512, 512))
-    build_parser.add_argument("--sheet-columns", type=int, default=4)
-    build_parser.add_argument("--seed", type=int, default=42891)
+    build_parser.add_argument("--profile", help="JSON VFX profile/preset")
+    build_parser.add_argument("--template", choices=("slash",))
+    build_parser.add_argument("--variant", choices=("lightning",))
+    build_parser.add_argument("--frames", type=int)
+    build_parser.add_argument("--fps", type=int)
+    build_parser.add_argument("--canvas", type=parse_canvas)
+    build_parser.add_argument("--sheet-columns", type=int)
+    build_parser.add_argument("--seed", type=int)
     build_parser.add_argument("--set", dest="set_values", action="append", default=[])
     build_parser.add_argument("--blender", default="blender")
     build_parser.add_argument("--output", required=True)
@@ -133,6 +137,8 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
+        if args.command == "build" and not args.profile and (not args.template or not args.variant):
+            raise ValueError("build requires --profile or both --template and --variant")
         return args.func(args)
     except (RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"vfx2sheet: {exc}", file=sys.stderr)
