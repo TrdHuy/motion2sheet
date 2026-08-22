@@ -80,24 +80,16 @@ jobs:
           python tests/e2e/verify_retarget_output.py
           build/fbx_chibi build/bvh_chibi
 
-      - name: Build deterministic lightning slash run A
+      - name: Build deterministic lightning slash run A from profile
         run: >-
           vfx2sheet build
-          --template slash --variant lightning
-          --frames 8 --fps 12 --canvas 512x512 --sheet-columns 4
-          --seed 42891
-          --set radius=1.5 --set arc_angle=150 --set thickness=0.12
-          --set sparks.count=22
+          --profile profiles/vfx/lightning_slash_contract.json
           --output build/vfx/run_a
 
-      - name: Build deterministic lightning slash run B
+      - name: Build deterministic lightning slash run B from profile
         run: >-
           vfx2sheet build
-          --template slash --variant lightning
-          --frames 8 --fps 12 --canvas 512x512 --sheet-columns 4
-          --seed 42891
-          --set radius=1.5 --set arc_angle=150 --set thickness=0.12
-          --set sparks.count=22
+          --profile profiles/vfx/lightning_slash_contract.json
           --output build/vfx/run_b
 
       - name: Validate VFX outputs
