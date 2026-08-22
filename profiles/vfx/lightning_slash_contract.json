@@ -7,47 +7,47 @@
   "sheetColumns": 4,
   "seed": 42891,
   "colors": {
-    "outer": "#081CFF",
-    "body": "#005CFF",
-    "inner": "#00C8FF",
+    "outer": "#0018D8",
+    "body": "#0048FF",
+    "inner": "#00A8FF",
     "core": "#FFFFFF",
-    "lightning": "#A8F4FF"
+    "lightning": "#9CEEFF"
   },
   "intensity": {
-    "outer": 0.90,
-    "body": 1.20,
-    "inner": 1.55,
-    "core": 4.80,
-    "lightning": 4.20
+    "outer": 0.75,
+    "body": 0.95,
+    "inner": 1.25,
+    "core": 4.00,
+    "lightning": 3.80
   },
   "shape": {
-    "body_scale": 3.35,
-    "inner_scale": 1.42,
-    "core_scale": 0.22,
-    "edge_noise": 1.80,
-    "edge_noise_frequency": 8.5,
+    "body_scale": 3.30,
+    "inner_scale": 1.35,
+    "core_scale": 0.18,
+    "edge_noise": 1.60,
+    "edge_noise_frequency": 12.0,
     "taper_power": 0.50,
     "flare": 0.50,
-    "tongue_count": 10,
-    "tongue_length": 0.95
+    "tongue_count": 16,
+    "tongue_length": 0.58
   },
   "lightning": {
-    "branch_count": 22,
-    "secondary_branch_count": 16,
-    "surface_crack_count": 16,
-    "jitter": 0.34,
-    "length": 0.62,
-    "spread": 0.72
+    "branch_count": 24,
+    "secondary_branch_count": 18,
+    "surface_crack_count": 18,
+    "jitter": 0.38,
+    "length": 0.58,
+    "spread": 0.75
   },
   "sparks": {
-    "count": 36,
-    "spread": 0.52,
-    "size": 0.045
+    "count": 40,
+    "spread": 0.55,
+    "size": 0.042
   },
   "fragments": {
-    "count": 28,
-    "spread": 0.56,
-    "size": 0.080
+    "count": 30,
+    "spread": 0.58,
+    "size": 0.075
   },
   "timing": {
     "peak": 0.57,
