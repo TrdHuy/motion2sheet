@@ -2,29 +2,52 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-SLASH_VARIANTS = {
+BUILD_DEFAULTS = {
+    "frames": 8,
+    "fps": 12,
+    "canvas": (512, 512),
+    "sheet_columns": 4,
+    "seed": 42891,
+}
+
+SLASH_VARIANTS: dict[str, dict[str, Any]] = {
     "lightning": {
         "radius": 1.5,
         "arc_angle": 150.0,
         "thickness": 0.12,
-        "core.intensity": 9.0,
-        "glow.intensity": 4.0,
-        "sparks.count": 22,
-        "sparks.spread": 0.34,
-        "sparks.size": 0.045,
-        "lightning.jitter": 0.14,
-        "lightning.branches": 10,
-        "lightning.length": 0.34,
+        "colors.outer": "#1028FF",
+        "colors.body": "#008DFF",
+        "colors.inner": "#55E8FF",
+        "colors.core": "#FFFFFF",
+        "colors.lightning": "#C8FBFF",
+        "intensity.outer": 4.2,
+        "intensity.body": 6.2,
+        "intensity.inner": 7.4,
+        "intensity.core": 11.0,
+        "intensity.lightning": 13.0,
+        "sparks.count": 30,
+        "sparks.spread": 0.45,
+        "sparks.size": 0.040,
+        "lightning.jitter": 0.30,
+        "lightning.branch_count": 20,
+        "lightning.secondary_branch_count": 12,
+        "lightning.surface_crack_count": 14,
+        "lightning.length": 0.50,
+        "lightning.spread": 0.55,
         "shape.body_scale": 3.5,
         "shape.inner_scale": 1.58,
-        "shape.core_scale": 0.52,
-        "shape.edge_noise": 1.45,
+        "shape.core_scale": 0.30,
+        "shape.edge_noise": 1.65,
+        "shape.edge_noise_frequency": 7.5,
         "shape.taper_power": 0.50,
         "shape.flare": 0.48,
+        "shape.tongue_count": 8,
+        "shape.tongue_length": 0.85,
         "fragments.count": 24,
         "fragments.spread": 0.50,
         "fragments.size": 0.090,
@@ -41,20 +64,29 @@ PARAM_RANGES: dict[str, tuple[float, float]] = {
     "radius": (0.1, 10.0),
     "arc_angle": (10.0, 340.0),
     "thickness": (0.01, 1.0),
-    "core.intensity": (0.0, 100.0),
-    "glow.intensity": (0.0, 100.0),
+    "intensity.outer": (0.0, 100.0),
+    "intensity.body": (0.0, 100.0),
+    "intensity.inner": (0.0, 100.0),
+    "intensity.core": (0.0, 100.0),
+    "intensity.lightning": (0.0, 100.0),
     "sparks.count": (0.0, 500.0),
     "sparks.spread": (0.0, 3.0),
     "sparks.size": (0.001, 1.0),
-    "lightning.jitter": (0.0, 1.0),
-    "lightning.branches": (0.0, 100.0),
+    "lightning.jitter": (0.0, 1.5),
+    "lightning.branch_count": (0.0, 100.0),
+    "lightning.secondary_branch_count": (0.0, 300.0),
+    "lightning.surface_crack_count": (0.0, 300.0),
     "lightning.length": (0.01, 3.0),
+    "lightning.spread": (0.0, 3.0),
     "shape.body_scale": (0.2, 8.0),
     "shape.inner_scale": (0.1, 8.0),
     "shape.core_scale": (0.05, 4.0),
     "shape.edge_noise": (0.0, 3.0),
+    "shape.edge_noise_frequency": (0.5, 40.0),
     "shape.taper_power": (0.1, 3.0),
     "shape.flare": (0.0, 2.0),
+    "shape.tongue_count": (0.0, 50.0),
+    "shape.tongue_length": (0.0, 3.0),
     "fragments.count": (0.0, 300.0),
     "fragments.spread": (0.0, 3.0),
     "fragments.size": (0.001, 1.0),
@@ -66,49 +98,149 @@ PARAM_RANGES: dict[str, tuple[float, float]] = {
     "fade_out": (0.0, 1.0),
 }
 
-INTEGER_PARAMS = {"sparks.count", "lightning.branches", "fragments.count"}
+COLOR_PARAMS = {
+    "colors.outer",
+    "colors.body",
+    "colors.inner",
+    "colors.core",
+    "colors.lightning",
+}
+INTEGER_PARAMS = {
+    "sparks.count",
+    "lightning.branch_count",
+    "lightning.secondary_branch_count",
+    "lightning.surface_crack_count",
+    "shape.tongue_count",
+    "fragments.count",
+}
+PARAM_ALIASES = {
+    "core.intensity": "intensity.core",
+    "glow.intensity": "intensity.outer",
+    "lightning.branches": "lightning.branch_count",
+}
+PROFILE_PARAM_GROUPS = {
+    "colors",
+    "intensity",
+    "sparks",
+    "lightning",
+    "shape",
+    "fragments",
+    "timing",
+}
+_HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
-def parse_set(value: str) -> tuple[str, float]:
-    if "=" not in value:
-        raise ValueError(f"--set must look like key=value, got {value!r}")
-    key, raw = value.split("=", 1)
-    key = key.strip()
+def canonical_param_key(key: str) -> str:
+    return PARAM_ALIASES.get(key, key)
+
+
+def parse_param(key: str, raw: Any) -> tuple[str, str | float | int]:
+    key = canonical_param_key(key.strip())
+    if key in COLOR_PARAMS:
+        value = str(raw).strip().upper()
+        if not _HEX_COLOR.fullmatch(value):
+            raise ValueError(f"VFX parameter {key!r} must be a #RRGGBB color")
+        return key, value
     if key not in PARAM_RANGES:
         raise ValueError(f"Unknown VFX parameter: {key}")
     try:
         parsed = float(raw)
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise ValueError(f"VFX parameter {key!r} must be numeric") from exc
     if not math.isfinite(parsed):
         raise ValueError(f"VFX parameter {key!r} must be finite")
+    minimum, maximum = PARAM_RANGES[key]
+    if not minimum <= parsed <= maximum:
+        raise ValueError(f"VFX parameter {key!r} must be in range [{minimum}, {maximum}]")
     if key in INTEGER_PARAMS:
         if not parsed.is_integer():
             raise ValueError(f"VFX parameter {key!r} must be an integer")
-        parsed = int(parsed)
+        return key, int(parsed)
     return key, parsed
 
 
-def _validate_params(params: dict[str, Any]) -> dict[str, float | int]:
-    unknown = sorted(set(params) - set(PARAM_RANGES))
+def parse_set(value: str) -> tuple[str, str | float | int]:
+    if "=" not in value:
+        raise ValueError(f"--set must look like key=value, got {value!r}")
+    key, raw = value.split("=", 1)
+    return parse_param(key, raw)
+
+
+def _flatten_mapping(prefix: str, value: Any, result: dict[str, Any]) -> None:
+    if isinstance(value, dict):
+        for child_key, child_value in value.items():
+            child_prefix = f"{prefix}.{child_key}" if prefix else str(child_key)
+            _flatten_mapping(child_prefix, child_value, result)
+    else:
+        result[prefix] = value
+
+
+def profile_params(profile: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    params = profile.get("params")
+    if params is not None:
+        if not isinstance(params, dict):
+            raise ValueError("profile params must be an object")
+        for key, value in params.items():
+            if isinstance(value, dict):
+                _flatten_mapping(str(key), value, result)
+            else:
+                result[str(key)] = value
+    for group in PROFILE_PARAM_GROUPS:
+        if group in profile:
+            value = profile[group]
+            if not isinstance(value, dict):
+                raise ValueError(f"profile {group} must be an object")
+            _flatten_mapping(group, value, result)
+    for key in ("radius", "arc_angle", "thickness", "start_angle", "rotation", "fade_in", "fade_out"):
+        if key in profile:
+            result[key] = profile[key]
+    return result
+
+
+def load_profile(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Unable to read VFX profile {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("VFX profile root must be an object")
+    return data
+
+
+def parse_profile_canvas(value: Any) -> tuple[int, int]:
+    if isinstance(value, str):
+        pieces = value.lower().split("x", 1)
+        if len(pieces) != 2:
+            raise ValueError("profile canvas must look like 512x512 or [512, 512]")
+        canvas = int(pieces[0]), int(pieces[1])
+    elif isinstance(value, (list, tuple)) and len(value) == 2:
+        canvas = int(value[0]), int(value[1])
+    else:
+        raise ValueError("profile canvas must look like 512x512 or [512, 512]")
+    if canvas[0] <= 0 or canvas[1] <= 0:
+        raise ValueError("canvas dimensions must be positive")
+    return canvas
+
+
+def _validate_params(params: dict[str, Any]) -> dict[str, str | float | int]:
+    canonical: dict[str, Any] = {}
+    for raw_key, raw_value in params.items():
+        key = canonical_param_key(str(raw_key))
+        if key in canonical and raw_key != key:
+            raise ValueError(f"Duplicate VFX parameter through alias: {raw_key}")
+        canonical[key] = raw_value
+    expected = set(PARAM_RANGES) | COLOR_PARAMS
+    unknown = sorted(set(canonical) - expected)
     if unknown:
         raise ValueError(f"Unknown VFX parameters: {', '.join(unknown)}")
-    result: dict[str, float | int] = {}
-    for key, (minimum, maximum) in PARAM_RANGES.items():
-        if key not in params:
-            raise ValueError(f"Missing VFX parameter: {key}")
-        try:
-            value = float(params[key])
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"VFX parameter {key!r} must be numeric") from exc
-        if not math.isfinite(value) or not minimum <= value <= maximum:
-            raise ValueError(f"VFX parameter {key!r} must be in range [{minimum}, {maximum}]")
-        if key in INTEGER_PARAMS:
-            if not value.is_integer():
-                raise ValueError(f"VFX parameter {key!r} must be an integer")
-            result[key] = int(value)
-        else:
-            result[key] = value
+    missing = sorted(expected - set(canonical))
+    if missing:
+        raise ValueError(f"Missing VFX parameter: {missing[0]}")
+    result: dict[str, str | float | int] = {}
+    for key in sorted(expected):
+        parsed_key, parsed_value = parse_param(key, canonical[key])
+        result[parsed_key] = parsed_value
     if float(result["timing.decay"]) <= float(result["timing.peak"]):
         raise ValueError("timing.decay must be greater than timing.peak")
     if float(result["shape.core_scale"]) >= float(result["shape.inner_scale"]):
@@ -127,37 +259,57 @@ class VfxSpec:
     canvas: tuple[int, int]
     sheet_columns: int
     seed: int
-    params: dict[str, float | int]
+    params: dict[str, str | float | int]
 
     @classmethod
     def create(
         cls,
         *,
-        template: str,
-        variant: str,
-        frames: int,
-        fps: int,
-        canvas: tuple[int, int],
-        sheet_columns: int,
-        seed: int,
+        template: str | None = None,
+        variant: str | None = None,
+        frames: int | None = None,
+        fps: int | None = None,
+        canvas: tuple[int, int] | None = None,
+        sheet_columns: int | None = None,
+        seed: int | None = None,
         overrides: list[str] | None = None,
+        profile: dict[str, Any] | None = None,
     ) -> "VfxSpec":
-        if template != "slash":
-            raise ValueError(f"Unsupported VFX template: {template}")
-        if variant not in SLASH_VARIANTS:
-            raise ValueError(f"Unsupported slash variant: {variant}")
-        params = dict(SLASH_VARIANTS[variant])
+        profile = profile or {}
+        resolved_template = template or profile.get("template")
+        resolved_variant = variant or profile.get("variant")
+        if resolved_template != "slash":
+            raise ValueError(f"Unsupported VFX template: {resolved_template}")
+        if resolved_variant not in SLASH_VARIANTS:
+            raise ValueError(f"Unsupported slash variant: {resolved_variant}")
+
+        params: dict[str, Any] = dict(SLASH_VARIANTS[str(resolved_variant)])
+        for key, value in profile_params(profile).items():
+            parsed_key, parsed_value = parse_param(key, value)
+            params[parsed_key] = parsed_value
         for override in overrides or []:
             key, value = parse_set(override)
             params[key] = value
+
+        profile_canvas = profile.get("canvas", BUILD_DEFAULTS["canvas"])
+        resolved_canvas = canvas if canvas is not None else parse_profile_canvas(profile_canvas)
+        resolved_frames = int(frames if frames is not None else profile.get("frames", BUILD_DEFAULTS["frames"]))
+        resolved_fps = int(fps if fps is not None else profile.get("fps", BUILD_DEFAULTS["fps"]))
+        resolved_columns = int(
+            sheet_columns
+            if sheet_columns is not None
+            else profile.get("sheetColumns", profile.get("sheet_columns", BUILD_DEFAULTS["sheet_columns"]))
+        )
+        resolved_seed = int(seed if seed is not None else profile.get("seed", BUILD_DEFAULTS["seed"]))
+
         return cls(
-            template=template,
-            variant=variant,
-            frames=frames,
-            fps=fps,
-            canvas=canvas,
-            sheet_columns=sheet_columns,
-            seed=seed,
+            template=str(resolved_template),
+            variant=str(resolved_variant),
+            frames=resolved_frames,
+            fps=resolved_fps,
+            canvas=resolved_canvas,
+            sheet_columns=resolved_columns,
+            seed=resolved_seed,
             params=_validate_params(params),
         ).validated()
 
