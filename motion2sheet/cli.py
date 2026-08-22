@@ -9,6 +9,7 @@ from pathlib import Path
 from .io import read_json, write_json, write_pose_sequence
 from .normalize import normalize_projected_sequences
 from .renderer import compose_sheet, render_sequence
+from .retarget import load_profile
 from .validator import assert_valid_output, validate_output_directory
 
 
@@ -27,7 +28,27 @@ def package_root() -> Path:
     return Path(__file__).resolve().parent
 
 
-def run_blender_extractor(args, raw_path: Path) -> None:
+def resolve_profile(value: str) -> tuple[str, Path | None]:
+    normalized = value.strip()
+    if normalized.lower() == "source":
+        return "source", None
+
+    built_in = package_root() / "profiles" / f"{normalized}.json"
+    if built_in.exists():
+        profile = load_profile(built_in)
+        return profile["name"], built_in
+
+    explicit = Path(normalized)
+    if explicit.exists():
+        profile = load_profile(explicit)
+        return profile["name"], explicit.resolve()
+
+    raise RuntimeError(
+        f"Unknown proportion profile {value!r}. Use 'source', a built-in profile name, or a JSON profile path."
+    )
+
+
+def run_blender_extractor(args, raw_path: Path, profile_path: Path | None) -> None:
     blender = shutil.which(args.blender) if Path(args.blender).name == args.blender else args.blender
     if not blender:
         raise RuntimeError(f"Blender executable not found: {args.blender}")
@@ -52,6 +73,8 @@ def run_blender_extractor(args, raw_path: Path) -> None:
     ]
     if args.action:
         command.extend(["--action", args.action])
+    if profile_path is not None:
+        command.extend(["--profile-file", str(profile_path)])
     subprocess.run(command, check=True)
 
 
@@ -63,7 +86,8 @@ def build(args) -> int:
     output.mkdir(parents=True, exist_ok=True)
     raw_path = output / ".raw_projected.json"
 
-    run_blender_extractor(args, raw_path)
+    profile_name, profile_path = resolve_profile(args.profile)
+    run_blender_extractor(args, raw_path, profile_path)
     raw = read_json(raw_path)
     action = args.action or raw["action"]
     directions = [item.strip().lower() for item in args.directions.split(",") if item.strip()]
@@ -91,6 +115,8 @@ def build(args) -> int:
         "canvas": list(args.canvas),
         "sheetColumns": args.sheet_columns,
         "cameraElevation": args.camera_elevation,
+        "proportionProfile": profile_name,
+        "retarget": raw.get("retarget", {"profile": "source"}),
         "normalization": {
             "globalScaleAcrossDirections": True,
             "groundAnchor": "pelvis-x + lowest-ankle-y",
@@ -132,6 +158,11 @@ def parser() -> argparse.ArgumentParser:
     build_parser.add_argument("--camera-elevation", type=float, default=35.0)
     build_parser.add_argument("--sheet-columns", type=int, default=4)
     build_parser.add_argument("--padding", type=int, default=20)
+    build_parser.add_argument(
+        "--profile",
+        default="source",
+        help="Body proportion profile: source (default), built-in name such as chibi_v1, or JSON path",
+    )
     build_parser.add_argument("--keep-raw", action="store_true")
     build_parser.set_defaults(func=build)
 
@@ -145,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         return args.func(args)
-    except (RuntimeError, subprocess.CalledProcessError) as exc:
+    except (RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"motion2sheet: {exc}", file=sys.stderr)
         return 2
 
