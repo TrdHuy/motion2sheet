@@ -1,0 +1,63 @@
+{
+  "template": "slash",
+  "variant": "lightning",
+  "frames": 8,
+  "fps": 12,
+  "canvas": [512, 512],
+  "sheetColumns": 4,
+  "seed": 42891,
+  "colors": {
+    "outer": "#1028FF",
+    "body": "#008DFF",
+    "inner": "#55E8FF",
+    "core": "#FFFFFF",
+    "lightning": "#C8FBFF"
+  },
+  "intensity": {
+    "outer": 4.2,
+    "body": 6.2,
+    "inner": 7.4,
+    "core": 11.0,
+    "lightning": 13.0
+  },
+  "shape": {
+    "body_scale": 3.5,
+    "inner_scale": 1.58,
+    "core_scale": 0.30,
+    "edge_noise": 1.65,
+    "edge_noise_frequency": 7.5,
+    "taper_power": 0.50,
+    "flare": 0.48,
+    "tongue_count": 8,
+    "tongue_length": 0.85
+  },
+  "lightning": {
+    "branch_count": 20,
+    "secondary_branch_count": 12,
+    "surface_crack_count": 14,
+    "jitter": 0.30,
+    "length": 0.50,
+    "spread": 0.55
+  },
+  "sparks": {
+    "count": 30,
+    "spread": 0.45,
+    "size": 0.040
+  },
+  "fragments": {
+    "count": 24,
+    "spread": 0.50,
+    "size": 0.090
+  },
+  "timing": {
+    "peak": 0.57,
+    "decay": 0.68
+  },
+  "radius": 1.5,
+  "arc_angle": 150.0,
+  "thickness": 0.12,
+  "start_angle": -75.0,
+  "rotation": 0.0,
+  "fade_in": 0.25,
+  "fade_out": 0.45
+}
