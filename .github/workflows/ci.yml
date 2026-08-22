@@ -108,6 +108,13 @@ jobs:
       - name: Verify VFX semantics and determinism
         run: python tests/e2e/verify_vfx_output.py build/vfx/run_a build/vfx/run_b
 
+      - name: Verify VFX against approved golden reference
+        run: >-
+          python tests/e2e/verify_vfx_reference.py
+          --reference tests/golden/vfx/lightning_slash_reference.png
+          --output build/vfx/run_a
+          --qa-output build/vfx/qa
+
       - name: Upload generated pose sheets
         if: always()
         uses: actions/upload-artifact@v4
