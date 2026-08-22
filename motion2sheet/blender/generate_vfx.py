@@ -138,8 +138,8 @@ def render_frame(spec: dict, output: Path, frame_index: int) -> None:
 
     base_points = arc_points(radius, visible_start, visible_extent, rotation)
     add_curve("slash_glow", base_points, thickness * (2.35 + 0.35 * energy), glow, z=0.00)
-    add_curve("slash_edge", base_points, thickness * (1.45 + 0.15 * energy), edge, z=0.03)
-    add_curve("slash_core", base_points, thickness * max(0.24, 0.52 * energy), core, z=0.06)
+    add_curve("slash_edge", base_points, thickness * (1.45 + 0.15 * energy), edge, z=0.44)
+    add_curve("slash_core", base_points, thickness * max(0.24, 0.52 * energy), core, z=0.70)
 
     rng = random.Random(seed * 10007 + frame_index * 97)
     branch_count = max(1, round(int(params["lightning.branches"]) * max(0.35, energy)))
@@ -171,7 +171,7 @@ def render_frame(spec: dict, output: Path, frame_index: int) -> None:
             [anchor, mid1, mid2, end],
             thickness * max(0.18, 0.30 * energy),
             core,
-            z=0.10,
+            z=0.86,
         )
 
     spark_count = max(1, round(int(params["sparks.count"]) * max(0.18, energy)))
@@ -191,7 +191,7 @@ def render_frame(spec: dict, output: Path, frame_index: int) -> None:
             [(x, y, 0.0), end],
             thickness * 0.12 * max(0.45, energy),
             spark_mat,
-            z=0.12,
+            z=0.96,
         )
 
     output.parent.mkdir(parents=True, exist_ok=True)
