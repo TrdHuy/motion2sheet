@@ -61,13 +61,21 @@ def add_curve(name: str, points, bevel: float, material, *, z: float = 0.0) -> N
     obj.data.materials.append(material)
 
 
+def add_triangle(name: str, points, material, *, z: float) -> None:
+    mesh = bpy.data.meshes.new(name + "Mesh")
+    mesh.from_pydata([(x, y, z) for x, y in points], [], [(0, 1, 2)])
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(material)
+
+
 def point_on_arc(radius: float, angle_deg: float, rotation_deg: float):
     angle = math.radians(angle_deg + rotation_deg)
     return radius * math.cos(angle), radius * math.sin(angle), 0.0
 
 
 def width_envelope(t: float, power: float, flare: float) -> float:
-    # Strong tapered tips with a slightly weighted leading half for a brush-stroke silhouette.
     base = max(0.0, math.sin(math.pi * t)) ** power
     lead = 1.0 + flare * (1.0 - t) * math.sin(math.pi * t)
     return base * lead
@@ -106,7 +114,6 @@ def crescent_ribbon(
         )
         noise_scale = 1.0 + deterministic_noise * edge_noise * 0.22 * envelope
         width = half_width * envelope * noise_scale
-        # A gentle radial pulse keeps the body asymmetric instead of perfectly circular.
         radial = radius * (1.0 + 0.025 * edge_noise * math.sin(t * math.tau * 3.0 + phase_b))
         cx, cy = radial * math.cos(angle), radial * math.sin(angle)
         nx, ny = math.cos(angle), math.sin(angle)
@@ -126,14 +133,105 @@ def crescent_ribbon(
     obj.data.materials.append(material)
 
 
-def add_burst(name: str, radius: float, material, seed: int, z: float) -> None:
+def add_energy_tongues(
+    *,
+    name: str,
+    radius: float,
+    start_deg: float,
+    extent_deg: float,
+    rotation_deg: float,
+    body_width: float,
+    material,
+    seed: int,
+    amount: int,
+    strength: float,
+    z: float,
+) -> None:
+    """Add deterministic triangular protrusions to break the mathematical ribbon silhouette."""
+    if amount <= 0 or strength <= 0.0:
+        return
     rng = random.Random(seed)
-    for i in range(12):
-        angle = math.tau * i / 12.0 + rng.uniform(-0.10, 0.10)
-        length = radius * rng.uniform(0.14, 0.32)
-        p0 = (0.0, 0.0, 0.0)
-        p1 = (math.cos(angle) * length, math.sin(angle) * length, 0.0)
-        add_curve(f"{name}_{i}", [p0, p1], radius * 0.018, material, z=z)
+    for i in range(amount):
+        t = (i + rng.uniform(0.20, 0.80)) / amount
+        if t < 0.06 or t > 0.96:
+            continue
+        angle_deg = start_deg + extent_deg * t
+        angle = math.radians(angle_deg + rotation_deg)
+        nx, ny = math.cos(angle), math.sin(angle)
+        tx, ty = -math.sin(angle), math.cos(angle)
+        envelope = max(0.08, math.sin(math.pi * t))
+        side = 1.0 if rng.random() > 0.20 else -1.0
+        cx, cy, _ = point_on_arc(radius, angle_deg, rotation_deg)
+        base_offset = body_width * envelope * (0.62 + rng.random() * 0.35) * side
+        base_x = cx + nx * base_offset
+        base_y = cy + ny * base_offset
+        half_base = body_width * rng.uniform(0.16, 0.38) * envelope
+        length = body_width * rng.uniform(0.65, 1.75) * strength * envelope
+        skew = body_width * rng.uniform(-0.40, 0.55)
+        p0 = (base_x - tx * half_base, base_y - ty * half_base)
+        p1 = (base_x + tx * half_base, base_y + ty * half_base)
+        p2 = (base_x + nx * length + tx * skew, base_y + ny * length + ty * skew)
+        add_triangle(f"{name}_{i}", [p0, p1, p2], material, z=z)
+
+
+def add_energy_wisps(
+    *,
+    name: str,
+    radius: float,
+    start_deg: float,
+    extent_deg: float,
+    rotation_deg: float,
+    material,
+    seed: int,
+    count: int,
+    thickness: float,
+    energy: float,
+    z: float,
+) -> None:
+    rng = random.Random(seed)
+    for i in range(max(0, count)):
+        t0 = rng.uniform(0.06, 0.84)
+        length_t = rng.uniform(0.08, 0.22) * (0.65 + 0.35 * energy)
+        t1 = min(0.98, t0 + length_t)
+        local_radius = radius * rng.uniform(0.86, 1.20)
+        points = []
+        for step in range(5):
+            f = step / 4.0
+            t = t0 + (t1 - t0) * f
+            angle_deg = start_deg + extent_deg * t
+            x, y, _ = point_on_arc(local_radius, angle_deg, rotation_deg)
+            angle = math.radians(angle_deg + rotation_deg)
+            outward = radius * rng.uniform(-0.035, 0.060) * math.sin(math.pi * f)
+            points.append((x + math.cos(angle) * outward, y + math.sin(angle) * outward, 0.0))
+        add_curve(
+            f"{name}_{i}",
+            points,
+            thickness * rng.uniform(0.08, 0.16) * max(0.42, energy),
+            material,
+            z=z,
+        )
+
+
+def add_burst(name: str, radius: float, outer_material, core_material, seed: int, z: float) -> None:
+    rng = random.Random(seed)
+    # Irregular blue star body behind the white ignition spokes.
+    for i in range(14):
+        angle = math.tau * i / 14.0 + rng.uniform(-0.12, 0.12)
+        width = radius * rng.uniform(0.025, 0.055)
+        length = radius * rng.uniform(0.13, 0.34)
+        tangent = (-math.sin(angle), math.cos(angle))
+        normal = (math.cos(angle), math.sin(angle))
+        p0 = (-tangent[0] * width, -tangent[1] * width)
+        p1 = (tangent[0] * width, tangent[1] * width)
+        p2 = (normal[0] * length, normal[1] * length)
+        add_triangle(f"{name}_body_{i}", [p0, p1, p2], outer_material, z=z - 0.15)
+        add_curve(
+            f"{name}_core_{i}",
+            [(0.0, 0.0, 0.0), (normal[0] * length * 0.92, normal[1] * length * 0.92, 0.0)],
+            radius * 0.014,
+            core_material,
+            z=z,
+        )
 
 
 def phase_values(index: int, frames: int, peak_t: float, decay_t: float) -> tuple[float, float, float]:
@@ -190,7 +288,7 @@ def render_frame(spec: dict, output: Path, frame_index: int) -> None:
     crack = emission_material("Crack", (0.70, 0.98, 1.0, 1.0), max(1.0, energy * 9.0))
 
     if frame_index == 0:
-        add_burst("ignition", radius, core, seed, 0.90)
+        add_burst("ignition", radius, outer, core, seed, 0.90)
         visible_extent = arc_angle * 0.16
         visible_start = start_angle
     elif decay <= 0.0:
@@ -211,6 +309,14 @@ def render_frame(spec: dict, output: Path, frame_index: int) -> None:
         seed=seed * 101 + frame_index * 31, edge_noise=edge_noise,
         taper_power=taper_power, flare=flare, samples=76,
     )
+    # The reference has ragged energy tongues rather than a mathematically clean outer arc.
+    tongue_amount = max(4, round((8 + 10 * growth + 8 * decay) * min(1.25, visible_extent / max(arc_angle, 1.0))))
+    add_energy_tongues(
+        name="outer_tongue", radius=radius, start_deg=visible_start, extent_deg=visible_extent,
+        rotation_deg=rotation, body_width=body_width, material=outer,
+        seed=seed * 109 + frame_index * 43, amount=tongue_amount,
+        strength=0.72 + 0.38 * growth + 0.55 * decay, z=0.03,
+    )
     crescent_ribbon(
         name="cyan_body", radius=radius, start_deg=visible_start + visible_extent * 0.02,
         extent_deg=visible_extent * 0.96, rotation_deg=rotation,
@@ -224,6 +330,19 @@ def render_frame(spec: dict, output: Path, frame_index: int) -> None:
         half_width=thickness * float(p["shape.core_scale"]) * max(0.40, energy),
         material=core, z=0.72, seed=seed * 107 + frame_index * 41,
         edge_noise=edge_noise * 0.18, taper_power=max(0.28, taper_power * 0.75), flare=flare * 0.25, samples=68,
+    )
+
+    # Thin secondary cyan/white wisps create the painted multi-streak look in the approved sample.
+    add_energy_wisps(
+        name="cyan_wisp", radius=radius, start_deg=visible_start, extent_deg=visible_extent,
+        rotation_deg=rotation, material=inner, seed=seed * 113 + frame_index * 47,
+        count=max(2, round(4 + 7 * energy)), thickness=thickness, energy=energy, z=0.79,
+    )
+    add_energy_wisps(
+        name="white_wisp", radius=radius * 0.985, start_deg=visible_start + visible_extent * 0.03,
+        extent_deg=visible_extent * 0.92, rotation_deg=rotation, material=core,
+        seed=seed * 127 + frame_index * 53, count=max(1, round(2 + 4 * energy)),
+        thickness=thickness * 0.68, energy=energy, z=0.91,
     )
 
     rng = random.Random(seed * 10007 + frame_index * 97)
@@ -245,7 +364,7 @@ def render_frame(spec: dict, output: Path, frame_index: int) -> None:
                 anchor[1] + math.sin(tangent) * length * f + rng.uniform(-jitter, jitter) * radius * 0.45,
                 0.0,
             ))
-        add_curve(f"crack_{i}", points, thickness * 0.105 * max(0.55, energy), crack, z=0.94)
+        add_curve(f"crack_{i}", points, thickness * 0.105 * max(0.55, energy), crack, z=0.98)
 
     spark_count = max(2, round(int(p["sparks.count"]) * max(0.16, energy)))
     for i in range(spark_count):
@@ -257,10 +376,12 @@ def render_frame(spec: dict, output: Path, frame_index: int) -> None:
         y += rng.uniform(-spread, spread)
         a = math.radians(angle + rotation + rng.uniform(-65.0, 65.0))
         length = radius * float(p["sparks.size"]) * rng.uniform(2.0, 5.5) * max(0.45, energy)
-        add_curve(f"spark_{i}", [(x, y, 0.0), (x + math.cos(a) * length, y + math.sin(a) * length, 0.0)],
-                  thickness * 0.085 * max(0.45, energy), crack, z=1.04)
+        add_curve(
+            f"spark_{i}",
+            [(x, y, 0.0), (x + math.cos(a) * length, y + math.sin(a) * length, 0.0)],
+            thickness * 0.085 * max(0.45, energy), crack, z=1.04,
+        )
 
-    # Breakup fragments are deliberately strongest after the peak, matching the approved reference.
     fragment_factor = max(0.0, (frame_index / max(frames - 1, 1) - peak_t) / max(1e-6, 1.0 - peak_t))
     fragment_count = round(int(p["fragments.count"]) * fragment_factor)
     for i in range(fragment_count):
