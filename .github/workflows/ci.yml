@@ -63,7 +63,7 @@ jobs:
           --directions down,left,right,up --canvas 320x320
           --output build/bvh_chibi --keep-raw
 
-      - name: Validate all outputs
+      - name: Validate all pose outputs
         run: |
           motion2sheet validate build/fbx
           motion2sheet validate build/bvh
@@ -80,6 +80,34 @@ jobs:
           python tests/e2e/verify_retarget_output.py
           build/fbx_chibi build/bvh_chibi
 
+      - name: Build deterministic lightning slash run A
+        run: >-
+          vfx2sheet build
+          --template slash --variant lightning
+          --frames 8 --fps 12 --canvas 512x512 --sheet-columns 4
+          --seed 42891
+          --set radius=1.5 --set arc_angle=150 --set thickness=0.12
+          --set sparks.count=22
+          --output build/vfx/run_a
+
+      - name: Build deterministic lightning slash run B
+        run: >-
+          vfx2sheet build
+          --template slash --variant lightning
+          --frames 8 --fps 12 --canvas 512x512 --sheet-columns 4
+          --seed 42891
+          --set radius=1.5 --set arc_angle=150 --set thickness=0.12
+          --set sparks.count=22
+          --output build/vfx/run_b
+
+      - name: Validate VFX outputs
+        run: |
+          vfx2sheet validate build/vfx/run_a
+          vfx2sheet validate build/vfx/run_b
+
+      - name: Verify VFX semantics and determinism
+        run: python tests/e2e/verify_vfx_output.py build/vfx/run_a build/vfx/run_b
+
       - name: Upload generated pose sheets
         if: always()
         uses: actions/upload-artifact@v4
@@ -91,5 +119,14 @@ jobs:
             build/fbx_chibi/
             build/bvh_chibi/
             build/fixtures/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload generated VFX output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion2sheet-vfx-e2e-output
+          path: build/vfx/
           if-no-files-found: error
           retention-days: 7
