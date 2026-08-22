@@ -78,7 +78,6 @@ def point_on_arc(radius: float, angle_deg: float, rotation_deg: float):
 
 def phase_envelope(index: int, frames: int) -> tuple[float, float]:
     t = index / max(frames - 1, 1)
-    # Geometry grows rapidly to frame ~60%, then thins and fragments.
     growth = min(1.0, t / 0.58)
     if t <= 0.58:
         energy = 0.35 + 0.65 * (t / 0.58)
@@ -89,14 +88,18 @@ def phase_envelope(index: int, frames: int) -> tuple[float, float]:
 
 def setup_render(canvas: tuple[int, int], radius: float):
     scene = bpy.context.scene
-    scene.render.engine = "BLENDER_EEVEE_NEXT"
+    # Eevee requires EGL/OpenGL even in background mode on GitHub runners.
+    # Cycles CPU renders without a display server and keeps CI deterministic.
+    scene.render.engine = "CYCLES"
+    scene.cycles.device = "CPU"
+    scene.cycles.samples = 8
+    scene.cycles.use_denoising = False
     scene.render.resolution_x = canvas[0]
     scene.render.resolution_y = canvas[1]
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGBA"
     scene.render.film_transparent = True
-    scene.render.resolution_percentage = 100
 
     camera_data = bpy.data.cameras.new("VFXCamera")
     camera = bpy.data.objects.new("VFXCamera", camera_data)
