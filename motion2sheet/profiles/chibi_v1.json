@@ -1,0 +1,14 @@
+{
+  "name": "chibi_v1",
+  "description": "Compact storybook-RPG humanoid proportions for pose-sheet generation.",
+  "segments": {
+    "pelvis_neck": 0.27,
+    "neck_head": 0.11,
+    "shoulder_offset": 0.16,
+    "upper_arm": 0.15,
+    "lower_arm": 0.14,
+    "hip_offset": 0.09,
+    "upper_leg": 0.17,
+    "lower_leg": 0.16
+  }
+}
