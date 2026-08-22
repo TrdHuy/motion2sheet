@@ -70,24 +70,75 @@ def add_triangle(name: str, points, material, *, z: float) -> None:
     obj.data.materials.append(material)
 
 
-def point_on_arc(radius: float, angle_deg: float, rotation_deg: float):
-    angle = math.radians(angle_deg + rotation_deg)
-    return radius * math.cos(angle), radius * math.sin(angle), 0.0
+def point_on_arc(radius: float, canonical_t: float, start_deg: float, arc_deg: float, rotation_deg: float):
+    angle_deg = start_deg + arc_deg * canonical_t + rotation_deg
+    angle = math.radians(angle_deg)
+    return radius * math.cos(angle), radius * math.sin(angle), angle
 
 
-def width_envelope(t: float, power: float, flare: float) -> float:
-    base = max(0.0, math.sin(math.pi * t)) ** power
-    lead = 1.0 + flare * (1.0 - t) * math.sin(math.pi * t)
-    return base * lead
+def smoothstep01(value: float) -> float:
+    x = max(0.0, min(1.0, value))
+    return x * x * (3.0 - 2.0 * x)
 
 
-def crescent_ribbon(
+def motion_window(index: int, frames: int, peak_t: float) -> tuple[float, float, float, float]:
+    """Return canonical tail/head positions plus energy and breakup.
+
+    The slash follows one fixed spatial trajectory. Before peak the head advances;
+    after peak the tail chases the stationary head. Nothing uniformly scales.
+    """
+    t = index / max(frames - 1, 1)
+    if t <= peak_t:
+        growth = smoothstep01(t / max(peak_t, 1e-6))
+        head_t = 0.10 + 0.90 * growth
+        tail_t = 0.075 * growth * growth
+        energy = 0.55 + 0.45 * growth
+        breakup = 0.0
+    else:
+        decay = smoothstep01((t - peak_t) / max(1e-6, 1.0 - peak_t))
+        head_t = 1.0
+        tail_t = 0.075 + 0.845 * decay
+        energy = 1.0 - 0.86 * decay
+        breakup = decay
+    return tail_t, head_t, energy, breakup
+
+
+def canonical_width(canonical_t: float, local_u: float, taper_power: float, flare: float) -> float:
+    global_body = max(0.0, math.sin(math.pi * canonical_t)) ** max(0.18, taper_power)
+    tail_taper = smoothstep01(local_u / 0.18)
+    head_taper = smoothstep01((1.0 - local_u) / 0.105)
+    head_bias = 1.0 + flare * smoothstep01((local_u - 0.35) / 0.45) * (1.0 - local_u)
+    return global_body * tail_taper * head_taper * head_bias
+
+
+def breakup_holes(seed: int, tail_t: float, head_t: float, breakup: float) -> list[tuple[float, float]]:
+    if breakup < 0.20:
+        return []
+    rng = random.Random(seed)
+    span = max(1e-5, head_t - tail_t)
+    count = 1 + round(3 * breakup)
+    holes = []
+    max_center = min(head_t - span * 0.10, tail_t + span * (0.30 + 0.46 * breakup))
+    for _ in range(count):
+        center = rng.uniform(tail_t + span * 0.05, max(tail_t + span * 0.06, max_center))
+        width = span * rng.uniform(0.025, 0.060) * (0.55 + 0.90 * breakup)
+        holes.append((center - width, center + width))
+    return holes
+
+
+def in_hole(t: float, holes: list[tuple[float, float]]) -> bool:
+    return any(start <= t <= end for start, end in holes)
+
+
+def slash_ribbon(
     *,
     name: str,
     radius: float,
     start_deg: float,
-    extent_deg: float,
+    arc_deg: float,
     rotation_deg: float,
+    tail_t: float,
+    head_t: float,
     half_width: float,
     material,
     z: float,
@@ -95,31 +146,37 @@ def crescent_ribbon(
     edge_noise: float,
     taper_power: float,
     flare: float,
-    samples: int = 72,
+    outer_noise: float,
+    inner_noise: float,
+    holes: list[tuple[float, float]],
+    samples: int = 88,
 ) -> None:
+    if head_t - tail_t <= 0.005:
+        return
     rng = random.Random(seed)
     vertices: list[tuple[float, float, float]] = []
     faces: list[tuple[int, int, int, int]] = []
     phase_a = rng.uniform(0.0, math.tau)
     phase_b = rng.uniform(0.0, math.tau)
     for i in range(samples):
-        t = i / (samples - 1)
-        angle_deg = start_deg + extent_deg * t + rotation_deg
-        angle = math.radians(angle_deg)
-        envelope = width_envelope(t, taper_power, flare)
-        deterministic_noise = (
-            math.sin(t * math.tau * 5.0 + phase_a) * 0.55
-            + math.sin(t * math.tau * 11.0 + phase_b) * 0.30
-            + math.sin(t * math.tau * 19.0 + phase_a * 0.7) * 0.15
+        u = i / (samples - 1)
+        canonical_t = tail_t + (head_t - tail_t) * u
+        cx, cy, angle = point_on_arc(radius, canonical_t, start_deg, arc_deg, rotation_deg)
+        width = half_width * canonical_width(canonical_t, u, taper_power, flare)
+        layered_noise = (
+            math.sin(canonical_t * math.tau * 3.2 + phase_a) * 0.48
+            + math.sin(canonical_t * math.tau * 8.7 + phase_b) * 0.32
+            + math.sin(canonical_t * math.tau * 17.3 + phase_a * 0.63) * 0.20
         )
-        noise_scale = 1.0 + deterministic_noise * edge_noise * 0.22 * envelope
-        width = half_width * envelope * noise_scale
-        radial = radius * (1.0 + 0.025 * edge_noise * math.sin(t * math.tau * 3.0 + phase_b))
-        cx, cy = radial * math.cos(angle), radial * math.sin(angle)
+        outer_w = width * (1.0 + layered_noise * edge_noise * outer_noise)
+        inner_w = width * (1.0 + layered_noise * edge_noise * inner_noise)
         nx, ny = math.cos(angle), math.sin(angle)
-        vertices.append((cx + nx * width, cy + ny * width, z))
-        vertices.append((cx - nx * width, cy - ny * width, z))
+        vertices.append((cx + nx * outer_w, cy + ny * outer_w, z))
+        vertices.append((cx - nx * inner_w, cy - ny * inner_w, z))
         if i:
+            midpoint_t = tail_t + (head_t - tail_t) * ((i - 0.5) / (samples - 1))
+            if in_hole(midpoint_t, holes):
+                continue
             a = 2 * (i - 1)
             b = a + 1
             c = 2 * i + 1
@@ -138,108 +195,148 @@ def add_energy_tongues(
     name: str,
     radius: float,
     start_deg: float,
-    extent_deg: float,
+    arc_deg: float,
     rotation_deg: float,
+    tail_t: float,
+    head_t: float,
     body_width: float,
     material,
     seed: int,
     amount: int,
     strength: float,
+    breakup: float,
     z: float,
 ) -> None:
-    """Add deterministic triangular protrusions to break the mathematical ribbon silhouette."""
-    if amount <= 0 or strength <= 0.0:
+    """Sparse backward-skewed tongues; deliberately not an even saw blade."""
+    if amount <= 0 or strength <= 0.0 or head_t - tail_t < 0.03:
         return
     rng = random.Random(seed)
+    span = head_t - tail_t
     for i in range(amount):
-        t = (i + rng.uniform(0.20, 0.80)) / amount
-        if t < 0.06 or t > 0.96:
+        u = (i + rng.uniform(0.15, 0.85)) / amount
+        if u < 0.10 or u > 0.94:
             continue
-        angle_deg = start_deg + extent_deg * t
-        angle = math.radians(angle_deg + rotation_deg)
+        canonical_t = tail_t + span * u
+        cx, cy, angle = point_on_arc(radius, canonical_t, start_deg, arc_deg, rotation_deg)
         nx, ny = math.cos(angle), math.sin(angle)
         tx, ty = -math.sin(angle), math.cos(angle)
-        envelope = max(0.08, math.sin(math.pi * t))
-        side = 1.0 if rng.random() > 0.20 else -1.0
-        cx, cy, _ = point_on_arc(radius, angle_deg, rotation_deg)
-        base_offset = body_width * envelope * (0.62 + rng.random() * 0.35) * side
+        envelope = canonical_width(canonical_t, u, 0.58, 0.18)
+        if envelope < 0.05:
+            continue
+        base_offset = body_width * envelope * rng.uniform(0.72, 1.00)
         base_x = cx + nx * base_offset
         base_y = cy + ny * base_offset
-        half_base = body_width * rng.uniform(0.16, 0.38) * envelope
-        length = body_width * rng.uniform(0.65, 1.75) * strength * envelope
-        skew = body_width * rng.uniform(-0.40, 0.55)
+        half_base = body_width * envelope * rng.uniform(0.10, 0.22)
+        length = body_width * envelope * rng.uniform(0.35, 0.95) * strength
+        backward = body_width * envelope * rng.uniform(0.35, 1.10) * (0.70 + 0.45 * breakup)
         p0 = (base_x - tx * half_base, base_y - ty * half_base)
         p1 = (base_x + tx * half_base, base_y + ty * half_base)
-        p2 = (base_x + nx * length + tx * skew, base_y + ny * length + ty * skew)
+        p2 = (base_x + nx * length - tx * backward, base_y + ny * length - ty * backward)
         add_triangle(f"{name}_{i}", [p0, p1, p2], material, z=z)
 
 
-def add_energy_wisps(
-    *,
-    name: str,
-    radius: float,
-    start_deg: float,
-    extent_deg: float,
-    rotation_deg: float,
-    material,
-    seed: int,
-    count: int,
-    thickness: float,
-    energy: float,
-    z: float,
+def add_surface_cracks(
+    *, radius: float, start_deg: float, arc_deg: float, rotation_deg: float,
+    tail_t: float, head_t: float, material, seed: int, count: int,
+    thickness: float, energy: float, z: float,
 ) -> None:
+    if count <= 0 or head_t - tail_t < 0.05:
+        return
     rng = random.Random(seed)
-    for i in range(max(0, count)):
-        t0 = rng.uniform(0.06, 0.84)
-        length_t = rng.uniform(0.08, 0.22) * (0.65 + 0.35 * energy)
-        t1 = min(0.98, t0 + length_t)
-        local_radius = radius * rng.uniform(0.86, 1.20)
+    span = head_t - tail_t
+    for i in range(count):
+        center = tail_t + span * rng.uniform(0.18, 0.86)
+        half = span * rng.uniform(0.035, 0.075)
+        t0 = max(tail_t, center - half)
+        t1 = min(head_t, center + half)
         points = []
+        phase = rng.uniform(0.0, math.tau)
         for step in range(5):
             f = step / 4.0
-            t = t0 + (t1 - t0) * f
-            angle_deg = start_deg + extent_deg * t
-            x, y, _ = point_on_arc(local_radius, angle_deg, rotation_deg)
-            angle = math.radians(angle_deg + rotation_deg)
-            outward = radius * rng.uniform(-0.035, 0.060) * math.sin(math.pi * f)
-            points.append((x + math.cos(angle) * outward, y + math.sin(angle) * outward, 0.0))
-        add_curve(
-            f"{name}_{i}",
-            points,
-            thickness * rng.uniform(0.08, 0.16) * max(0.42, energy),
-            material,
-            z=z,
-        )
+            canonical_t = t0 + (t1 - t0) * f
+            x, y, angle = point_on_arc(radius, canonical_t, start_deg, arc_deg, rotation_deg)
+            offset = thickness * rng.uniform(-0.45, 0.45) + thickness * 0.40 * math.sin(f * math.tau * 1.5 + phase)
+            points.append((x + math.cos(angle) * offset, y + math.sin(angle) * offset, 0.0))
+        add_curve(f"surface_crack_{i}", points, thickness * rng.uniform(0.040, 0.065) * max(0.55, energy), material, z=z)
 
 
-def add_burst(name: str, radius: float, outer_material, core_material, seed: int, z: float) -> None:
+def add_lightning_branches(
+    *, radius: float, start_deg: float, arc_deg: float, rotation_deg: float,
+    tail_t: float, head_t: float, material, seed: int, count: int,
+    thickness: float, branch_length: float, jitter: float, energy: float, z: float,
+) -> None:
+    if count <= 0 or head_t - tail_t < 0.05:
+        return
     rng = random.Random(seed)
-    # Irregular blue star body behind the white ignition spokes.
-    for i in range(14):
-        angle = math.tau * i / 14.0 + rng.uniform(-0.12, 0.12)
-        width = radius * rng.uniform(0.025, 0.055)
-        length = radius * rng.uniform(0.13, 0.34)
-        tangent = (-math.sin(angle), math.cos(angle))
-        normal = (math.cos(angle), math.sin(angle))
-        p0 = (-tangent[0] * width, -tangent[1] * width)
-        p1 = (tangent[0] * width, tangent[1] * width)
-        p2 = (normal[0] * length, normal[1] * length)
-        add_triangle(f"{name}_body_{i}", [p0, p1, p2], outer_material, z=z - 0.15)
-        add_curve(
-            f"{name}_core_{i}",
-            [(0.0, 0.0, 0.0), (normal[0] * length * 0.92, normal[1] * length * 0.92, 0.0)],
-            radius * 0.014,
-            core_material,
-            z=z,
-        )
+    span = head_t - tail_t
+    for i in range(count):
+        canonical_t = tail_t + span * rng.uniform(0.28, 0.90)
+        x, y, angle = point_on_arc(radius, canonical_t, start_deg, arc_deg, rotation_deg)
+        nx, ny = math.cos(angle), math.sin(angle)
+        tx, ty = -math.sin(angle), math.cos(angle)
+        side = 1.0 if rng.random() > 0.25 else -1.0
+        length = radius * branch_length * rng.uniform(0.28, 0.62) * max(0.55, energy)
+        points = [(x, y, 0.0)]
+        for step in range(1, 4):
+            f = step / 3.0
+            outward = length * f * side
+            forward = length * rng.uniform(-0.18, 0.28) * f
+            j = radius * jitter * rng.uniform(-0.16, 0.16)
+            points.append((x + nx * outward + tx * forward + nx * j, y + ny * outward + ty * forward + ny * j, 0.0))
+        add_curve(f"branch_{i}", points, thickness * 0.060 * max(0.55, energy), material, z=z)
 
 
-def phase_values(index: int, frames: int, peak_t: float, decay_t: float) -> tuple[float, float, float]:
-    t = index / max(frames - 1, 1)
-    growth = min(1.0, t / peak_t)
-    decay = 0.0 if t <= decay_t else min(1.0, (t - decay_t) / max(1e-6, 1.0 - decay_t))
-    energy = (0.30 + 0.70 * growth) * (1.0 - 0.86 * decay)
-    return growth, energy, decay
+def add_directional_sparks(
+    *, radius: float, start_deg: float, arc_deg: float, rotation_deg: float,
+    tail_t: float, head_t: float, material, seed: int, count: int,
+    thickness: float, spark_size: float, spread: float, energy: float,
+    breakup: float, z: float,
+) -> None:
+    if count <= 0 or head_t - tail_t < 0.02:
+        return
+    rng = random.Random(seed)
+    span = head_t - tail_t
+    for i in range(count):
+        u = 1.0 - rng.random() ** 2.0 if breakup < 0.15 else rng.random() ** 2.0
+        canonical_t = tail_t + span * (0.12 + 0.80 * u)
+        x, y, angle = point_on_arc(radius, canonical_t, start_deg, arc_deg, rotation_deg)
+        tx, ty = -math.sin(angle), math.cos(angle)
+        nx, ny = math.cos(angle), math.sin(angle)
+        offset = radius * spread * rng.uniform(-0.22, 0.22)
+        x += nx * offset
+        y += ny * offset
+        length = radius * spark_size * rng.uniform(1.2, 3.4) * max(0.35, energy)
+        out = rng.uniform(-0.25, 0.35)
+        end_x = x + tx * length + nx * length * out
+        end_y = y + ty * length + ny * length * out
+        add_curve(f"spark_{i}", [(x, y, 0.0), (end_x, end_y, 0.0)], thickness * 0.050 * max(0.42, energy), material, z=z)
+
+
+def add_decay_fragments(
+    *, radius: float, start_deg: float, arc_deg: float, rotation_deg: float,
+    old_tail_t: float, tail_t: float, material_a, material_b, seed: int,
+    count: int, size_param: float, spread_param: float, breakup: float, z: float,
+) -> None:
+    if breakup <= 0.0 or count <= 0 or tail_t <= old_tail_t:
+        return
+    rng = random.Random(seed)
+    consumed_span = max(0.01, tail_t - old_tail_t)
+    for i in range(count):
+        canonical_t = tail_t - consumed_span * rng.random() ** 1.8
+        x, y, angle = point_on_arc(radius, canonical_t, start_deg, arc_deg, rotation_deg)
+        tx, ty = -math.sin(angle), math.cos(angle)
+        nx, ny = math.cos(angle), math.sin(angle)
+        drift = radius * spread_param * (0.10 + 0.36 * breakup)
+        x += -tx * drift * rng.uniform(0.10, 0.65) + nx * drift * rng.uniform(-0.32, 0.32)
+        y += -ty * drift * rng.uniform(0.10, 0.65) + ny * drift * rng.uniform(-0.32, 0.32)
+        size = radius * size_param * rng.uniform(0.16, 0.48) * (0.45 + 0.60 * breakup)
+        bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=size, location=(x, y, z))
+        obj = bpy.context.object
+        obj.name = f"fragment_{i}"
+        obj.scale.x = rng.uniform(0.28, 0.55)
+        obj.scale.y = rng.uniform(0.85, 1.65)
+        obj.rotation_euler.z = angle + rng.uniform(-0.6, 0.6)
+        obj.data.materials.append(material_a if i % 3 else material_b)
 
 
 def setup_render(canvas: tuple[int, int], radius: float):
@@ -278,127 +375,94 @@ def render_frame(spec: dict, output: Path, frame_index: int) -> None:
     frames = int(spec["frames"])
     seed = int(spec["seed"])
     peak_t = float(p["timing.peak"])
-    decay_t = float(p["timing.decay"])
-    growth, energy, decay = phase_values(frame_index, frames, peak_t, decay_t)
+    tail_t, head_t, energy, breakup = motion_window(frame_index, frames, peak_t)
     setup_render(tuple(spec["canvas"]), radius)
 
-    outer = emission_material("Outer", (0.008, 0.035, 0.42, 1.0), max(0.25, energy * float(p["glow.intensity"])))
-    inner = emission_material("Inner", (0.005, 0.45, 1.0, 1.0), max(0.7, energy * 5.8))
-    core = emission_material("Core", (0.92, 1.0, 1.0, 1.0), max(1.0, energy * float(p["core.intensity"])))
-    crack = emission_material("Crack", (0.70, 0.98, 1.0, 1.0), max(1.0, energy * 9.0))
+    outer = emission_material("Outer", (0.004, 0.025, 0.36, 1.0), max(0.22, energy * float(p["glow.intensity"])))
+    inner = emission_material("Inner", (0.005, 0.46, 1.0, 1.0), max(0.55, energy * 6.2))
+    core = emission_material("Core", (0.94, 1.0, 1.0, 1.0), max(0.9, energy * float(p["core.intensity"])))
+    crack = emission_material("Crack", (0.62, 0.96, 1.0, 1.0), max(0.9, energy * 9.5))
 
-    if frame_index == 0:
-        add_burst("ignition", radius, outer, core, seed, 0.90)
-        visible_extent = arc_angle * 0.16
-        visible_start = start_angle
-    elif decay <= 0.0:
-        visible_extent = max(arc_angle * 0.24, arc_angle * growth)
-        visible_start = start_angle
-    else:
-        visible_extent = max(arc_angle * 0.20, arc_angle * (1.0 - 0.73 * decay))
-        visible_start = start_angle + arc_angle * 0.50 * decay
-
-    body_width = thickness * float(p["shape.body_scale"]) * (0.62 + 0.38 * energy)
-    edge_noise = float(p["shape.edge_noise"]) * (0.55 + 0.45 * growth + 0.45 * decay)
+    body_width = thickness * float(p["shape.body_scale"]) * (0.78 + 0.22 * energy)
+    inner_width = thickness * float(p["shape.inner_scale"]) * (0.72 + 0.28 * energy)
+    core_width = thickness * min(float(p["shape.core_scale"]), 0.32) * (0.58 + 0.42 * energy)
+    edge_noise = float(p["shape.edge_noise"]) * (0.72 + 0.20 * energy + 0.28 * breakup)
     taper_power = float(p["shape.taper_power"])
     flare = float(p["shape.flare"])
+    holes = breakup_holes(seed * 151 + frame_index * 59, tail_t, head_t, breakup)
 
-    crescent_ribbon(
-        name="outer_body", radius=radius, start_deg=visible_start, extent_deg=visible_extent,
-        rotation_deg=rotation, half_width=body_width, material=outer, z=0.00,
-        seed=seed * 101 + frame_index * 31, edge_noise=edge_noise,
-        taper_power=taper_power, flare=flare, samples=76,
+    slash_ribbon(
+        name="outer_halo", radius=radius, start_deg=start_angle, arc_deg=arc_angle,
+        rotation_deg=rotation, tail_t=tail_t, head_t=head_t, half_width=body_width * 1.18,
+        material=outer, z=-0.08, seed=seed * 97 + frame_index * 29, edge_noise=edge_noise * 0.80,
+        taper_power=taper_power, flare=flare, outer_noise=0.30, inner_noise=0.10, holes=holes, samples=92,
     )
-    # The reference has ragged energy tongues rather than a mathematically clean outer arc.
-    tongue_amount = max(4, round((8 + 10 * growth + 8 * decay) * min(1.25, visible_extent / max(arc_angle, 1.0))))
+    slash_ribbon(
+        name="outer_body", radius=radius, start_deg=start_angle, arc_deg=arc_angle,
+        rotation_deg=rotation, tail_t=tail_t, head_t=head_t, half_width=body_width,
+        material=outer, z=0.00, seed=seed * 101 + frame_index * 31, edge_noise=edge_noise,
+        taper_power=taper_power, flare=flare, outer_noise=0.34, inner_noise=0.10, holes=holes, samples=92,
+    )
+    tongue_amount = max(1, round((3 + 5 * energy + 4 * breakup) * min(1.0, (head_t - tail_t) / 0.55)))
     add_energy_tongues(
-        name="outer_tongue", radius=radius, start_deg=visible_start, extent_deg=visible_extent,
-        rotation_deg=rotation, body_width=body_width, material=outer,
-        seed=seed * 109 + frame_index * 43, amount=tongue_amount,
-        strength=0.72 + 0.38 * growth + 0.55 * decay, z=0.03,
+        name="outer_tongue", radius=radius, start_deg=start_angle, arc_deg=arc_angle,
+        rotation_deg=rotation, tail_t=tail_t, head_t=head_t, body_width=body_width,
+        material=outer, seed=seed * 109 + frame_index * 43, amount=tongue_amount,
+        strength=0.62 + 0.24 * energy + 0.28 * breakup, breakup=breakup, z=0.04,
     )
-    crescent_ribbon(
-        name="cyan_body", radius=radius, start_deg=visible_start + visible_extent * 0.02,
-        extent_deg=visible_extent * 0.96, rotation_deg=rotation,
-        half_width=thickness * float(p["shape.inner_scale"]) * (0.65 + 0.35 * energy),
-        material=inner, z=0.34, seed=seed * 103 + frame_index * 37,
-        edge_noise=edge_noise * 0.48, taper_power=taper_power * 0.92, flare=flare * 0.65, samples=72,
+    slash_ribbon(
+        name="cyan_body", radius=radius, start_deg=start_angle, arc_deg=arc_angle,
+        rotation_deg=rotation,
+        tail_t=min(head_t - 0.003, tail_t + (head_t - tail_t) * 0.025),
+        head_t=max(tail_t + 0.003, head_t - (head_t - tail_t) * 0.025),
+        half_width=inner_width, material=inner, z=0.34,
+        seed=seed * 103 + frame_index * 37, edge_noise=edge_noise * 0.42,
+        taper_power=max(0.30, taper_power * 0.92), flare=flare * 0.55,
+        outer_noise=0.22, inner_noise=0.08, holes=holes, samples=88,
     )
-    crescent_ribbon(
-        name="white_core", radius=radius, start_deg=visible_start + visible_extent * 0.06,
-        extent_deg=visible_extent * 0.88, rotation_deg=rotation,
-        half_width=thickness * float(p["shape.core_scale"]) * max(0.40, energy),
-        material=core, z=0.72, seed=seed * 107 + frame_index * 41,
-        edge_noise=edge_noise * 0.18, taper_power=max(0.28, taper_power * 0.75), flare=flare * 0.25, samples=68,
-    )
-
-    # Thin secondary cyan/white wisps create the painted multi-streak look in the approved sample.
-    add_energy_wisps(
-        name="cyan_wisp", radius=radius, start_deg=visible_start, extent_deg=visible_extent,
-        rotation_deg=rotation, material=inner, seed=seed * 113 + frame_index * 47,
-        count=max(2, round(4 + 7 * energy)), thickness=thickness, energy=energy, z=0.79,
-    )
-    add_energy_wisps(
-        name="white_wisp", radius=radius * 0.985, start_deg=visible_start + visible_extent * 0.03,
-        extent_deg=visible_extent * 0.92, rotation_deg=rotation, material=core,
-        seed=seed * 127 + frame_index * 53, count=max(1, round(2 + 4 * energy)),
-        thickness=thickness * 0.68, energy=energy, z=0.91,
-    )
-
-    rng = random.Random(seed * 10007 + frame_index * 97)
-    branch_count = max(2, round(int(p["lightning.branches"]) * max(0.30, energy)))
-    jitter = float(p["lightning.jitter"])
-    branch_length = float(p["lightning.length"])
-    for i in range(branch_count):
-        frac = (i + 0.7) / (branch_count + 0.4)
-        angle = visible_start + visible_extent * frac
-        anchor = point_on_arc(radius, angle, rotation)
-        side = -1.0 if i % 2 == 0 else 1.0
-        tangent = math.radians(angle + rotation + 82.0 * side)
-        length = radius * branch_length * rng.uniform(0.55, 1.0) * (0.45 + 0.55 * energy)
-        points = [anchor]
-        for step in range(1, 4):
-            f = step / 3.0
-            points.append((
-                anchor[0] + math.cos(tangent) * length * f + rng.uniform(-jitter, jitter) * radius * 0.45,
-                anchor[1] + math.sin(tangent) * length * f + rng.uniform(-jitter, jitter) * radius * 0.45,
-                0.0,
-            ))
-        add_curve(f"crack_{i}", points, thickness * 0.105 * max(0.55, energy), crack, z=0.98)
-
-    spark_count = max(2, round(int(p["sparks.count"]) * max(0.16, energy)))
-    for i in range(spark_count):
-        frac = rng.random()
-        angle = visible_start + visible_extent * frac
-        x, y, _ = point_on_arc(radius, angle, rotation)
-        spread = float(p["sparks.spread"]) * radius
-        x += rng.uniform(-spread, spread)
-        y += rng.uniform(-spread, spread)
-        a = math.radians(angle + rotation + rng.uniform(-65.0, 65.0))
-        length = radius * float(p["sparks.size"]) * rng.uniform(2.0, 5.5) * max(0.45, energy)
-        add_curve(
-            f"spark_{i}",
-            [(x, y, 0.0), (x + math.cos(a) * length, y + math.sin(a) * length, 0.0)],
-            thickness * 0.085 * max(0.45, energy), crack, z=1.04,
+    core_tail = tail_t + (head_t - tail_t) * 0.08
+    core_head = head_t - (head_t - tail_t) * 0.035
+    if core_head > core_tail + 0.006:
+        slash_ribbon(
+            name="white_core", radius=radius, start_deg=start_angle, arc_deg=arc_angle,
+            rotation_deg=rotation, tail_t=core_tail, head_t=core_head,
+            half_width=core_width, material=core, z=0.74,
+            seed=seed * 107 + frame_index * 41, edge_noise=edge_noise * 0.10,
+            taper_power=max(0.22, taper_power * 0.72), flare=0.04,
+            outer_noise=0.08, inner_noise=0.05, holes=holes, samples=84,
         )
 
-    fragment_factor = max(0.0, (frame_index / max(frames - 1, 1) - peak_t) / max(1e-6, 1.0 - peak_t))
-    fragment_count = round(int(p["fragments.count"]) * fragment_factor)
-    for i in range(fragment_count):
-        frac = rng.random()
-        angle = visible_start + visible_extent * frac
-        x, y, _ = point_on_arc(radius, angle, rotation)
-        spread = float(p["fragments.spread"]) * radius * (0.35 + fragment_factor)
-        x += rng.uniform(-spread, spread)
-        y += rng.uniform(-spread, spread)
-        size = radius * float(p["fragments.size"]) * rng.uniform(0.25, 0.75) * (0.35 + fragment_factor)
-        bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=size, location=(x, y, 0.82))
-        obj = bpy.context.object
-        obj.name = f"fragment_{i}"
-        obj.scale.x = rng.uniform(0.35, 0.70)
-        obj.scale.y = rng.uniform(0.9, 1.8)
-        obj.rotation_euler.z = rng.uniform(0, math.tau)
-        obj.data.materials.append(inner if i % 3 else crack)
+    surface_count = max(1, round((3 + 5 * energy) * min(1.0, (head_t - tail_t) / 0.45)))
+    add_surface_cracks(
+        radius=radius, start_deg=start_angle, arc_deg=arc_angle, rotation_deg=rotation,
+        tail_t=tail_t, head_t=head_t, material=crack, seed=seed * 113 + frame_index * 47,
+        count=surface_count, thickness=thickness, energy=energy, z=0.92,
+    )
+    branch_count = max(0, round(int(p["lightning.branches"]) * 0.34 * energy * min(1.0, (head_t - tail_t) / 0.50)))
+    add_lightning_branches(
+        radius=radius, start_deg=start_angle, arc_deg=arc_angle, rotation_deg=rotation,
+        tail_t=tail_t, head_t=head_t, material=crack, seed=seed * 127 + frame_index * 53,
+        count=branch_count, thickness=thickness, branch_length=float(p["lightning.length"]),
+        jitter=float(p["lightning.jitter"]), energy=energy, z=0.98,
+    )
+    spark_count = max(1, round(int(p["sparks.count"]) * (0.20 + 0.40 * energy + 0.20 * breakup)))
+    add_directional_sparks(
+        radius=radius, start_deg=start_angle, arc_deg=arc_angle, rotation_deg=rotation,
+        tail_t=tail_t, head_t=head_t, material=crack, seed=seed * 131 + frame_index * 61,
+        count=spark_count, thickness=thickness, spark_size=float(p["sparks.size"]),
+        spread=float(p["sparks.spread"]), energy=energy, breakup=breakup, z=1.04,
+    )
+
+    if breakup > 0.0:
+        previous_tail, _, _, _ = motion_window(max(0, frame_index - 1), frames, peak_t)
+        fragment_count = round(int(p["fragments.count"]) * (0.22 + 0.78 * breakup))
+        add_decay_fragments(
+            radius=radius, start_deg=start_angle, arc_deg=arc_angle, rotation_deg=rotation,
+            old_tail_t=previous_tail, tail_t=tail_t, material_a=inner, material_b=crack,
+            seed=seed * 137 + frame_index * 67, count=fragment_count,
+            size_param=float(p["fragments.size"]), spread_param=float(p["fragments.spread"]),
+            breakup=breakup, z=0.82,
+        )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     scene = bpy.context.scene
