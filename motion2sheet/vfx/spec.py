@@ -11,13 +11,25 @@ SLASH_VARIANTS = {
         "radius": 1.5,
         "arc_angle": 150.0,
         "thickness": 0.12,
-        "core.intensity": 8.0,
-        "glow.intensity": 2.5,
+        "core.intensity": 9.0,
+        "glow.intensity": 3.4,
         "sparks.count": 22,
-        "sparks.spread": 0.28,
-        "sparks.size": 0.035,
-        "lightning.jitter": 0.10,
-        "lightning.branches": 7,
+        "sparks.spread": 0.30,
+        "sparks.size": 0.040,
+        "lightning.jitter": 0.11,
+        "lightning.branches": 8,
+        "lightning.length": 0.30,
+        "shape.body_scale": 2.8,
+        "shape.inner_scale": 1.58,
+        "shape.core_scale": 0.52,
+        "shape.edge_noise": 0.78,
+        "shape.taper_power": 0.55,
+        "shape.flare": 0.34,
+        "fragments.count": 18,
+        "fragments.spread": 0.42,
+        "fragments.size": 0.080,
+        "timing.peak": 0.57,
+        "timing.decay": 0.72,
         "start_angle": -75.0,
         "rotation": 0.0,
         "fade_in": 0.25,
@@ -36,13 +48,25 @@ PARAM_RANGES: dict[str, tuple[float, float]] = {
     "sparks.size": (0.001, 1.0),
     "lightning.jitter": (0.0, 1.0),
     "lightning.branches": (0.0, 100.0),
+    "lightning.length": (0.01, 3.0),
+    "shape.body_scale": (0.2, 8.0),
+    "shape.inner_scale": (0.1, 8.0),
+    "shape.core_scale": (0.05, 4.0),
+    "shape.edge_noise": (0.0, 3.0),
+    "shape.taper_power": (0.1, 3.0),
+    "shape.flare": (0.0, 2.0),
+    "fragments.count": (0.0, 300.0),
+    "fragments.spread": (0.0, 3.0),
+    "fragments.size": (0.001, 1.0),
+    "timing.peak": (0.25, 0.80),
+    "timing.decay": (0.45, 0.95),
     "start_angle": (-720.0, 720.0),
     "rotation": (-720.0, 720.0),
     "fade_in": (0.0, 1.0),
     "fade_out": (0.0, 1.0),
 }
 
-INTEGER_PARAMS = {"sparks.count", "lightning.branches"}
+INTEGER_PARAMS = {"sparks.count", "lightning.branches", "fragments.count"}
 
 
 def parse_set(value: str) -> tuple[str, float]:
@@ -85,6 +109,12 @@ def _validate_params(params: dict[str, Any]) -> dict[str, float | int]:
             result[key] = int(value)
         else:
             result[key] = value
+    if float(result["timing.decay"]) <= float(result["timing.peak"]):
+        raise ValueError("timing.decay must be greater than timing.peak")
+    if float(result["shape.core_scale"]) >= float(result["shape.inner_scale"]):
+        raise ValueError("shape.core_scale must be smaller than shape.inner_scale")
+    if float(result["shape.inner_scale"]) >= float(result["shape.body_scale"]):
+        raise ValueError("shape.inner_scale must be smaller than shape.body_scale")
     return result
 
 
