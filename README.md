@@ -11,6 +11,7 @@
 - PNG skeleton frames and pose sheets are derived artifacts
 - One global normalization scale is used across all directions in a build
 - Source coordinate orientation is canonicalized automatically from body landmarks
+- Optional proportion profiles can rebuild source motion onto canonical body proportions before projection
 - CI generates deterministic FBX/BVH fixtures, builds pose sheets, validates actual movement/projection, and uploads the generated output as a GitHub Actions artifact
 
 ## Pipeline
@@ -27,6 +28,8 @@ canonical bone mapping
 infer source right / forward / up basis
    ↓
 sample evaluated pose matrices
+   ↓
+optional proportion retarget
    ↓
 fixed orthographic 3/4 projection
    ↓
@@ -71,6 +74,20 @@ motion2sheet build walk.fbx \
   --directions down \
   --output build/walk_down
 ```
+
+## Proportion profiles
+
+The default `source` profile preserves source-rig proportions. Use `chibi_v1` to keep source motion directions while rebuilding the canonical skeleton with compact storybook-RPG bone lengths before 2D projection:
+
+```bash
+motion2sheet build walk.fbx \
+  --profile chibi_v1 \
+  --frames 8 \
+  --directions down,left,right,up \
+  --output build/walk_chibi
+```
+
+`--profile` also accepts a JSON profile path. Profile values define canonical segment lengths; they are not pixel sizes. Root motion is scaled by target/source canonical stature so body translation remains proportional after retargeting.
 
 ## Output
 
@@ -120,7 +137,7 @@ The importer no longer assumes the file already uses Blender `Z-up`. At the firs
 - character up from pelvis to head
 - character forward from the orthogonal right/up basis
 
-Every sampled joint is transformed into this canonical body space before direction rotation and camera projection. That keeps FBX and BVH inputs from collapsing simply because their imported source axes differ.
+Every sampled joint is transformed into this canonical body space before optional proportion retargeting, direction rotation, and camera projection. That keeps FBX and BVH inputs from collapsing simply because their imported source axes differ.
 
 Canonical directions are:
 
@@ -139,7 +156,7 @@ The generated pose is **not resized independently per frame**. `motion2sheet` pr
 
 ## CI
 
-`.github/workflows/ci.yml` runs on pull requests and `master` pushes. It runs unit tests, installs Blender 4.5 LTS, creates a deterministic synthetic humanoid walk, exports FBX/BVH, imports both formats again, builds four-direction pose sheets, rejects static/collapsed output, validates JSON/PNG structure, and uploads `motion2sheet-e2e-output` for visual inspection. Raw projected JSON and source fixtures are retained in the CI artifact for debugging.
+`.github/workflows/ci.yml` runs on pull requests and `master` pushes. It runs unit tests, installs Blender 4.5 LTS, creates a deterministic synthetic humanoid walk, exports FBX/BVH, imports both formats again, builds source and `chibi_v1` four-direction pose sheets, verifies target segment lengths and real motion, rejects static/collapsed output, validates JSON/PNG structure, and uploads `motion2sheet-e2e-output` for visual inspection. Raw projected JSON and source fixtures are retained in the CI artifact for debugging.
 
 ## AI sprite generation skills
 
@@ -173,6 +190,6 @@ Sprite Sheet
 
 - humanoid only
 - one armature per input file
-- no retargeting yet
+- proportion retargeting is joint-space only; no planted-foot IK yet
 - no quadruped/monster skeleton schema yet
 - PNG output is a skeleton reference, not final game art
