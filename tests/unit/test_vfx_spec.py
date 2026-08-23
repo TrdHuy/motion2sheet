@@ -35,6 +35,7 @@ def test_spec_applies_known_numeric_and_color_overrides():
             "radius=1.8", "sparks.count=30", "colors.outer=#1234AB",
             "lightning.major_count=5", "lightning.width_jitter=0.42", "lightning.tip_width=0.25",
             "lightning.glow_radius=5.5", "core.width_jitter=0.48", "core.streak_count=4",
+            "energy.cyan_threshold=0.74", "energy.root_width_coupling=0.85", "energy.glow_radius=9",
         ],
     )
     assert spec.params["radius"] == pytest.approx(1.8)
@@ -46,6 +47,9 @@ def test_spec_applies_known_numeric_and_color_overrides():
     assert spec.params["lightning.glow_radius"] == pytest.approx(5.5)
     assert spec.params["core.width_jitter"] == pytest.approx(0.48)
     assert spec.params["core.streak_count"] == 4
+    assert spec.params["energy.cyan_threshold"] == pytest.approx(0.74)
+    assert spec.params["energy.root_width_coupling"] == pytest.approx(0.85)
+    assert spec.params["energy.glow_radius"] == pytest.approx(9.0)
 
 
 def test_old_parameter_aliases_remain_supported():
@@ -63,6 +67,7 @@ def test_profile_is_overridden_by_explicit_args_then_set(tmp_path):
     profile_path.write_text(json.dumps({
         "template": "slash", "variant": "lightning", "fps": 10, "seed": 7,
         "colors": {"outer": "#2244FF"},
+        "energy": {"cyan_threshold": 0.70, "white_threshold": 0.90},
         "core": {"width_min": 3.0, "width_max": 8.0, "center_jitter": 2.5},
         "lightning": {"branch_count": 12, "jitter": 0.2, "major_count": 3, "major_width_min": 2.0, "major_width_max": 4.0},
     }), encoding="utf-8")
@@ -71,7 +76,7 @@ def test_profile_is_overridden_by_explicit_args_then_set(tmp_path):
         profile=profile, fps=14, seed=99,
         overrides=[
             "lightning.branch_count=26", "lightning.major_count=6", "lightning.major_width_max=5.5",
-            "core.center_jitter=4.0", "colors.outer=#1028FF",
+            "core.center_jitter=4.0", "energy.cyan_threshold=0.75", "colors.outer=#1028FF",
         ],
     )
     assert spec.fps == 14
@@ -83,6 +88,7 @@ def test_profile_is_overridden_by_explicit_args_then_set(tmp_path):
     assert spec.params["lightning.jitter"] == pytest.approx(0.2)
     assert spec.params["core.width_min"] == pytest.approx(3.0)
     assert spec.params["core.center_jitter"] == pytest.approx(4.0)
+    assert spec.params["energy.cyan_threshold"] == pytest.approx(0.75)
     assert spec.params["colors.outer"] == "#1028FF"
 
 
@@ -91,11 +97,13 @@ def test_nested_params_object_is_supported():
         "template": "slash", "variant": "lightning",
         "params": {
             "shape": {"edge_noise": 1.9},
+            "energy": {"turbulence": 0.08},
             "core": {"split_probability": 0.5},
             "lightning": {"secondary_branch_count": 16, "width_smoothness": 0.8, "branch_depth": 2},
         },
     })
     assert spec.params["shape.edge_noise"] == pytest.approx(1.9)
+    assert spec.params["energy.turbulence"] == pytest.approx(0.08)
     assert spec.params["core.split_probability"] == pytest.approx(0.5)
     assert spec.params["lightning.secondary_branch_count"] == 16
     assert spec.params["lightning.width_smoothness"] == pytest.approx(0.8)
@@ -112,6 +120,11 @@ def test_hierarchical_lightning_width_bounds_are_validated():
 def test_organic_core_width_bounds_are_validated():
     with pytest.raises(ValueError, match="core.width_min"):
         VfxSpec.create(template="slash", variant="lightning", overrides=["core.width_min=12", "core.width_max=6"])
+
+
+def test_energy_gradient_thresholds_are_validated():
+    with pytest.raises(ValueError, match="cyan_threshold"):
+        VfxSpec.create(template="slash", variant="lightning", overrides=["energy.cyan_threshold=0.91", "energy.white_threshold=0.90"])
 
 
 def test_unknown_override_is_rejected():
