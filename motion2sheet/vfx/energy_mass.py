@@ -124,17 +124,12 @@ def _draw_terminal_flows(
     params: dict[str, str | float | int],
     rng: random.Random,
 ) -> None:
-    """Draw the long tangent-biased streams that define the contract silhouette."""
     if len(graph.nodes) < 12:
         return
     min_dim = min(mask.size)
     curvature = float(params["shape.tongue_curve"])
     width_control = float(params["shape.tongue_width"])
     length_control = float(params["shape.tongue_length"])
-
-    # Use nodes near both ends rather than the exact tapered tips so roots feel
-    # embedded in the energy mass. Head-side streams dominate, matching the
-    # approved slash's long flowing upper/lower-right projections.
     anchors = [
         (graph.nodes[max(3, len(graph.nodes) - 9)], 1.0, 1.28),
         (graph.nodes[max(3, len(graph.nodes) - 15)], 1.0, 1.00),
@@ -153,13 +148,11 @@ def _draw_terminal_flows(
             tangent_sign=tangent_sign,
             normal_bias_override=normal_bias,
         )
-        root_width = max(2.0, node.width * width_control * rng.uniform(0.88, 1.28))
-        widths = _wisp_widths(root_width, len(points), rng, taper_power=rng.uniform(1.28, 1.55))
+        root_width = max(2.0, node.width * width_control * rng.uniform(1.05, 1.48))
+        widths = _wisp_widths(root_width, len(points), rng, taper_power=rng.uniform(1.25, 1.48))
         value = rng.randint(142, 170) if index < 2 else rng.randint(116, 150)
         _draw_variable_strip(mask, points, widths, value)
 
-        # A second, slightly offset parallel stream creates a flowing plane
-        # instead of one isolated filament.
         if index < 3:
             offset_node = EnergyNode(
                 node.u,
@@ -178,7 +171,7 @@ def _draw_terminal_flows(
                 tangent_sign=tangent_sign,
                 normal_bias_override=normal_bias + rng.uniform(-0.10, 0.10),
             )
-            parallel_widths = _wisp_widths(root_width * rng.uniform(0.44, 0.68), len(parallel), rng, taper_power=1.45)
+            parallel_widths = _wisp_widths(root_width * rng.uniform(0.52, 0.76), len(parallel), rng, taper_power=1.42)
             _draw_variable_strip(mask, parallel, parallel_widths, max(104, value - 22))
 
 
@@ -190,19 +183,16 @@ def build_energy_mass_field(
     seed: int,
     frame_index: int,
 ) -> Image.Image:
-    """Build low/mid-energy body mass and flowing wisps as one scalar field."""
+    """Build one coherent low/mid-energy body field with flowing painterly wisps."""
     rng = random.Random(seed * 130363 + frame_index * 10007 + 271)
     mask = Image.new("L", size, 0)
     phase = rng.uniform(0.0, math.tau)
 
-    # Overlapping offset bands deliberately carry more energy than the Blender
-    # silhouette, making this flowing field the primary body shape while the
-    # Blender result becomes local texture/detail only.
     band_specs = (
-        (1.68, -0.22, 116),
-        (1.46, 0.27, 132),
-        (1.20, -0.06, 148),
-        (0.86, 0.16, 162),
+        (1.62, -0.22, 112),
+        (1.40, 0.27, 126),
+        (1.16, -0.06, 142),
+        (0.84, 0.16, 154),
     )
     for index, (scale, shift, value) in enumerate(band_specs):
         points, widths = _mass_path(
@@ -235,24 +225,37 @@ def build_energy_mass_field(
         if index % 4 == 0:
             length *= rng.uniform(1.22, 1.62)
         points = _wisp_path(node, length=length, curvature=curvature, spread=spread, rng=rng)
-        root_width = max(1.2, node.width * width_control * rng.uniform(0.55, 1.10))
+        root_width = max(1.2, node.width * width_control * rng.uniform(0.60, 1.18))
         widths = _wisp_widths(root_width, len(points), rng)
-        value = rng.randint(108, 154)
+        value = rng.randint(106, 148)
         if index % 5 == 0:
-            value = rng.randint(142, 172)
+            value = rng.randint(136, 164)
         value = round(value * (0.78 + 0.22 * graph.energy))
         _draw_variable_strip(mask, points, widths, value)
 
     _draw_terminal_flows(mask, graph, params, rng)
 
-    # Two blur scales turn overlapping strips into one turbulent mass without
-    # erasing the directional tips of the longer streams.
-    soft = mask.filter(ImageFilter.GaussianBlur(2.8))
-    wide = mask.filter(ImageFilter.GaussianBlur(8.0))
+    soft = mask.filter(ImageFilter.GaussianBlur(3.2))
+    wide = mask.filter(ImageFilter.GaussianBlur(9.0))
+    width, height = size
+    detail_amount = float(params["shape.detail_noise"])
+    detail_frequency = float(params["shape.detail_noise_frequency"])
+    noise_phase = (seed * 0.00137 + frame_index * 0.731) % math.tau
     result_values: list[int] = []
-    for raw, local, aura in zip(mask.getdata(), soft.getdata(), wide.getdata()):
-        energy = max(raw, round(local * 0.90), round(aura * 0.48))
-        result_values.append(max(0, min(194, energy)))
+    for pixel_index, (raw, local, aura) in enumerate(zip(mask.getdata(), soft.getdata(), wide.getdata())):
+        x = pixel_index % width
+        y = pixel_index // width
+        # Continuous low+mid frequency modulation removes the concentric
+        # plateau look without turning the silhouette into pixel noise.
+        wave = (
+            math.sin((x / width) * math.tau * detail_frequency * 0.24 + noise_phase) * 0.48
+            + math.sin((y / height) * math.tau * detail_frequency * 0.17 - noise_phase * 0.71) * 0.30
+            + math.sin(((x + y) / (width + height)) * math.tau * detail_frequency * 0.41 + noise_phase * 1.31) * 0.22
+        )
+        coherent_gain = 1.0 + wave * detail_amount * 0.24
+        energy = max(raw * 0.78 + local * 0.22, local * 0.86, aura * 0.52)
+        energy *= coherent_gain
+        result_values.append(max(0, min(184, round(energy))))
     result = Image.new("L", size, 0)
     result.putdata(result_values)
     return result
