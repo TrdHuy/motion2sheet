@@ -7,6 +7,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter
 
 from .energy_graph import EnergyGraph, EnergyNode, build_energy_graph, normalize
+from .energy_mass import build_energy_mass_field
 
 
 def _hex_rgb(value: str) -> tuple[int, int, int]:
@@ -266,16 +267,22 @@ def _graph_lightning_mask(graph: EnergyGraph, size: tuple[int, int], params: dic
     return mask.filter(ImageFilter.GaussianBlur(0.35))
 
 
-def _combine_field(base: Image.Image, core: Image.Image, lightning: Image.Image, params: dict[str, str | float | int]) -> Image.Image:
+def _combine_field(
+    base: Image.Image,
+    mass: Image.Image,
+    core: Image.Image,
+    lightning: Image.Image,
+    params: dict[str, str | float | int],
+) -> Image.Image:
     core_gain = float(params["energy.core_gain"])
     lightning_gain = float(params["energy.lightning_gain"])
     core_aura = core.filter(ImageFilter.GaussianBlur(1.8))
     lightning_aura = lightning.filter(ImageFilter.GaussianBlur(2.4))
     values: list[int] = []
-    for base_value, core_value, lightning_value, core_halo, lightning_halo in zip(
-        base.getdata(), core.getdata(), lightning.getdata(), core_aura.getdata(), lightning_aura.getdata()
+    for base_value, mass_value, core_value, lightning_value, core_halo, lightning_halo in zip(
+        base.getdata(), mass.getdata(), core.getdata(), lightning.getdata(), core_aura.getdata(), lightning_aura.getdata()
     ):
-        energy = base_value / 255.0
+        energy = max(base_value / 255.0, mass_value / 255.0)
         energy = max(energy, min(1.0, (core_halo / 255.0) * 0.78))
         energy = max(energy, min(1.0, (lightning_halo / 255.0) * 0.74))
         energy = max(energy, min(1.0, (core_value / 255.0) * core_gain))
@@ -330,9 +337,10 @@ def apply_energy_graph(
     graph = build_energy_graph(frame.size, params, seed=seed, frame_index=frame_index, frame_count=frame_count)
     rng = random.Random(seed * 65537 + frame_index * 8191 + 991)
     base, base_alpha = _base_energy_field(frame, params, seed=seed, frame_index=frame_index)
+    mass = build_energy_mass_field(frame.size, graph, params, seed=seed, frame_index=frame_index)
     core = _graph_core_mask(graph, frame.size, params, rng)
     lightning = _graph_lightning_mask(graph, frame.size, params, rng)
-    field = _combine_field(base, core, lightning, params)
+    field = _combine_field(base, mass, core, lightning, params)
     return _render_energy_rgba(base_alpha, field, params)
 
 
