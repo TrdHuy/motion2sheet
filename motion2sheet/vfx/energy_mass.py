@@ -59,9 +59,9 @@ def _mass_path(
             node.point[0] + node.normal[0] * local_shift,
             node.point[1] + node.normal[1] * local_shift,
         ))
-        target_noise = rng.uniform(-detail_noise * 0.12, detail_noise * 0.12)
-        previous_width_noise = previous_width_noise * 0.72 + target_noise * 0.28
-        envelope = _smoothstep01(u / 0.085) * _smoothstep01((1.0 - u) / 0.065)
+        target_noise = rng.uniform(-detail_noise * 0.13, detail_noise * 0.13)
+        previous_width_noise = previous_width_noise * 0.70 + target_noise * 0.30
+        envelope = _smoothstep01(u / 0.075) * _smoothstep01((1.0 - u) / 0.055)
         width = node.width * body_scale * normal_scale * (1.0 + previous_width_noise) * envelope
         widths.append(max(0.5, width))
     return points, widths
@@ -74,29 +74,31 @@ def _wisp_path(
     curvature: float,
     spread: float,
     rng: random.Random,
+    tangent_sign: float | None = None,
+    normal_bias_override: float | None = None,
 ) -> list[tuple[float, float]]:
-    # Most wisps flow with the slash tangent; a minority trail backwards.
-    tangent_sign = 1.0 if rng.random() > 0.18 else -1.0
+    if tangent_sign is None:
+        tangent_sign = 1.0 if rng.random() > 0.18 else -1.0
     tx, ty = node.tangent[0] * tangent_sign, node.tangent[1] * tangent_sign
     nx, ny = node.normal
-    normal_bias = rng.uniform(-0.24, 0.82) * spread
+    normal_bias = normal_bias_override if normal_bias_override is not None else rng.uniform(-0.24, 0.82) * spread
     dx, dy = normalize(tx + nx * normal_bias, ty + ny * normal_bias)
     px, py = -dy, dx
-    root_depth = rng.uniform(-0.30, 0.20) * node.width
+    root_depth = rng.uniform(-0.34, 0.16) * node.width
     root = (
         node.point[0] + node.normal[0] * root_depth,
         node.point[1] + node.normal[1] * root_depth,
     )
-    count = rng.randint(7, 11)
+    count = rng.randint(8, 12)
     bend_sign = 1.0 if rng.random() > 0.5 else -1.0
     phase = rng.uniform(0.0, math.tau)
-    frequency = rng.uniform(0.65, 1.15)
+    frequency = rng.uniform(0.62, 1.12)
     points: list[tuple[float, float]] = []
     for index in range(count):
         u = index / (count - 1)
         advance = length * (u ** 0.90)
-        bend = math.sin(math.pi * u) * length * curvature * 0.20 * bend_sign
-        wave = math.sin(u * math.tau * frequency + phase) * length * 0.030 * (1.0 - u)
+        bend = math.sin(math.pi * u) * length * curvature * 0.18 * bend_sign
+        wave = math.sin(u * math.tau * frequency + phase) * length * 0.028 * (1.0 - u)
         points.append((
             root[0] + dx * advance + px * (bend + wave),
             root[1] + dy * advance + py * (bend + wave),
@@ -104,16 +106,80 @@ def _wisp_path(
     return points
 
 
-def _wisp_widths(root_width: float, count: int, rng: random.Random) -> list[float]:
+def _wisp_widths(root_width: float, count: int, rng: random.Random, *, taper_power: float = 1.55) -> list[float]:
     widths: list[float] = []
     local = 1.0
     for index in range(count):
         u = index / max(1, count - 1)
         local = local * 0.74 + rng.uniform(0.78, 1.18) * 0.26
-        taper = (1.0 - u) ** 1.55
+        taper = (1.0 - u) ** taper_power
         widths.append(max(0.20, root_width * local * taper))
     widths[-1] = min(widths[-1], 0.22)
     return widths
+
+
+def _draw_terminal_flows(
+    mask: Image.Image,
+    graph: EnergyGraph,
+    params: dict[str, str | float | int],
+    rng: random.Random,
+) -> None:
+    """Draw the long tangent-biased streams that define the contract silhouette."""
+    if len(graph.nodes) < 12:
+        return
+    min_dim = min(mask.size)
+    curvature = float(params["shape.tongue_curve"])
+    width_control = float(params["shape.tongue_width"])
+    length_control = float(params["shape.tongue_length"])
+
+    # Use nodes near both ends rather than the exact tapered tips so roots feel
+    # embedded in the energy mass. Head-side streams dominate, matching the
+    # approved slash's long flowing upper/lower-right projections.
+    anchors = [
+        (graph.nodes[max(3, len(graph.nodes) - 9)], 1.0, 1.28),
+        (graph.nodes[max(3, len(graph.nodes) - 15)], 1.0, 1.00),
+        (graph.nodes[min(len(graph.nodes) - 4, 8)], -1.0, 0.82),
+        (graph.nodes[min(len(graph.nodes) - 4, 14)], -1.0, 0.64),
+    ]
+    for index, (node, tangent_sign, strength) in enumerate(anchors):
+        length = min_dim * (0.13 + length_control * 0.17) * strength * rng.uniform(0.92, 1.12)
+        normal_bias = rng.uniform(-0.18, 0.30)
+        points = _wisp_path(
+            node,
+            length=length,
+            curvature=curvature * rng.uniform(0.62, 0.90),
+            spread=0.45,
+            rng=rng,
+            tangent_sign=tangent_sign,
+            normal_bias_override=normal_bias,
+        )
+        root_width = max(2.0, node.width * width_control * rng.uniform(0.88, 1.28))
+        widths = _wisp_widths(root_width, len(points), rng, taper_power=rng.uniform(1.28, 1.55))
+        value = rng.randint(142, 170) if index < 2 else rng.randint(116, 150)
+        _draw_variable_strip(mask, points, widths, value)
+
+        # A second, slightly offset parallel stream creates a flowing plane
+        # instead of one isolated filament.
+        if index < 3:
+            offset_node = EnergyNode(
+                node.u,
+                (node.point[0] - node.normal[0] * node.width * 0.34, node.point[1] - node.normal[1] * node.width * 0.34),
+                node.tangent,
+                node.normal,
+                node.width * 0.72,
+                node.energy,
+            )
+            parallel = _wisp_path(
+                offset_node,
+                length=length * rng.uniform(0.72, 0.94),
+                curvature=curvature * rng.uniform(0.50, 0.78),
+                spread=0.34,
+                rng=rng,
+                tangent_sign=tangent_sign,
+                normal_bias_override=normal_bias + rng.uniform(-0.10, 0.10),
+            )
+            parallel_widths = _wisp_widths(root_width * rng.uniform(0.44, 0.68), len(parallel), rng, taper_power=1.45)
+            _draw_variable_strip(mask, parallel, parallel_widths, max(104, value - 22))
 
 
 def build_energy_mass_field(
@@ -124,24 +190,19 @@ def build_energy_mass_field(
     seed: int,
     frame_index: int,
 ) -> Image.Image:
-    """Build low/mid-energy body mass and flowing wisps as one scalar field.
-
-    The result intentionally contains *no color*. It is merged with the base,
-    core and lightning fields before the shared blue→cyan→white mapping so
-    every visual component belongs to the same energy/compositing model.
-    """
+    """Build low/mid-energy body mass and flowing wisps as one scalar field."""
     rng = random.Random(seed * 130363 + frame_index * 10007 + 271)
     mask = Image.new("L", size, 0)
     phase = rng.uniform(0.0, math.tau)
 
-    # Several overlapping, offset bands break the single-ribbon silhouette.
-    # Values stay below the cyan threshold so these layers remain blue after
-    # the shared gradient mapping.
+    # Overlapping offset bands deliberately carry more energy than the Blender
+    # silhouette, making this flowing field the primary body shape while the
+    # Blender result becomes local texture/detail only.
     band_specs = (
-        (1.52, -0.18, 88),
-        (1.30, 0.24, 104),
-        (1.08, -0.04, 124),
-        (0.78, 0.16, 142),
+        (1.68, -0.22, 116),
+        (1.46, 0.27, 132),
+        (1.20, -0.06, 148),
+        (0.86, 0.16, 162),
     )
     for index, (scale, shift, value) in enumerate(band_specs):
         points, widths = _mass_path(
@@ -152,44 +213,46 @@ def build_energy_mass_field(
             normal_scale=scale,
             normal_shift=shift,
         )
-        energy_value = round(value * (0.76 + 0.24 * graph.energy) * (1.0 - 0.24 * graph.breakup))
+        energy_value = round(value * (0.78 + 0.22 * graph.energy) * (1.0 - 0.22 * graph.breakup))
         _draw_variable_strip(mask, points, widths, energy_value)
 
     requested = int(params["shape.tongue_count"])
     span = min(1.0, max(0.0, (graph.head_t - graph.tail_t) / 0.50))
-    wisp_count = max(0, round(requested * span * (0.64 + 0.36 * graph.energy) * (1.0 - 0.18 * graph.breakup)))
+    wisp_count = max(0, round(requested * span * (0.68 + 0.32 * graph.energy) * (1.0 - 0.16 * graph.breakup)))
     length_control = float(params["shape.tongue_length"])
     curvature = float(params["shape.tongue_curve"])
     width_control = float(params["shape.tongue_width"])
     spread = max(0.25, float(params["lightning.spread"]))
     min_dim = min(size)
-    usable_low = max(2, round(len(graph.nodes) * 0.05))
-    usable_high = min(len(graph.nodes) - 3, round(len(graph.nodes) * 0.95))
+    usable_low = max(2, round(len(graph.nodes) * 0.04))
+    usable_high = min(len(graph.nodes) - 3, round(len(graph.nodes) * 0.96))
 
     for index in range(wisp_count):
         slot_u = (index + rng.uniform(0.08, 0.92)) / max(1, wisp_count)
         node_index = round(usable_low + (usable_high - usable_low) * slot_u)
         node = graph.nodes[max(usable_low, min(usable_high, node_index))]
-        length = min_dim * (0.030 + length_control * rng.uniform(0.085, 0.165))
+        length = min_dim * (0.040 + length_control * rng.uniform(0.105, 0.205))
         if index % 4 == 0:
-            length *= rng.uniform(1.18, 1.55)
+            length *= rng.uniform(1.22, 1.62)
         points = _wisp_path(node, length=length, curvature=curvature, spread=spread, rng=rng)
-        root_width = max(0.9, node.width * width_control * rng.uniform(0.48, 0.98))
+        root_width = max(1.2, node.width * width_control * rng.uniform(0.55, 1.10))
         widths = _wisp_widths(root_width, len(points), rng)
-        value = rng.randint(88, 138)
+        value = rng.randint(108, 154)
         if index % 5 == 0:
-            value = rng.randint(126, 154)
-        value = round(value * (0.76 + 0.24 * graph.energy))
+            value = rng.randint(142, 172)
+        value = round(value * (0.78 + 0.22 * graph.energy))
         _draw_variable_strip(mask, points, widths, value)
 
-    # Diffuse just enough to unify overlapping bands/wisps into a painterly
-    # energy mass while preserving long directional silhouettes.
-    soft = mask.filter(ImageFilter.GaussianBlur(2.4))
-    wide = mask.filter(ImageFilter.GaussianBlur(6.5))
+    _draw_terminal_flows(mask, graph, params, rng)
+
+    # Two blur scales turn overlapping strips into one turbulent mass without
+    # erasing the directional tips of the longer streams.
+    soft = mask.filter(ImageFilter.GaussianBlur(2.8))
+    wide = mask.filter(ImageFilter.GaussianBlur(8.0))
     result_values: list[int] = []
     for raw, local, aura in zip(mask.getdata(), soft.getdata(), wide.getdata()):
-        energy = max(raw, round(local * 0.86), round(aura * 0.42))
-        result_values.append(max(0, min(176, energy)))
+        energy = max(raw, round(local * 0.90), round(aura * 0.48))
+        result_values.append(max(0, min(194, energy)))
     result = Image.new("L", size, 0)
     result.putdata(result_values)
     return result
