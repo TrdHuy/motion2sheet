@@ -13,6 +13,7 @@ from .packer import compose_sheet, write_preview
 from .spec import VfxSpec, load_profile
 from .stroke_bundle import apply_stroke_bundle_to_frames
 from .sweep_wisps import apply_sweep_wisps_to_frames
+from .terminal_plumes import apply_terminal_plumes_to_frames
 from .validator import validate_output
 
 
@@ -68,8 +69,11 @@ def build(args) -> int:
     apply_stroke_bundle_to_frames(frame_paths, spec.params, seed=spec.seed)
     # Tangent-biased plasma wisps establish the directional swept silhouette.
     apply_sweep_wisps_to_frames(frame_paths, spec.params, seed=spec.seed)
-    # A separate graph-connected hot bundle makes the cutting core broad,
-    # irregular and cyan-coupled without inflating the shared body node width.
+    # Broad terminal plume bundles make both crescent tips read as swept plasma
+    # masses instead of hairline extensions.
+    apply_terminal_plumes_to_frames(frame_paths, spec.params, seed=spec.seed)
+    # The graph-connected hot bundle creates separated white/cyan cutting flows
+    # without inflating the shared body node width.
     apply_hot_core_bundle_to_frames(frame_paths, spec.params, seed=spec.seed)
     # Residual shards are secondary; main F6-F8 topology breakup comes from
     # independent stroke lifetimes on the preserved residual graph span.
@@ -80,7 +84,7 @@ def build(args) -> int:
         "tool": "vfx2sheet", "version": 1, "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
-        "renderer": "blender-headless+shared-energy-graph+deterministic-stroke-bundle+directional-sweep-wisps+irregular-hot-core+embedded-lightning+per-stroke-decay",
+        "renderer": "blender-headless+shared-energy-graph+deterministic-stroke-bundle+directional-sweep-wisps+terminal-plumes+irregular-hot-core+embedded-lightning+per-stroke-decay",
         "profile": str(args.profile) if args.profile else None,
     }
     write_json(output / "metadata.json", metadata)
