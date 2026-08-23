@@ -1,6 +1,6 @@
 # vfx2sheet
 
-`vfx2sheet` generates standalone VFX sprite sheets deterministically with Blender headless. The core renderer is rule-based: there is no prompt or LLM dependency.
+`vfx2sheet` generates standalone VFX sprite sheets deterministically with Blender headless plus deterministic Pillow post-processing. The renderer is rule-based: there is no prompt or LLM dependency.
 
 ## MVP
 
@@ -22,10 +22,11 @@ A profile is an artist-facing preset. Any profile value can be overridden withou
 ```bash
 vfx2sheet build \
   --profile profiles/vfx/lightning_slash_contract.json \
-  --set lightning.branch_count=28 \
-  --set lightning.jitter=0.38 \
-  --set shape.edge_noise=1.9 \
-  --set colors.outer=#112EFF \
+  --set core.width_jitter=0.60 \
+  --set lightning.major_width_max=12 \
+  --set energy.cyan_threshold=0.72 \
+  --set energy.root_width_coupling=0.82 \
+  --set colors.outer=#0010F0 \
   --output build/vfx/lightning_slash_tuned
 ```
 
@@ -47,60 +48,135 @@ resolved source.json
 
 `source.json` is the complete reproducible render contract written to the output directory.
 
-The original explicit form remains supported:
+## Shared EnergyGraph
 
-```bash
-vfx2sheet build \
-  --template slash \
-  --variant lightning \
-  --frames 8 --fps 12 --canvas 512x512 --sheet-columns 4 \
-  --seed 42891 \
-  --set radius=1.5 \
-  --output build/vfx/lightning_slash
-```
-
-## Configurable visual parameters
-
-The lightning slash renderer is config-driven. Current groups include:
+The lightning-slash final image is no longer assembled as independent white-core and external-lightning overlays. A deterministic `EnergyGraph` is generated once per frame and stores the slash spine as shared nodes:
 
 ```text
-colors.outer
-colors.body
-colors.inner
-colors.core
-colors.lightning
+EnergyNode
+├── position
+├── tangent / outward normal
+├── local core width
+└── local energy
+```
 
-intensity.outer
-intensity.body
-intensity.inner
-intensity.core
-intensity.lightning
+The same nodes drive:
 
+```text
+organic core geometry
+    ↓
+major lightning roots embedded inside the core
+    ↓
+parent → child branch topology
+    ↓
+micro filaments
+```
+
+Major bolts begin inside the hot core, cross the local core boundary and then fork outward. Their root thickness is coupled to the local core width, avoiding a visible pasted-on junction between core and lightning.
+
+## Energy-field color model
+
+Blender provides the deterministic slash silhouette, breakup geometry, surface detail and alpha support. The final color is derived from a scalar energy field rather than alpha-stacking separate blue/cyan/white slabs:
+
+```text
+low energy
+    ↓
+deep saturated blue
+    ↓
+electric blue
+    ↓
+cyan
+    ↓
+white-hot energy
+```
+
+Color interpolation is performed in linear-light space before encoding back to RGBA. Core and lightning raise the same scalar field, so their brightness/color transitions share one model. Glow is also derived from the unified field.
+
+Artist-facing energy controls include:
+
+```text
+energy.body_floor
+energy.body_gain
+energy.cyan_threshold
+energy.white_threshold
+energy.turbulence
+energy.turbulence_frequency
+energy.core_gain
+energy.lightning_gain
+energy.root_width_coupling
+energy.alpha_power
+energy.alpha_gain
+energy.base_alpha_mix
+energy.glow_radius
+energy.glow_strength
+```
+
+## Other configurable visual parameters
+
+Core controls:
+
+```text
+core.width_min
+core.width_max
+core.width_jitter
+core.width_smoothness
+core.center_jitter
+core.center_frequency
+core.streak_count
+core.streak_width_ratio
+core.split_probability
+core.hotspot_count
+core.hotspot_scale
+```
+
+Hierarchical external-lightning controls:
+
+```text
+lightning.major_count
+lightning.major_width_min
+lightning.major_width_max
+lightning.tip_width
+lightning.width_jitter
+lightning.width_smoothness
+lightning.taper_power
+lightning.branch_probability
+lightning.branch_depth
+lightning.minor_width_ratio
+lightning.minor_length_ratio
+lightning.micro_count
+lightning.micro_width
+lightning.micro_intensity
+lightning.length
+lightning.jitter
+lightning.spread
+```
+
+Blender/base-shape controls remain available for silhouette and surface structure:
+
+```text
 shape.body_scale
 shape.inner_scale
 shape.core_scale
+shape.form_noise
+shape.form_noise_frequency
 shape.edge_noise
 shape.edge_noise_frequency
+shape.detail_noise
+shape.detail_noise_frequency
 shape.taper_power
 shape.flare
 shape.tongue_count
 shape.tongue_length
+shape.tongue_curve
+shape.tongue_width
 
-lightning.branch_count
-lightning.secondary_branch_count
 lightning.surface_crack_count
-lightning.jitter
-lightning.length
-lightning.spread
-
 sparks.count
 sparks.spread
 sparks.size
-
 fragments.count
 fragments.spread
 fragments.size
-
 timing.peak
 timing.decay
 ```
@@ -140,7 +216,7 @@ Validation checks frame count, dimensions, transparent corners, non-empty alpha 
 
 ## Determinism contract
 
-Stochastic details are controlled by the master `seed`. Renderer subsystems derive stable seeds for shape, lightning, sparks and fragments. CI renders the same resolved profile twice and compares decoded RGBA pixels frame-by-frame and for the final sheet.
+Stochastic details are controlled by the master `seed`. EnergyGraph, field turbulence, branching and decay all derive stable seeds from it. CI renders the same resolved profile twice and compares decoded RGBA pixels frame-by-frame and for the final sheet.
 
 The reproducibility boundary is the same generator code + Blender version + resolved `source.json`. CI pins Blender 4.5.
 
@@ -154,16 +230,24 @@ VfxSpec
 resolved source.json
     ↓
 Blender 4.5 headless
+    ├── canonical slash silhouette
+    ├── deterministic body turbulence/tongues
+    ├── surface cracks + sparks
+    └── breakup support
     ↓
-canonical slash path
-    ├── outer/body/inner/core palette layers
-    ├── configurable edge noise + tongues
-    ├── surface lightning
-    ├── primary + secondary branches
-    ├── directional sparks
-    └── deterministic breakup fragments
+shared EnergyGraph
+    ├── organic core spine
+    ├── core-connected major bolts
+    ├── real child branches
+    └── micro filaments
     ↓
-RGBA frame PNGs
+scalar energy field
+    ↓
+linear-light energy gradient + glow
+    ↓
+deterministic late-decay shards
+    ↓
+RGBA frames
     ↓
 Pillow packer
     ├── vfx_sheet.png
