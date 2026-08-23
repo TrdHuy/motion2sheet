@@ -34,7 +34,7 @@ def _draw_graph_strip(
     for index in range(len(graph.nodes) - 1):
         left = graph.nodes[index]
         right = graph.nodes[index + 1]
-        local = local * 0.70 + rng.uniform(1.0 - width_jitter, 1.0 + width_jitter) * 0.30
+        local = local * 0.62 + rng.uniform(1.0 - width_jitter, 1.0 + width_jitter) * 0.38
         width = max(1, round((left.width + right.width) * 0.5 * width_scale * local))
         energy = max(0.0, min(1.0, (left.energy + right.energy) * 0.5))
         draw.line([left.point, right.point], fill=round(value * (0.80 + 0.20 * energy)), width=width)
@@ -48,16 +48,16 @@ def _core_hierarchy_masks(
     rng: random.Random,
 ) -> tuple[Image.Image, Image.Image]:
     cyan = _draw_graph_strip(
-        size, graph, width_scale=2.05, value=238, rng=rng, width_jitter=0.28
-    ).filter(ImageFilter.GaussianBlur(2.0))
+        size, graph, width_scale=2.25, value=240, rng=rng, width_jitter=0.32
+    ).filter(ImageFilter.GaussianBlur(2.2))
     hot = _draw_graph_strip(
         size,
         graph,
-        width_scale=0.54,
+        width_scale=0.70,
         value=255,
         rng=rng,
-        width_jitter=max(0.24, float(params["core.width_jitter"]) * 0.78),
-    ).filter(ImageFilter.GaussianBlur(0.60))
+        width_jitter=max(0.34, float(params["core.width_jitter"]) * 0.92),
+    ).filter(ImageFilter.GaussianBlur(0.62))
     return cyan, hot
 
 
@@ -80,7 +80,7 @@ def _density_holes(
         node = graph.nodes[node_index]
         tx, ty = node.tangent
         nx, ny = node.normal
-        tangent_length = node.width * body_scale * rng.uniform(1.6, 4.2)
+        tangent_length = node.width * body_scale * rng.uniform(1.5, 4.0)
         normal_shift = node.width * rng.uniform(-1.25, 1.25)
         cx = node.point[0] + nx * normal_shift
         cy = node.point[1] + ny * normal_shift
@@ -88,9 +88,9 @@ def _density_holes(
         start = (cx - tx * tangent_length * 0.5 - nx * curve * 0.25, cy - ty * tangent_length * 0.5 - ny * curve * 0.25)
         mid = (cx + nx * curve, cy + ny * curve)
         end = (cx + tx * tangent_length * 0.5 - nx * curve * 0.20, cy + ty * tangent_length * 0.5 - ny * curve * 0.20)
-        width = max(2, round(node.width * rng.uniform(0.42, 1.05)))
-        draw.line([start, mid, end], fill=rng.randint(120, 205), width=width)
-    return mask.filter(ImageFilter.GaussianBlur(2.7))
+        width = max(2, round(node.width * rng.uniform(0.38, 0.96)))
+        draw.line([start, mid, end], fill=rng.randint(105, 190), width=width)
+    return mask.filter(ImageFilter.GaussianBlur(2.8))
 
 
 def _flow_highlights(
@@ -99,31 +99,30 @@ def _flow_highlights(
     params: dict[str, str | float | int],
     rng: random.Random,
 ) -> Image.Image:
-    """Embedded cyan streaks make the blue mass read as flowing plasma, not a flat slab."""
     mask = Image.new("L", size, 0)
     draw = ImageDraw.Draw(mask)
     if len(graph.nodes) < 12:
         return mask
     detail = float(params["shape.detail_noise"])
     body_scale = float(params["shape.body_scale"])
-    count = 9 + round(detail * 7)
+    count = 11 + round(detail * 8)
     indices = list(range(5, len(graph.nodes) - 5))
     rng.shuffle(indices)
     for node_index in indices[:count]:
         node = graph.nodes[node_index]
         tx, ty = node.tangent
         nx, ny = node.normal
-        normal_shift = node.width * rng.uniform(-1.45, 1.45)
+        normal_shift = node.width * rng.uniform(-1.55, 1.55)
         cx = node.point[0] + nx * normal_shift
         cy = node.point[1] + ny * normal_shift
-        length = node.width * body_scale * rng.uniform(1.0, 3.1)
-        bend = node.width * rng.uniform(-0.90, 0.90)
+        length = node.width * body_scale * rng.uniform(1.0, 3.4)
+        bend = node.width * rng.uniform(-1.05, 1.05)
         start = (cx - tx * length * 0.50, cy - ty * length * 0.50)
         mid = (cx + nx * bend, cy + ny * bend)
         end = (cx + tx * length * 0.50, cy + ty * length * 0.50)
-        width = max(1, round(node.width * rng.uniform(0.18, 0.48)))
-        draw.line([start, mid, end], fill=rng.randint(95, 185), width=width)
-    return mask.filter(ImageFilter.GaussianBlur(1.2))
+        width = max(1, round(node.width * rng.uniform(0.16, 0.46)))
+        draw.line([start, mid, end], fill=rng.randint(110, 200), width=width)
+    return mask.filter(ImageFilter.GaussianBlur(1.15))
 
 
 def _breakup_mask(
@@ -212,29 +211,29 @@ def polish_frame(
 
         external_bolt = white_energy and cyan_amount < 0.16
         if cyan_amount > 0.06 and not external_bolt:
-            cyan_target = _mix(body, inner, 0.88)
-            target = _mix(cyan_target, core, hot_amount ** 1.62)
-            blend = min(0.95, 0.44 + cyan_amount * 0.44 + hot_amount * 0.24)
+            cyan_target = _mix(body, inner, 0.90)
+            target = _mix(cyan_target, core, hot_amount ** 1.42)
+            blend = min(0.96, 0.46 + cyan_amount * 0.43 + hot_amount * 0.26)
             r, g, b = _mix((r, g, b), target, blend)
-            if white_energy and hot_amount < 0.50:
-                r, g, b = _mix((r, g, b), inner, 0.80)
+            if white_energy and hot_amount < 0.46:
+                r, g, b = _mix((r, g, b), inner, 0.82)
         elif external_bolt:
-            r, g, b = _mix((r, g, b), lightning, 0.34)
+            r, g, b = _mix((r, g, b), lightning, 0.32)
 
-        if blue_energy and hot_amount < 0.40 and not external_bolt:
+        if blue_energy and hot_amount < 0.42 and not external_bolt:
             flow = (
                 math.sin((x / width) * math.tau * 4.3 + phase) * 0.44
                 + math.sin((y / height) * math.tau * 3.2 - phase * 0.72) * 0.31
                 + math.sin(((x + y) / (width + height)) * math.tau * 7.9 + phase * 1.31) * 0.25
             )
-            density = max(0.18, min(1.08, 0.78 + flow * 0.22 - hole_amount * 0.62))
+            density = max(0.28, min(1.12, 0.86 + flow * 0.20 - hole_amount * 0.52))
             a = round(a * density)
-            if density < 0.82:
-                r, g, b = _mix((r, g, b), outer, min(0.55, (0.82 - density) * 1.75))
-            if highlight_amount > 0.05:
-                highlight_color = _mix(body, inner, 0.82)
-                r, g, b = _mix((r, g, b), highlight_color, min(0.60, highlight_amount * 0.72))
-                a = max(a, round(min(255, a + highlight_amount * 42)))
+            if density < 0.84:
+                r, g, b = _mix((r, g, b), outer, min(0.48, (0.84 - density) * 1.62))
+            if highlight_amount > 0.04:
+                highlight_color = _mix(body, inner, 0.86)
+                r, g, b = _mix((r, g, b), highlight_color, min(0.66, highlight_amount * 0.78))
+                a = max(a, round(min(255, a + highlight_amount * 54)))
 
         if breakup_amount > 0.02:
             protected = max(hot_amount, 0.72 if external_bolt else 0.0)
