@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
-from .energy_graph import EnergyGraph, EnergyNode, build_energy_graph, normalize
+from .energy_graph import EnergyGraph, EnergyNode, build_energy_graph, normalize, smoothstep01
 
 
 def _hex_rgb(value: str) -> tuple[int, int, int]:
@@ -55,16 +55,18 @@ def _sweep_path(
     count = rng.randint(7, 10)
     phase = rng.uniform(0.0, math.tau)
     bend_sign = 1.0 if rng.random() > 0.5 else -1.0
+    frequency = rng.uniform(0.70, 1.30)
     points: list[tuple[float, float]] = []
+    root_shift = rng.uniform(-0.08, 0.72)
     root = (
-        node.point[0] + node.normal[0] * node.width * rng.uniform(-0.08, 0.72),
-        node.point[1] + node.normal[1] * node.width * rng.uniform(-0.08, 0.72),
+        node.point[0] + node.normal[0] * node.width * root_shift,
+        node.point[1] + node.normal[1] * node.width * root_shift,
     )
     for index in range(count):
         u = index / (count - 1)
         advance = length * (u ** 0.90)
         bend = math.sin(math.pi * u) * length * curvature * bend_sign
-        wave = math.sin(u * math.tau * rng.uniform(0.70, 1.30) + phase) * length * 0.018 * (1.0 - u)
+        wave = math.sin(u * math.tau * frequency + phase) * length * 0.018 * (1.0 - u)
         points.append((root[0] + dx * advance + px * (bend + wave), root[1] + dy * advance + py * (bend + wave)))
     return points
 
@@ -89,6 +91,14 @@ def _survival(seed: int, tier: int, index: int, breakup: float) -> tuple[bool, f
     return excess < 0.88, max(0.18, 1.0 - excess * 0.78)
 
 
+def _buildup_activity(graph: EnergyGraph) -> float:
+    # Before the peak, use visible trajectory span as the authoring signal.
+    # Smoothstep keeps F1 intentionally sparse while allowing a rapid F2-F5
+    # buildup. After the peak, the graph's own energy/breakup drives decay.
+    raw_span = max(0.0, min(1.0, (graph.head_t - graph.tail_t) / 0.90))
+    return smoothstep01(raw_span)
+
+
 def _render_wisp_masks(
     graph: EnergyGraph,
     size: tuple[int, int],
@@ -103,11 +113,15 @@ def _render_wisp_masks(
     cyan = Image.new("L", large, 0)
     hot = Image.new("L", large, 0)
     min_dim = min(size)
-    span = max(0.0, min(1.0, (graph.head_t - graph.tail_t) / 0.50))
+    activity = _buildup_activity(graph) if graph.breakup <= 0.0 else 1.0
     rng = random.Random(seed * 786433 + frame_index * 8191 + 3181)
 
-    blue_count = max(10, min(18, round(int(params["shape.tongue_count"]) * 0.40 * (0.62 + 0.38 * span))))
-    cyan_count = max(5, min(10, round(blue_count * 0.48)))
+    blue_target = max(10, min(18, round(int(params["shape.tongue_count"]) * 0.40)))
+    cyan_target = max(5, min(10, round(blue_target * 0.48)))
+    blue_count = max(1, round(blue_target * (0.04 + 0.96 * activity)))
+    cyan_count = max(0, round(cyan_target * max(0.0, activity - 0.06) / 0.94))
+    opacity_growth = 0.20 + 0.80 * activity
+    length_growth = 0.34 + 0.66 * activity
     usable_low = 3
     usable_high = len(graph.nodes) - 4
 
@@ -121,17 +135,17 @@ def _render_wisp_masks(
             node = graph.nodes[max(usable_low, min(usable_high, node_index))]
             direction_sign = 1.0 if rng.random() < 0.72 else -1.0
             if tier == 0:
-                length = min_dim * rng.uniform(0.085, 0.245) * (0.72 + 0.28 * graph.energy)
-                root_width = max(1.2, node.width * rng.uniform(0.10, 0.24))
+                length = min_dim * rng.uniform(0.085, 0.245) * (0.72 + 0.28 * graph.energy) * length_growth
+                root_width = max(0.7, node.width * rng.uniform(0.10, 0.24) * (0.58 + 0.42 * activity))
                 outward_bias = rng.uniform(0.04, 0.34)
                 curvature = rng.uniform(-0.055, 0.055)
-                value = round(150 * opacity)
+                value = round(150 * opacity * opacity_growth)
             else:
-                length = min_dim * rng.uniform(0.065, 0.190) * (0.75 + 0.25 * graph.energy)
-                root_width = max(0.9, node.width * rng.uniform(0.07, 0.16))
+                length = min_dim * rng.uniform(0.065, 0.190) * (0.75 + 0.25 * graph.energy) * length_growth
+                root_width = max(0.55, node.width * rng.uniform(0.07, 0.16) * (0.58 + 0.42 * activity))
                 outward_bias = rng.uniform(-0.02, 0.24)
                 curvature = rng.uniform(-0.045, 0.045)
-                value = round(184 * opacity)
+                value = round(184 * opacity * opacity_growth)
             path = _sweep_path(
                 node,
                 direction_sign=direction_sign,
@@ -143,14 +157,14 @@ def _render_wisp_masks(
             widths = _taper_widths(root_width, len(path), rng)
             _draw_variable_line(mask, path, widths, value, scale=scale)
 
-    # Peak hot streaks are the long directional cutting plumes visible in the
-    # approved contract. Their roots remain embedded in the core and taper to
-    # sharp tips; they fade/fragment naturally after the peak.
-    if graph.energy > 0.64 and graph.breakup < 0.78:
+    # Hot terminal cutting plumes should not be present at ignition. Their
+    # activity ramps with the same buildup envelope and then fragments in decay.
+    hot_activity = smoothstep01(max(0.0, (activity - 0.42) / 0.58))
+    if hot_activity > 0.02 and graph.energy > 0.64 and graph.breakup < 0.78:
         for terminal_index, (node, direction_sign) in enumerate(((graph.nodes[-3], 1.0), (graph.nodes[2], -1.0))):
             local_rng = random.Random(seed * 16127 + frame_index * 997 + terminal_index * 101)
             life = max(0.0, 1.0 - graph.breakup * (1.15 + terminal_index * 0.12))
-            length = min_dim * local_rng.uniform(0.20, 0.38) * (0.82 + 0.18 * graph.energy) * max(0.32, life)
+            length = min_dim * local_rng.uniform(0.20, 0.38) * (0.82 + 0.18 * graph.energy) * max(0.32, life) * hot_activity
             path = _sweep_path(
                 node,
                 direction_sign=direction_sign,
@@ -159,9 +173,9 @@ def _render_wisp_masks(
                 curvature=local_rng.uniform(-0.035, 0.035),
                 rng=local_rng,
             )
-            root_width = max(2.0, node.width * local_rng.uniform(0.18, 0.32))
+            root_width = max(1.0, node.width * local_rng.uniform(0.18, 0.32) * hot_activity)
             widths = _taper_widths(root_width, len(path), local_rng, power=1.35)
-            _draw_variable_line(hot, path, widths, round(230 * max(0.40, life)), scale=scale)
+            _draw_variable_line(hot, path, widths, round(230 * max(0.40, life) * hot_activity), scale=scale)
 
     return (
         blue.resize(size, Image.Resampling.LANCZOS),
@@ -178,10 +192,11 @@ def _ignition_burst(
     seed: int,
     frame_index: int,
 ) -> Image.Image:
-    span = graph.head_t - graph.tail_t
-    if span > 0.28:
+    # Keep ignition as a compact F1 spark only. Later buildup comes from the
+    # graph/stroke envelope so F2 cannot become denser than the peak by accident.
+    if frame_index != 0:
         return frame
-    rng = random.Random(seed * 131071 + frame_index * 1709 + 41)
+    rng = random.Random(seed * 131071 + 41)
     center = graph.nodes[len(graph.nodes) // 2].point
     inner = _hex_rgb(str(params["colors.inner"]))
     core = _hex_rgb(str(params["colors.core"]))
@@ -192,19 +207,19 @@ def _ignition_burst(
     blue_draw = ImageDraw.Draw(blue_mask)
     cyan_draw = ImageDraw.Draw(cyan_mask)
     hot_draw = ImageDraw.Draw(hot_mask)
-    ray_count = 12
+    ray_count = 7
     for index in range(ray_count):
-        angle = math.tau * index / ray_count + rng.uniform(-0.13, 0.13)
-        length = min(frame.size) * rng.uniform(0.035, 0.13)
+        angle = math.tau * index / ray_count + rng.uniform(-0.14, 0.14)
+        length = min(frame.size) * rng.uniform(0.025, 0.080)
         end = (center[0] + math.cos(angle) * length, center[1] + math.sin(angle) * length)
-        blue_draw.line([center, end], fill=rng.randint(95, 165), width=rng.randint(2, 5))
+        blue_draw.line([center, end], fill=rng.randint(80, 135), width=rng.randint(1, 3))
         if index % 2 == 0:
-            cyan_draw.line([center, end], fill=rng.randint(140, 215), width=rng.randint(1, 3))
+            cyan_draw.line([center, end], fill=rng.randint(120, 175), width=rng.randint(1, 2))
         if index % 4 == 0:
-            hot_draw.line([center, end], fill=220, width=1)
-    result = Image.alpha_composite(frame, _mask_layer(blue_mask.filter(ImageFilter.GaussianBlur(2.8)), blue, 0.52))
-    result = Image.alpha_composite(result, _mask_layer(cyan_mask.filter(ImageFilter.GaussianBlur(1.4)), inner, 0.72))
-    return Image.alpha_composite(result, _mask_layer(hot_mask.filter(ImageFilter.GaussianBlur(0.45)), core, 0.78))
+            hot_draw.line([center, end], fill=190, width=1)
+    result = Image.alpha_composite(frame, _mask_layer(blue_mask.filter(ImageFilter.GaussianBlur(2.2)), blue, 0.30))
+    result = Image.alpha_composite(result, _mask_layer(cyan_mask.filter(ImageFilter.GaussianBlur(1.1)), inner, 0.44))
+    return Image.alpha_composite(result, _mask_layer(hot_mask.filter(ImageFilter.GaussianBlur(0.40)), core, 0.56))
 
 
 def add_sweep_wisps(
