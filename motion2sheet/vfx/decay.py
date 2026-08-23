@@ -41,6 +41,7 @@ def _add_decay_shards(
     white = (*_hex_rgb(str(params["colors.lightning"])), 238)
     overlay = Image.new("RGBA", frame.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay, "RGBA")
+    shard_tips: list[tuple[float, float, float, float]] = []
     for index in range(count):
         ax, ay = active[rng.randrange(len(active))]
         vx, vy = ax - cx, ay - cy
@@ -56,6 +57,7 @@ def _add_decay_shards(
         base_x = ax - dx * rng.uniform(0.0, 2.5)
         base_y = ay - dy * rng.uniform(0.0, 2.5)
         tip = (ax + dx * length, ay + dy * length)
+        shard_tips.append((tip[0], tip[1], dx, dy))
         polygon = [
             (base_x + side_x * half_width, base_y + side_y * half_width),
             (ax + dx * length * 0.45 + side_x * half_width * 0.45, ay + dy * length * 0.45 + side_y * half_width * 0.45),
@@ -68,6 +70,26 @@ def _add_decay_shards(
             kink = rng.uniform(-3.0, 3.0)
             mid = (ax + dx * length * 0.48 + side_x * kink, ay + dy * length * 0.48 + side_y * kink)
             draw.line([(ax, ay), mid, tip], fill=white, width=1)
+
+    # A few tiny detached sparks continue the direction of existing shards.
+    # They are intentionally sparse so F7/F8 read as dissipating fragments,
+    # not a new particle burst or a central star/blob.
+    spark_count = min(12, max(4, round(count * (0.18 + 0.12 * decay_stage))))
+    for index in range(spark_count):
+        tip_x, tip_y, dx, dy = shard_tips[rng.randrange(len(shard_tips))]
+        tangent_x, tangent_y = -dy, dx
+        distance = rng.uniform(3.5, 11.0) * (0.85 + decay_stage * 0.35)
+        lateral = rng.uniform(-3.0, 3.0)
+        x = tip_x + dx * distance + tangent_x * lateral
+        y = tip_y + dy * distance + tangent_y * lateral
+        radius = rng.uniform(0.35, 0.95)
+        color = white if index % 4 == 0 else cyan
+        alpha_scale = 0.72 if frame_index == frame_count - 2 else 0.54
+        rgba = (color[0], color[1], color[2], round(color[3] * alpha_scale))
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=rgba)
+        if index % 5 == 0:
+            tail = rng.uniform(1.8, 4.6)
+            draw.line([(x - dx * tail, y - dy * tail), (x, y)], fill=rgba, width=1)
     return Image.alpha_composite(frame, overlay)
 
 
