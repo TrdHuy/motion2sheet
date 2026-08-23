@@ -7,7 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .body_texture import apply_body_texture_to_frames
 from .decay import apply_decay_to_frames
 from .hot_core_bundle import apply_hot_core_bundle_to_frames
 from .lightning_root_finish import apply_lightning_root_finish_to_frames
@@ -79,16 +78,13 @@ def build(args) -> int:
     # Final aura is derived from sparse final stroke occupancy rather than a
     # geometric body mask, and also gives residual shards their own energy haze.
     apply_plasma_finish_to_frames(frame_paths, spec.params, seed=spec.seed)
-    # Last-mile body texture stays inside established blue support, so it adds
-    # painterly channels/cyan accents without growing the accepted silhouette.
-    apply_body_texture_to_frames(frame_paths, spec.params, seed=spec.seed)
     compose_sheet(frame_paths, output / "vfx_sheet.png", columns=spec.sheet_columns)
     write_preview(frame_paths, output / "preview.gif", fps=spec.fps)
     metadata = {
         "tool": "vfx2sheet", "version": 1, "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
-        "renderer": "blender-headless+shared-energy-graph+stroke-bundle+sweep-wisps+terminal-plumes+embedded-cyan-lightning-roots+irregular-hot-core+embedded-lightning+per-stroke-decay+soft-plasma-finish+silhouette-safe-body-texture",
+        "renderer": "blender-headless+shared-energy-graph+stroke-bundle+sweep-wisps+terminal-plumes+embedded-cyan-lightning-roots+irregular-hot-core+embedded-lightning+per-stroke-decay+soft-plasma-finish",
         "profile": str(args.profile) if args.profile else None,
     }
     write_json(output / "metadata.json", metadata)
