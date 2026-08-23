@@ -41,12 +41,16 @@ def _gradient_color(energy: float, params: dict[str, str | float | int]) -> tupl
     core = _hex_rgb(str(params["colors.core"]))
     cyan_threshold = float(params["energy.cyan_threshold"])
     white_threshold = float(params["energy.white_threshold"])
-    if energy <= 0.34:
-        return _mix_linear(outer, body, energy / 0.34)
+    blue_hold = max(0.46, cyan_threshold - 0.14)
+    electric_blue = _mix_linear(body, inner, 0.16)
+    if energy <= 0.30:
+        return _mix_linear(outer, body, energy / 0.30)
+    if energy <= blue_hold:
+        return _mix_linear(body, electric_blue, (energy - 0.30) / max(1e-6, blue_hold - 0.30))
     if energy <= cyan_threshold:
-        return _mix_linear(body, inner, (energy - 0.34) / max(1e-6, cyan_threshold - 0.34))
+        return _mix_linear(electric_blue, inner, (energy - blue_hold) / max(1e-6, cyan_threshold - blue_hold))
     if energy <= white_threshold:
-        return _mix_linear(inner, _mix_linear(inner, core, 0.24), (energy - cyan_threshold) / max(1e-6, white_threshold - cyan_threshold))
+        return _mix_linear(inner, _mix_linear(inner, core, 0.18), (energy - cyan_threshold) / max(1e-6, white_threshold - cyan_threshold))
     return _mix_linear(inner, core, (energy - white_threshold) / max(1e-6, 1.0 - white_threshold))
 
 
@@ -265,9 +269,15 @@ def _graph_lightning_mask(graph: EnergyGraph, size: tuple[int, int], params: dic
 def _combine_field(base: Image.Image, core: Image.Image, lightning: Image.Image, params: dict[str, str | float | int]) -> Image.Image:
     core_gain = float(params["energy.core_gain"])
     lightning_gain = float(params["energy.lightning_gain"])
+    core_aura = core.filter(ImageFilter.GaussianBlur(1.8))
+    lightning_aura = lightning.filter(ImageFilter.GaussianBlur(2.4))
     values: list[int] = []
-    for base_value, core_value, lightning_value in zip(base.getdata(), core.getdata(), lightning.getdata()):
+    for base_value, core_value, lightning_value, core_halo, lightning_halo in zip(
+        base.getdata(), core.getdata(), lightning.getdata(), core_aura.getdata(), lightning_aura.getdata()
+    ):
         energy = base_value / 255.0
+        energy = max(energy, min(1.0, (core_halo / 255.0) * 0.78))
+        energy = max(energy, min(1.0, (lightning_halo / 255.0) * 0.74))
         energy = max(energy, min(1.0, (core_value / 255.0) * core_gain))
         energy = max(energy, min(1.0, (lightning_value / 255.0) * lightning_gain))
         values.append(round(max(0.0, min(1.0, energy)) * 255.0))
@@ -285,7 +295,7 @@ def _render_energy_rgba(base_alpha: Image.Image, field: Image.Image, params: dic
     outer = _hex_rgb(str(params["colors.outer"]))
     inner = _hex_rgb(str(params["colors.inner"]))
     output: list[tuple[int, int, int, int]] = []
-    for base_a, raw_energy, raw_wide, raw_tight in zip(base_alpha.getdata(), field.getdata(), wide.getdata(), tight.getdata()):
+    for base_alpha_value, raw_energy, raw_wide, raw_tight in zip(base_alpha.getdata(), field.getdata(), wide.getdata(), tight.getdata()):
         energy = raw_energy / 255.0
         glow = raw_wide / 255.0
         tight_glow = raw_tight / 255.0
@@ -295,13 +305,13 @@ def _render_energy_rgba(base_alpha: Image.Image, field: Image.Image, params: dic
         rgb = _gradient_color(energy, params)
         linear = [_to_linear(channel) for channel in rgb]
         for index, channel in enumerate(outer):
-            linear[index] += _to_linear(channel) * glow * glow_strength * 0.24
+            linear[index] += _to_linear(channel) * glow * glow_strength * 0.30
         for index, channel in enumerate(inner):
-            linear[index] += _to_linear(channel) * tight_glow * glow_strength * 0.08
+            linear[index] += _to_linear(channel) * tight_glow * glow_strength * 0.045
         final_rgb = tuple(_from_linear(channel) for channel in linear)
         field_alpha = (energy ** alpha_power) * alpha_gain
-        body_alpha = (base_a / 255.0) * float(params["energy.base_alpha_mix"])
-        glow_alpha = glow * glow_strength * 0.24
+        body_alpha = (base_alpha_value / 255.0) * float(params["energy.base_alpha_mix"])
+        glow_alpha = glow * glow_strength * 0.28
         alpha = round(max(body_alpha, field_alpha, glow_alpha) * 255.0)
         output.append((final_rgb[0], final_rgb[1], final_rgb[2], max(0, min(255, alpha))))
     image = Image.new("RGBA", field.size, (0, 0, 0, 0))
