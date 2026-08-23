@@ -60,7 +60,7 @@ def build(args) -> int:
     run_blender(source_path, output, args.blender)
 
     frame_paths = sorted((output / "frames").glob("*.png"))
-    apply_glow_to_frames(frame_paths, spec.params)
+    apply_glow_to_frames(frame_paths, spec.params, seed=spec.seed)
     compose_sheet(frame_paths, output / "vfx_sheet.png", columns=spec.sheet_columns)
     write_preview(frame_paths, output / "preview.gif", fps=spec.fps)
     metadata = {
