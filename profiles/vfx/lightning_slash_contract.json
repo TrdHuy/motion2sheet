@@ -46,27 +46,27 @@
     "tongue_width": 0.72
   },
   "lightning": {
-    "branch_count": 24,
-    "secondary_branch_count": 18,
-    "surface_crack_count": 18,
-    "jitter": 0.38,
+    "branch_count": 30,
+    "secondary_branch_count": 24,
+    "surface_crack_count": 20,
+    "jitter": 0.42,
     "length": 0.58,
     "spread": 0.75,
-    "width": 1.55,
-    "secondary_width": 0.90,
-    "surface_width": 0.80,
+    "width": 1.00,
+    "secondary_width": 0.62,
+    "surface_width": 0.60,
     "edge_bias": 0.92,
     "cluster_strength": 0.62
   },
   "sparks": {
-    "count": 40,
+    "count": 44,
     "spread": 0.55,
-    "size": 0.042
+    "size": 0.040
   },
   "fragments": {
-    "count": 30,
-    "spread": 0.58,
-    "size": 0.075
+    "count": 60,
+    "spread": 0.82,
+    "size": 0.040
   },
   "timing": {
     "peak": 0.57,
