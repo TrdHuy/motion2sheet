@@ -9,7 +9,6 @@ from pathlib import Path
 
 from .decay import apply_decay_to_frames
 from .energy_field import apply_energy_graph_to_frames
-from .energy_mass import apply_energy_mass_to_frames
 from .packer import compose_sheet, write_preview
 from .spec import VfxSpec, load_profile
 from .validator import validate_output
@@ -63,7 +62,6 @@ def build(args) -> int:
 
     frame_paths = sorted((output / "frames").glob("*.png"))
     apply_energy_graph_to_frames(frame_paths, spec.params, seed=spec.seed)
-    apply_energy_mass_to_frames(frame_paths, spec.params, seed=spec.seed)
     apply_decay_to_frames(frame_paths, spec.params, seed=spec.seed)
     compose_sheet(frame_paths, output / "vfx_sheet.png", columns=spec.sheet_columns)
     write_preview(frame_paths, output / "preview.gif", fps=spec.fps)
@@ -71,7 +69,7 @@ def build(args) -> int:
         "tool": "vfx2sheet", "version": 1, "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
-        "renderer": "blender-headless+shared-energy-graph+flowing-energy-mass+linear-energy-gradient+deterministic-decay",
+        "renderer": "blender-headless+shared-energy-graph+unified-flowing-energy-field+linear-energy-gradient+deterministic-decay",
         "profile": str(args.profile) if args.profile else None,
     }
     write_json(output / "metadata.json", metadata)
