@@ -59,12 +59,15 @@ def _stroke_window(seed: int, tier: StrokeTier, index: int, breakup: float) -> t
 
 
 def _tier_blueprints(params: dict[str, str | float | int]) -> tuple[StrokeTier, ...]:
-    body_count = max(30, int(params["shape.tongue_count"]))
+    # The reference is not a symmetric ribbon. Its white cutting edge sits on
+    # the inner/open side while most blue plasma mass lives outward from it.
+    # Keep the bundle sparse enough that transparent gaps survive between flows.
+    body_count = max(24, min(32, int(params["shape.tongue_count"])))
     return (
-        StrokeTier("outer", round(body_count * 0.78), -1.55, 1.55, 0.10, 0.24, 170, 0.18, 0.78, 5, 0.30, 1.05),
-        StrokeTier("body", body_count, -1.05, 1.05, 0.14, 0.31, 214, 0.15, 0.80, 6, 0.34, 1.08),
-        StrokeTier("cyan", max(10, round(body_count * 0.34)), -0.56, 0.56, 0.10, 0.22, 224, 0.10, 0.84, 7, 0.46, 1.12),
-        StrokeTier("core", max(4, min(5, int(params["core.streak_count"]))), -0.20, 0.20, 0.075, 0.17, 242, 0.05, 0.90, 2, 0.58, 1.18),
+        StrokeTier("outer", round(body_count * 0.68), 0.45, 2.05, 0.08, 0.18, 154, 0.26, 0.70, 3, 0.28, 1.04),
+        StrokeTier("body", body_count, 0.05, 1.35, 0.11, 0.24, 198, 0.20, 0.75, 4, 0.34, 1.08),
+        StrokeTier("cyan", max(9, round(body_count * 0.34)), -0.34, 0.38, 0.07, 0.16, 214, 0.14, 0.80, 6, 0.46, 1.12),
+        StrokeTier("core", max(4, min(5, int(params["core.streak_count"]))), -0.46, -0.10, 0.055, 0.12, 238, 0.05, 0.88, 2, 0.58, 1.18),
     )
 
 
@@ -90,14 +93,22 @@ def _stroke_geometry(
         end = max(end, last - 4 - index)
 
     offset_factor = rng.uniform(tier.offset_min, tier.offset_max)
-    wave_amplitude = rng.uniform(0.08, 0.32) if tier.name != "core" else rng.uniform(0.03, 0.18)
+    if tier.name == "outer":
+        wave_amplitude = rng.uniform(0.06, 0.24)
+    elif tier.name == "body":
+        wave_amplitude = rng.uniform(0.05, 0.20)
+    elif tier.name == "cyan":
+        wave_amplitude = rng.uniform(0.04, 0.16)
+    else:
+        wave_amplitude = rng.uniform(0.025, 0.11)
     wave_frequency = rng.uniform(0.75, 2.35)
-    tangent_wave = rng.uniform(0.03, 0.14)
+    tangent_wave = rng.uniform(0.02, 0.10)
     phase_a = rng.uniform(0.0, math.tau)
     phase_b = rng.uniform(0.0, math.tau)
     width_factor = rng.uniform(tier.width_min, tier.width_max)
     width_frequency = rng.uniform(1.2, 3.4)
     width_phase = rng.uniform(0.0, math.tau)
+    local_width_amplitude = rng.uniform(0.14, 0.32) if tier.name != "core" else rng.uniform(0.18, 0.42)
 
     points: list[tuple[float, float]] = []
     widths: list[float] = []
@@ -116,15 +127,16 @@ def _stroke_geometry(
         ))
         envelope = smoothstep01(local_u / 0.11) * smoothstep01((1.0 - local_u) / 0.10)
         if tier.name == "core":
-            envelope = max(0.34, envelope)
-        local_width = 1.0 + math.sin(local_u * math.tau * width_frequency + width_phase) * rng.uniform(0.15, 0.36)
-        widths.append(max(0.35, node.width * width_factor * local_width * envelope))
+            envelope = max(0.30, envelope)
+        local_width = 1.0 + math.sin(local_u * math.tau * width_frequency + width_phase) * local_width_amplitude
+        widths.append(max(0.28, node.width * width_factor * local_width * envelope))
 
-    # Long terminal flows are extensions of the same stroke, not separate fins.
+    # Long terminal flows extend the same stream. They create pointed crescent
+    # tips without filling the open side with a broad triangular slab.
     if tier.terminal_every > 0 and index % tier.terminal_every == 0 and len(points) >= 3:
         tongue = float(params["shape.tongue_length"])
-        extension = min_dim * tongue * rng.uniform(0.045, 0.105)
-        steps = rng.randint(3, 5)
+        extension = min_dim * tongue * rng.uniform(0.055, 0.125)
+        steps = rng.randint(4, 6)
         if index % (tier.terminal_every * 2) == 0:
             first = nodes[start]
             tx, ty = -first.tangent[0], -first.tangent[1]
@@ -133,22 +145,23 @@ def _stroke_geometry(
             extra_widths: list[float] = []
             for step in range(steps, 0, -1):
                 u = step / steps
-                bend = math.sin(u * math.pi) * extension * rng.uniform(-0.06, 0.06)
+                bend = math.sin(u * math.pi) * extension * rng.uniform(-0.075, 0.075)
                 px, py = -ty, tx
                 extra_points.append((x + tx * extension * u + px * bend, y + ty * extension * u + py * bend))
-                extra_widths.append(max(0.22, widths[0] * (0.18 + 0.42 * (1.0 - u))))
+                extra_widths.append(max(0.18, widths[0] * (0.12 + 0.34 * (1.0 - u))))
             points = extra_points + points
             widths = extra_widths + widths
         else:
             last_node = nodes[end]
             tx, ty = last_node.tangent
             x, y = points[-1]
+            terminal_width = widths[-1]
             for step in range(1, steps + 1):
                 u = step / steps
-                bend = math.sin(u * math.pi) * extension * rng.uniform(-0.06, 0.06)
+                bend = math.sin(u * math.pi) * extension * rng.uniform(-0.075, 0.075)
                 px, py = -ty, tx
                 points.append((x + tx * extension * u + px * bend, y + ty * extension * u + py * bend))
-                widths.append(max(0.22, widths[-1] * ((1.0 - u) ** 1.35)))
+                widths.append(max(0.18, terminal_width * ((1.0 - u) ** 1.55)))
 
     return points, widths
 
@@ -192,7 +205,7 @@ def _render_flow_masks(
     *,
     seed: int,
 ) -> dict[str, Image.Image]:
-    scale = 2
+    scale = 3
     large_size = (size[0] * scale, size[1] * scale)
     masks = {tier.name: Image.new("L", large_size, 0) for tier in _tier_blueprints(params)}
     min_dim = min(size)
@@ -281,7 +294,7 @@ def _render_lightning_masks(
     seed: int,
     frame_index: int,
 ) -> tuple[Image.Image, Image.Image]:
-    scale = 2
+    scale = 3
     large_size = (size[0] * scale, size[1] * scale)
     major = Image.new("L", large_size, 0)
     micro = Image.new("L", large_size, 0)
@@ -301,8 +314,8 @@ def _render_lightning_masks(
         side = -1.0 if bolt_index % 2 == 0 else 1.0
         length = min_dim * float(params["lightning.length"]) * rng.uniform(0.12, 0.19)
         points = _major_bolt_path(node, side, length, float(params["lightning.jitter"]), rng)
-        base = rng.uniform(float(params["lightning.major_width_min"]), float(params["lightning.major_width_max"])) * 0.68
-        base = max(base, node.width * 0.24)
+        base = rng.uniform(float(params["lightning.major_width_min"]), float(params["lightning.major_width_max"])) * 0.62
+        base = max(base, node.width * 0.20)
         widths = _bolt_widths(len(points), base, float(params["lightning.tip_width"]), rng)
         _draw_stroke(major, points, widths, 246, scale=scale)
 
@@ -320,13 +333,13 @@ def _render_lightning_masks(
             angle = math.atan2(ty, tx) + rng.uniform(0.55, 0.96) * (1.0 if rng.random() > 0.5 else -1.0)
             child_length = length * float(params["lightning.minor_length_ratio"]) * rng.uniform(0.42, 0.70)
             child = _free_bolt(points[candidate], (math.cos(angle), math.sin(angle)), child_length, rng)
-            child_base = max(0.6, widths[candidate] * float(params["lightning.minor_width_ratio"]))
-            child_widths = _bolt_widths(len(child), child_base, max(0.15, float(params["lightning.tip_width"]) * 0.72), rng)
+            child_base = max(0.55, widths[candidate] * float(params["lightning.minor_width_ratio"]))
+            child_widths = _bolt_widths(len(child), child_base, max(0.14, float(params["lightning.tip_width"]) * 0.72), rng)
             _draw_stroke(major, child, child_widths, 216, scale=scale)
 
-    micro_count = max(6, min(18, int(params["lightning.micro_count"])))
+    micro_count = max(6, min(16, int(params["lightning.micro_count"])))
     micro_count = round(micro_count * (1.0 - graph.breakup * 0.62))
-    for micro_index in range(micro_count):
+    for _ in range(micro_count):
         node = graph.nodes[rng.randint(4, len(graph.nodes) - 5)]
         side = -1.0 if rng.random() < 0.5 else 1.0
         direction = normalize(
@@ -335,8 +348,8 @@ def _render_lightning_masks(
         )
         length = min_dim * rng.uniform(0.018, 0.045) * float(params["lightning.length"])
         path = _free_bolt(node.point, direction, length, rng)
-        widths = _bolt_widths(len(path), rng.uniform(0.55, 1.25), 0.16, rng)
-        _draw_stroke(micro, path, widths, 132, scale=scale)
+        widths = _bolt_widths(len(path), rng.uniform(0.50, 1.10), 0.14, rng)
+        _draw_stroke(micro, path, widths, 128, scale=scale)
     return _scale_mask(major, size), _scale_mask(micro, size)
 
 
@@ -354,31 +367,30 @@ def _compose_bundle(
     lightning = _hex_rgb(str(params["colors.lightning"]))
     result = Image.new("RGBA", size, (0, 0, 0, 0))
 
-    # Broad glow is generated from the stroke bundle, never from a filled body blob.
-    outer_glow = masks["outer"].filter(ImageFilter.GaussianBlur(11.0))
-    body_glow = masks["body"].filter(ImageFilter.GaussianBlur(7.0))
-    cyan_glow = masks["cyan"].filter(ImageFilter.GaussianBlur(4.2))
-    core_glow = masks["core"].filter(ImageFilter.GaussianBlur(2.5))
-    major_glow = major.filter(ImageFilter.GaussianBlur(max(2.5, float(params["lightning.glow_radius"]) * 0.70)))
+    # Glow follows sparse strokes rather than manufacturing a continuous body.
+    outer_glow = masks["outer"].filter(ImageFilter.GaussianBlur(8.0))
+    body_glow = masks["body"].filter(ImageFilter.GaussianBlur(5.2))
+    cyan_glow = masks["cyan"].filter(ImageFilter.GaussianBlur(3.2))
+    core_glow = masks["core"].filter(ImageFilter.GaussianBlur(2.0))
+    major_glow = major.filter(ImageFilter.GaussianBlur(max(2.2, float(params["lightning.glow_radius"]) * 0.62)))
 
-    for mask, color, scale in (
-        (outer_glow, outer, 0.26),
-        (body_glow, body, 0.24),
-        (cyan_glow, inner, 0.23),
-        (core_glow, inner, 0.18),
-        (major_glow, lightning, 0.28),
-        (masks["outer"].filter(ImageFilter.GaussianBlur(0.45)), outer, 0.86),
-        (masks["body"].filter(ImageFilter.GaussianBlur(0.34)), body, 0.88),
-        (masks["cyan"].filter(ImageFilter.GaussianBlur(0.26)), inner, 0.86),
-        (micro.filter(ImageFilter.GaussianBlur(0.30)), lightning, 0.58),
-        (major.filter(ImageFilter.GaussianBlur(0.22)), lightning, 0.90),
-        (masks["core"].filter(ImageFilter.GaussianBlur(0.20)), core, 0.84),
+    for mask, color, alpha_scale in (
+        (outer_glow, outer, 0.18),
+        (body_glow, body, 0.18),
+        (cyan_glow, inner, 0.16),
+        (core_glow, inner, 0.13),
+        (major_glow, lightning, 0.22),
+        (masks["outer"].filter(ImageFilter.GaussianBlur(0.32)), outer, 0.82),
+        (masks["body"].filter(ImageFilter.GaussianBlur(0.28)), body, 0.84),
+        (masks["cyan"].filter(ImageFilter.GaussianBlur(0.24)), inner, 0.82),
+        (micro.filter(ImageFilter.GaussianBlur(0.26)), lightning, 0.54),
+        (major.filter(ImageFilter.GaussianBlur(0.20)), lightning, 0.88),
+        (masks["core"].filter(ImageFilter.GaussianBlur(0.18)), core, 0.82),
     ):
-        result = Image.alpha_composite(result, _mask_layer(mask, color, scale))
+        result = Image.alpha_composite(result, _mask_layer(mask, color, alpha_scale))
 
-    # A narrower white center inside major lightning avoids cyan-only wires.
     major_white = major.filter(ImageFilter.MinFilter(3))
-    result = Image.alpha_composite(result, _mask_layer(major_white, core, 0.48))
+    result = Image.alpha_composite(result, _mask_layer(major_white, core, 0.44))
     return result
 
 
