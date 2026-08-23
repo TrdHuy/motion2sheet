@@ -48,7 +48,11 @@ def motion_window(index: int, frames: int, peak_t: float) -> tuple[float, float,
         growth = smoothstep01(t / max(peak_t, 1e-6))
         return 0.075 * growth * growth, 0.10 + 0.90 * growth, 0.55 + 0.45 * growth, 0.0
     decay = smoothstep01((t - peak_t) / max(1e-6, 1.0 - peak_t))
-    return 0.075 + 0.845 * decay, 1.0, 1.0 - 0.86 * decay, decay
+    # The old tail advanced to 0.92 at F8, collapsing every renderer into a
+    # tiny star/blob regardless of how fragmentation was implemented. Preserve
+    # a residual curved trajectory instead; individual stroke lifetimes now
+    # decide which pieces remain visible across that trajectory.
+    return 0.075 + 0.50 * decay, 1.0, 1.0 - 0.86 * decay, decay
 
 
 def normalize(x: float, y: float) -> tuple[float, float]:
