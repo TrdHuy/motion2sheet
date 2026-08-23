@@ -46,22 +46,37 @@
     "tongue_width": 0.72
   },
   "lightning": {
-    "branch_count": 30,
-    "secondary_branch_count": 24,
-    "surface_crack_count": 20,
-    "jitter": 0.42,
-    "length": 0.58,
-    "spread": 0.75,
+    "branch_count": 0,
+    "secondary_branch_count": 0,
+    "surface_crack_count": 14,
+    "jitter": 0.44,
+    "length": 0.60,
+    "spread": 0.76,
     "width": 1.00,
     "secondary_width": 0.62,
-    "surface_width": 0.60,
+    "surface_width": 0.55,
     "edge_bias": 0.92,
-    "cluster_strength": 0.62
+    "cluster_strength": 0.62,
+
+    "major_count": 5,
+    "major_width_min": 2.4,
+    "major_width_max": 5.2,
+    "tip_width": 0.30,
+    "width_jitter": 0.38,
+    "width_smoothness": 0.72,
+    "taper_power": 1.40,
+    "branch_probability": 0.58,
+    "branch_depth": 2,
+    "minor_width_ratio": 0.44,
+    "minor_length_ratio": 0.48,
+    "micro_count": 26,
+    "micro_width": 0.72,
+    "micro_intensity": 0.30
   },
   "sparks": {
-    "count": 44,
+    "count": 30,
     "spread": 0.55,
-    "size": 0.040
+    "size": 0.038
   },
   "fragments": {
     "count": 60,
