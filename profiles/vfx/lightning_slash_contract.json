@@ -29,20 +29,20 @@
     "core_strength": 0.14
   },
   "energy": {
-    "body_floor": 0.18,
-    "body_gain": 0.78,
+    "body_floor": 0.08,
+    "body_gain": 0.38,
     "cyan_threshold": 0.72,
-    "white_threshold": 0.88,
-    "turbulence": 0.105,
+    "white_threshold": 0.90,
+    "turbulence": 0.070,
     "turbulence_frequency": 7.6,
-    "core_gain": 1.16,
+    "core_gain": 1.12,
     "lightning_gain": 1.04,
     "root_width_coupling": 0.94,
-    "alpha_power": 1.42,
-    "alpha_gain": 1.02,
-    "base_alpha_mix": 0.09,
-    "glow_radius": 14.0,
-    "glow_strength": 1.16
+    "alpha_power": 1.46,
+    "alpha_gain": 0.98,
+    "base_alpha_mix": 0.08,
+    "glow_radius": 13.0,
+    "glow_strength": 1.00
   },
   "core": {
     "width_min": 10.5,
@@ -88,7 +88,7 @@
     "surface_width": 0.50,
     "edge_bias": 0.84,
     "cluster_strength": 0.50,
-    "major_count": 4,
+    "major_count": 2,
     "major_width_min": 6.2,
     "major_width_max": 11.0,
     "tip_width": 0.30,
@@ -103,7 +103,7 @@
     "micro_width": 0.50,
     "micro_intensity": 0.14,
     "glow_radius": 7.0,
-    "glow_strength": 0.86
+    "glow_strength": 0.82
   },
   "sparks": {
     "count": 26,
