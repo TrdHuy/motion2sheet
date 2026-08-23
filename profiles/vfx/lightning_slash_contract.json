@@ -7,11 +7,11 @@
   "sheetColumns": 4,
   "seed": 42891,
   "colors": {
-    "outer": "#000CFF",
-    "body": "#002CFF",
-    "inner": "#00A6FF",
+    "outer": "#1018FF",
+    "body": "#145CFF",
+    "inner": "#20C8FF",
     "core": "#FFFFFF",
-    "lightning": "#82DFFF"
+    "lightning": "#92E8FF"
   },
   "intensity": {
     "outer": 0.75,
@@ -31,18 +31,18 @@
   "energy": {
     "body_floor": 0.22,
     "body_gain": 0.82,
-    "cyan_threshold": 0.78,
-    "white_threshold": 0.92,
-    "turbulence": 0.065,
+    "cyan_threshold": 0.76,
+    "white_threshold": 0.91,
+    "turbulence": 0.070,
     "turbulence_frequency": 6.2,
     "core_gain": 1.02,
     "lightning_gain": 1.04,
-    "root_width_coupling": 0.92,
-    "alpha_power": 1.18,
-    "alpha_gain": 0.88,
-    "base_alpha_mix": 0.58,
-    "glow_radius": 9.5,
-    "glow_strength": 0.78
+    "root_width_coupling": 0.94,
+    "alpha_power": 1.08,
+    "alpha_gain": 0.96,
+    "base_alpha_mix": 0.76,
+    "glow_radius": 12.0,
+    "glow_strength": 1.02
   },
   "core": {
     "width_min": 5.0,
@@ -58,20 +58,20 @@
     "hotspot_scale": 1.45
   },
   "shape": {
-    "body_scale": 3.05,
-    "inner_scale": 1.14,
+    "body_scale": 3.15,
+    "inner_scale": 1.16,
     "core_scale": 0.14,
-    "form_noise": 0.58,
+    "form_noise": 0.60,
     "form_noise_frequency": 2.4,
-    "edge_noise": 1.70,
+    "edge_noise": 1.72,
     "edge_noise_frequency": 12.0,
-    "detail_noise": 0.48,
+    "detail_noise": 0.50,
     "detail_noise_frequency": 24.0,
     "taper_power": 0.50,
-    "flare": 0.50,
-    "tongue_count": 18,
-    "tongue_length": 0.62,
-    "tongue_curve": 0.88,
+    "flare": 0.54,
+    "tongue_count": 20,
+    "tongue_length": 0.66,
+    "tongue_curve": 0.90,
     "tongue_width": 0.72
   },
   "lightning": {
@@ -79,7 +79,7 @@
     "secondary_branch_count": 0,
     "surface_crack_count": 8,
     "jitter": 0.52,
-    "length": 0.96,
+    "length": 1.00,
     "spread": 0.88,
     "width": 1.00,
     "secondary_width": 0.62,
