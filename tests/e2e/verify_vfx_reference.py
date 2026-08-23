@@ -75,13 +75,6 @@ def glow_fraction(frame: Image.Image) -> float:
 
 
 def bright_outside_fraction(frame: Image.Image) -> float:
-    """Measure white/cyan lightning that visibly escapes the saturated slash body.
-
-    The old alpha-only body mask accidentally classified branch pixels and their
-    glow as body, then a 15 px dilation swallowed the very lightning this metric
-    was supposed to measure. Use chroma to identify blue/cyan body pixels and a
-    small 5 px guard band around them instead.
-    """
     rgba = frame.convert("RGBA"); pixels = list(rgba.getdata())
     body = Image.new("L", rgba.size, 0)
     body.putdata([
@@ -98,11 +91,47 @@ def bright_outside_fraction(frame: Image.Image) -> float:
     return count / active
 
 
+def core_width_variation(frame: Image.Image, bins: int = 28) -> float:
+    """Approximate white-hot core thickness variation around the crescent arc.
+
+    Count bright-white pixels inside a small dilation of the saturated blue/cyan
+    slash body, grouped by polar angle around the frame center. A uniform vector
+    stroke has nearly equal bin occupancy; an organic core with local bulges,
+    splits and gaps has a higher coefficient of variation.
+    """
+    rgba = frame.convert("RGBA"); pixels = list(rgba.getdata()); width, height = rgba.size
+    body = Image.new("L", rgba.size, 0)
+    body.putdata([
+        255 if a > 80 and b > 120 and b >= r * 1.25 and not (r > 175 and g > 190 and b > 200) else 0
+        for r,g,b,a in pixels
+    ])
+    body = body.filter(ImageFilter.MaxFilter(11)); body_data = list(body.getdata())
+    counts = [0] * bins
+    cx, cy = width * 0.5, height * 0.5
+    for index, (r,g,b,a) in enumerate(pixels):
+        if a <= 32 or not body_data[index] or not (r > 205 and g > 215 and b > 220):
+            continue
+        x, y = index % width, index // width
+        angle = math.atan2(-(y - cy), x - cx)
+        bucket = int((angle + math.pi) / (2.0 * math.pi) * bins)
+        counts[max(0, min(bins - 1, bucket))] += 1
+    occupied = [value for value in counts if value >= 4]
+    if len(occupied) < 3:
+        return 0.0
+    mean = sum(occupied) / len(occupied)
+    deviation = math.sqrt(sum((value - mean) ** 2 for value in occupied) / len(occupied))
+    return deviation / mean if mean else 0.0
+
+
 def frame_metrics(frames: list[Image.Image]) -> list[dict[str, float | int]]:
     result=[]
     for frame in frames:
         c=color_fractions(frame)
-        result.append({"area":alpha_area(frame),"white":c["white"],"cyan":c["cyan"],"blue":c["blue"],"roughness":roughness(frame),"glowFraction":glow_fraction(frame),"brightOutsideFraction":bright_outside_fraction(frame)})
+        result.append({
+            "area":alpha_area(frame), "white":c["white"], "cyan":c["cyan"], "blue":c["blue"],
+            "roughness":roughness(frame), "glowFraction":glow_fraction(frame),
+            "brightOutsideFraction":bright_outside_fraction(frame), "coreWidthVariation":core_width_variation(frame),
+        })
     return result
 
 
@@ -133,6 +162,8 @@ def verify(reference_path: Path, output_root: Path, qa_root: Path) -> None:
     if float(peak["blue"]) < max(0.45,float(ref_peak_m["blue"])*0.68): failures.append("peak frame lacks a dominant deep-blue body")
     if peak_iou < 0.16 or mean_iou < 0.12: failures.append(f"crescent silhouette is too far from golden direction: peak IoU={peak_iou:.3f}, mean IoU={mean_iou:.3f}")
     if float(peak["roughness"]) < float(ref_peak_m["roughness"])*0.55: failures.append("peak silhouette is still too smooth/vector-like relative to golden")
+    if float(peak["coreWidthVariation"]) < float(ref_peak_m["coreWidthVariation"])*0.95:
+        failures.append("peak white-hot core is too uniform in thickness relative to golden")
     if float(out_metrics[-1]["roughness"]) <= float(peak["roughness"])*1.02: failures.append("decay frame is not visibly more fragmented than the peak")
     if float(peak["glowFraction"]) < 0.03: failures.append("peak frame lacks a soft external glow falloff")
     if float(peak["brightOutsideFraction"]) < 0.001: failures.append("peak frame lacks visible bright lightning outside the main body")
@@ -140,7 +171,7 @@ def verify(reference_path: Path, output_root: Path, qa_root: Path) -> None:
     qa_root.mkdir(parents=True,exist_ok=True); (qa_root/"comparison_report.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     write_overlay(reference_sheet,output_sheet,qa_root/"comparison_overlay.png"); write_overlay(reference_sheet,output_sheet,qa_root/"golden_vs_output.png")
     if failures: raise AssertionError("VFX golden-reference QA failed:\n- "+"\n- ".join(failures))
-    print(f"VFX golden-reference QA verified: peak IoU={peak_iou:.3f}, mean IoU={mean_iou:.3f}")
+    print(f"VFX golden-reference QA verified: peak IoU={peak_iou:.3f}, mean IoU={mean_iou:.3f}, core variation={float(peak['coreWidthVariation']):.3f}")
 
 
 def main() -> None:
