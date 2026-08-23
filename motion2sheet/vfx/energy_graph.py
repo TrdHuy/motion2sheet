@@ -69,6 +69,13 @@ def _smoothed_noise(count: int, amplitude: float, smoothness: float, rng: random
     return values
 
 
+def _graph_center(size: tuple[int, int], params: dict[str, str | float | int]) -> tuple[float, float]:
+    return (
+        size[0] * (0.5 + float(params["shape.offset_x"])),
+        size[1] * (0.5 + float(params["shape.offset_y"])),
+    )
+
+
 def _arc_point(
     size: tuple[int, int],
     params: dict[str, str | float | int],
@@ -81,15 +88,12 @@ def _arc_point(
         + float(params["arc_angle"]) * canonical_t
         + float(params["rotation"])
     )
-    # The old formula divided by `radius` here and then multiplied by radius
-    # below, accidentally cancelling the artist-facing radius parameter. Keep
-    # 1.5 as the historical neutral scale so existing profiles remain stable,
-    # while radius now genuinely scales the shared core/body/lightning spine.
     reference_radius = 1.5
     pixel_scale = min(size) / (reference_radius * 3.35)
     nx, ny = math.cos(angle), -math.sin(angle)
-    x = size[0] * 0.5 + radius * math.cos(angle) * pixel_scale + nx * radial_offset_px
-    y = size[1] * 0.5 - radius * math.sin(angle) * pixel_scale + ny * radial_offset_px
+    center_x, center_y = _graph_center(size, params)
+    x = center_x + radius * math.cos(angle) * pixel_scale + nx * radial_offset_px
+    y = center_y - radius * math.sin(angle) * pixel_scale + ny * radial_offset_px
     return x, y
 
 
@@ -152,13 +156,13 @@ def build_energy_graph(
         node_energy.append(min(1.0, 0.88 + 0.08 * hotspot_boost + 0.04 * max(0.0, local - 1.0)))
 
     nodes: list[EnergyNode] = []
+    center_x, center_y = _graph_center(size, params)
     for index, point in enumerate(points):
         previous = points[max(0, index - 1)]
         following = points[min(len(points) - 1, index + 1)]
         tx, ty = normalize(following[0] - previous[0], following[1] - previous[1])
         nx, ny = -ty, tx
-        cx, cy = size[0] * 0.5, size[1] * 0.5
-        if (point[0] - cx) * nx + (point[1] - cy) * ny < 0.0:
+        if (point[0] - center_x) * nx + (point[1] - center_y) * ny < 0.0:
             nx, ny = -nx, -ny
         nodes.append(EnergyNode(index / (count - 1), point, (tx, ty), (nx, ny), widths[index], node_energy[index]))
 
