@@ -180,7 +180,13 @@ def add_hot_core_bundle(
     result = Image.alpha_composite(result, _mask_layer(cyan_tight, inner, 0.26))
     result = Image.alpha_composite(result, _mask_layer(white_glow, inner, 0.25))
     result = Image.alpha_composite(result, _mask_layer(cyan_mask.filter(ImageFilter.GaussianBlur(0.42)), inner, 0.38))
-    result = Image.alpha_composite(result, _mask_layer(white_mask.filter(ImageFilter.GaussianBlur(0.48)), core, 0.62))
+
+    # Plasma finish adds a broad aura underneath the sparse tracks. Preserve the
+    # exact core geometry, pinches and cyan gaps, but make only high-energy peak
+    # sections opaque enough to remain visibly white after that later composite.
+    peak_heat = smoothstep01((graph.energy - 0.66) / 0.24) * max(0.0, 1.0 - graph.breakup * 0.72)
+    white_amount = 0.62 + 0.48 * peak_heat
+    result = Image.alpha_composite(result, _mask_layer(white_mask.filter(ImageFilter.GaussianBlur(0.48)), core, white_amount))
     result = Image.alpha_composite(result, _mask_layer(sparks.filter(ImageFilter.GaussianBlur(1.6)), inner, 0.28))
     result = Image.alpha_composite(result, _mask_layer(sparks, core, 0.34))
     return result
