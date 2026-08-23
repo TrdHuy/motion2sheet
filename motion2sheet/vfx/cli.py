@@ -10,6 +10,7 @@ from pathlib import Path
 from .decay import apply_decay_to_frames
 from .hot_core_bundle import apply_hot_core_bundle_to_frames
 from .packer import compose_sheet, write_preview
+from .plasma_finish import apply_plasma_finish_to_frames
 from .spec import VfxSpec, load_profile
 from .stroke_bundle import apply_stroke_bundle_to_frames
 from .sweep_wisps import apply_sweep_wisps_to_frames
@@ -64,27 +65,22 @@ def build(args) -> int:
     run_blender(source_path, output, args.blender)
 
     frame_paths = sorted((output / "frames").glob("*.png"))
-    # Blender remains part of the deterministic build/toolchain contract, but
-    # final 2D pixels come from EnergyGraph-driven tapered flow strokes.
     apply_stroke_bundle_to_frames(frame_paths, spec.params, seed=spec.seed)
-    # Tangent-biased plasma wisps establish the directional swept silhouette.
     apply_sweep_wisps_to_frames(frame_paths, spec.params, seed=spec.seed)
-    # Broad terminal plume bundles make both crescent tips read as swept plasma
-    # masses instead of hairline extensions.
     apply_terminal_plumes_to_frames(frame_paths, spec.params, seed=spec.seed)
-    # The graph-connected hot bundle creates separated white/cyan cutting flows
-    # without inflating the shared body node width.
     apply_hot_core_bundle_to_frames(frame_paths, spec.params, seed=spec.seed)
-    # Residual shards are secondary; main F6-F8 topology breakup comes from
-    # independent stroke lifetimes on the preserved residual graph span.
+    # Per-stroke topology is already fragmented before these residual shards.
     apply_decay_to_frames(frame_paths, spec.params, seed=spec.seed)
+    # Final aura is derived from sparse final stroke occupancy rather than a
+    # geometric body mask, and also gives residual shards their own energy haze.
+    apply_plasma_finish_to_frames(frame_paths, spec.params, seed=spec.seed)
     compose_sheet(frame_paths, output / "vfx_sheet.png", columns=spec.sheet_columns)
     write_preview(frame_paths, output / "preview.gif", fps=spec.fps)
     metadata = {
         "tool": "vfx2sheet", "version": 1, "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
-        "renderer": "blender-headless+shared-energy-graph+deterministic-stroke-bundle+directional-sweep-wisps+terminal-plumes+irregular-hot-core+embedded-lightning+per-stroke-decay",
+        "renderer": "blender-headless+shared-energy-graph+stroke-bundle+sweep-wisps+terminal-plumes+irregular-hot-core+embedded-lightning+per-stroke-decay+soft-plasma-finish",
         "profile": str(args.profile) if args.profile else None,
     }
     write_json(output / "metadata.json", metadata)
