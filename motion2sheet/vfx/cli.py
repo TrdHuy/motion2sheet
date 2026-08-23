@@ -7,10 +7,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .lightning_glow import apply_external_lightning_glow_to_frames
-from .organic_core import add_organic_core
+from .decay import apply_decay_to_frames
+from .energy_field import apply_energy_graph_to_frames
 from .packer import compose_sheet, write_preview
-from .postprocess import apply_glow_to_frames
 from .spec import VfxSpec, load_profile
 from .validator import validate_output
 
@@ -46,27 +45,6 @@ def run_blender(spec_path: Path, output: Path, blender_name: str) -> None:
     ], check=True)
 
 
-def _apply_organic_core_to_frames(
-    frame_paths: list[Path],
-    params: dict[str, str | float | int],
-    *,
-    seed: int,
-) -> None:
-    frame_count = len(frame_paths)
-    from PIL import Image
-
-    for frame_index, frame_path in enumerate(frame_paths):
-        frame = Image.open(frame_path).convert("RGBA")
-        frame = add_organic_core(
-            frame,
-            params,
-            seed=seed,
-            frame_index=frame_index,
-            frame_count=frame_count,
-        )
-        frame.save(frame_path)
-
-
 def build(args) -> int:
     profile = load_profile(Path(args.profile)) if args.profile else None
     spec = VfxSpec.create(
@@ -83,16 +61,15 @@ def build(args) -> int:
     run_blender(source_path, output, args.blender)
 
     frame_paths = sorted((output / "frames").glob("*.png"))
-    _apply_organic_core_to_frames(frame_paths, spec.params, seed=spec.seed)
-    apply_glow_to_frames(frame_paths, spec.params, seed=spec.seed)
-    apply_external_lightning_glow_to_frames(frame_paths, spec.params)
+    apply_energy_graph_to_frames(frame_paths, spec.params, seed=spec.seed)
+    apply_decay_to_frames(frame_paths, spec.params, seed=spec.seed)
     compose_sheet(frame_paths, output / "vfx_sheet.png", columns=spec.sheet_columns)
     write_preview(frame_paths, output / "preview.gif", fps=spec.fps)
     metadata = {
         "tool": "vfx2sheet", "version": 1, "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
-        "renderer": "blender-headless+deterministic-organic-core+hierarchical-lightning+pillow-glow",
+        "renderer": "blender-headless+shared-energy-graph+linear-energy-gradient+deterministic-decay",
         "profile": str(args.profile) if args.profile else None,
     }
     write_json(output / "metadata.json", metadata)
