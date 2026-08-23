@@ -61,6 +61,8 @@
     "body_scale": 2.60,
     "inner_scale": 1.16,
     "core_scale": 0.14,
+    "offset_x": 0.20,
+    "offset_y": -0.02,
     "form_noise": 0.80,
     "form_noise_frequency": 2.65,
     "edge_noise": 1.90,
@@ -117,7 +119,7 @@
     "peak": 0.57,
     "decay": 0.68
   },
-  "radius": 1.62,
+  "radius": 1.90,
   "arc_angle": 150.0,
   "thickness": 0.12,
   "start_angle": 105.0,
