@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
-from .energy_graph import EnergyGraph, build_energy_graph, normalize, smoothstep01
+from .energy_graph import EnergyGraph, build_energy_graph, smoothstep01
 
 
 def _hex_rgb(value: str) -> tuple[int, int, int]:
@@ -35,13 +35,11 @@ def _draw_strip(mask: Image.Image, points: list[tuple[float, float]], widths: li
 
 def _stroke_alive(seed: int, stroke_index: int, breakup: float) -> tuple[bool, float]:
     rng = random.Random(seed * 104729 + stroke_index * 7919 + 193)
-    # White-hot energy disappears early in the approved decay. Keep only cyan/
-    # blue residual fragments for the final frames.
-    death = rng.uniform(0.58, 0.80)
+    death = rng.uniform(0.52, 0.76)
     if breakup <= death:
         return True, 1.0
     excess = (breakup - death) / max(0.04, 1.0 - death)
-    return excess < 0.72, max(0.0, 1.0 - excess * 1.20)
+    return excess < 0.68, max(0.0, 1.0 - excess * 1.32)
 
 
 def _core_stroke(
@@ -56,8 +54,8 @@ def _core_stroke(
     phase_a = rng.uniform(0.0, math.tau)
     phase_b = rng.uniform(0.0, math.tau)
     frequency = rng.uniform(1.65, 3.80)
-    offset_wave = rng.uniform(0.035, 0.14)
-    width_wave = rng.uniform(0.24, 0.48)
+    offset_wave = rng.uniform(0.045, 0.17)
+    width_wave = rng.uniform(0.30, 0.58)
     points: list[tuple[float, float]] = []
     widths: list[float] = []
     values: list[int] = []
@@ -71,18 +69,17 @@ def _core_stroke(
             node.point[1] + node.normal[1] * node.width * local_offset,
         ))
         taper = smoothstep01(u / 0.055) * smoothstep01((1.0 - u) / 0.05)
-        taper = max(0.20, taper)
+        taper = max(0.18, taper)
         modulation = 1.0 + math.sin(u * math.tau * frequency + phase_b) * width_wave
-        modulation += math.sin(u * math.tau * frequency * 1.73 - phase_a) * width_wave * 0.24
-        # Controlled pinches create cyan gaps between neighboring white strokes
-        # without disconnecting the whole cutting trajectory.
-        for pinch_center in (0.28 + stroke_index * 0.045, 0.66 - stroke_index * 0.025):
+        modulation += math.sin(u * math.tau * frequency * 1.73 - phase_a) * width_wave * 0.28
+        # Strong pinches leave visible cyan channels between white segments.
+        for pinch_center in (0.24 + stroke_index * 0.052, 0.54 + stroke_index * 0.026, 0.76 - stroke_index * 0.030):
             distance = abs(u - pinch_center)
-            if distance < 0.055:
-                modulation *= 0.34 + 0.66 * (distance / 0.055)
-        widths.append(max(0.45, node.width * width_scale * max(0.20, modulation) * taper))
-        hotspot = 0.82 + 0.18 * max(0.0, math.sin(u * math.tau * (frequency * 0.55) + phase_a))
-        values.append(round(255 * hotspot))
+            if distance < 0.060:
+                modulation *= 0.18 + 0.82 * (distance / 0.060)
+        widths.append(max(0.32, node.width * width_scale * max(0.14, modulation) * taper))
+        hotspot = 0.68 + 0.32 * max(0.0, math.sin(u * math.tau * (frequency * 0.55) + phase_a))
+        values.append(round(238 * hotspot))
     return points, widths, values
 
 
@@ -94,18 +91,20 @@ def _cyan_support_stroke(
 ) -> tuple[list[tuple[float, float]], list[float], list[int]]:
     rng = random.Random(seed * 262147 + index * 3571 + 401)
     phase = rng.uniform(0.0, math.tau)
-    offset = rng.uniform(-0.48, 0.18)
-    width_scale = rng.uniform(0.28, 0.52)
+    frequency = rng.uniform(1.1, 2.5)
+    offset = rng.uniform(-0.46, 0.16)
+    width_scale = rng.uniform(0.18, 0.34)
     points: list[tuple[float, float]] = []
     widths: list[float] = []
     values: list[int] = []
     for node_index, node in enumerate(graph.nodes):
         u = node_index / max(1, len(graph.nodes) - 1)
-        local = offset + math.sin(u * math.tau * rng.uniform(1.1, 2.5) + phase) * rng.uniform(0.05, 0.18)
+        local = offset + math.sin(u * math.tau * frequency + phase) * rng.uniform(0.05, 0.16)
         points.append((node.point[0] + node.normal[0] * node.width * local, node.point[1] + node.normal[1] * node.width * local))
         envelope = smoothstep01(u / 0.08) * smoothstep01((1.0 - u) / 0.075)
-        widths.append(max(0.5, node.width * width_scale * envelope * (0.78 + 0.22 * math.sin(u * math.tau * 2.3 + phase))))
-        values.append(rng.randint(155, 220))
+        local_width = 0.76 + 0.24 * math.sin(u * math.tau * 2.3 + phase)
+        widths.append(max(0.4, node.width * width_scale * envelope * local_width))
+        values.append(rng.randint(135, 195))
     return points, widths, values
 
 
@@ -115,15 +114,15 @@ def _fragment_sparks(graph: EnergyGraph, size: tuple[int, int], seed: int, frame
         return mask
     rng = random.Random(seed * 99991 + frame_index * 1597 + 31)
     draw = ImageDraw.Draw(mask)
-    count = round(8 + 10 * graph.energy)
+    count = round(6 + 8 * graph.energy)
     for _ in range(count):
         node = graph.nodes[rng.randint(3, len(graph.nodes) - 4)]
         radial = rng.uniform(0.9, 3.8) * node.width
         tangential = rng.uniform(-1.5, 1.5) * node.width
         x = node.point[0] + node.normal[0] * radial + node.tangent[0] * tangential
         y = node.point[1] + node.normal[1] * radial + node.tangent[1] * tangential
-        radius = rng.uniform(0.45, 1.55)
-        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=rng.randint(90, 190))
+        radius = rng.uniform(0.4, 1.25)
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=rng.randint(80, 160))
     return mask
 
 
@@ -141,16 +140,16 @@ def add_hot_core_bundle(
     cyan_mask = Image.new("L", large, 0)
     white_mask = Image.new("L", large, 0)
 
-    # Cyan is deliberately broader than white so the hot core reads as plasma
-    # embedded in the blue body rather than a clean vector line.
     support_count = 4
     for support_index in range(support_count):
         points, widths, values = _cyan_support_stroke(graph, seed=seed + frame_index * 97, index=support_index)
         _draw_strip(cyan_mask, points, widths, values, scale)
 
     core_count = max(3, min(5, int(params["core.streak_count"])))
-    offsets = (-0.38, -0.27, -0.17, -0.08, 0.02)
-    width_scales = (0.30, 0.39, 0.28, 0.34, 0.23)
+    # Separated tracks instead of an overlapping white slab. Neighboring cyan
+    # support remains visible through the gaps and pinch regions.
+    offsets = (-0.43, -0.29, -0.15, -0.01, 0.11)
+    width_scales = (0.13, 0.18, 0.14, 0.16, 0.11)
     for stroke_index in range(core_count):
         alive, opacity = _stroke_alive(seed + frame_index * 131, stroke_index, graph.breakup)
         if not alive or opacity <= 0.02:
@@ -174,18 +173,16 @@ def add_hot_core_bundle(
     core = _hex_rgb(str(params["colors.core"]))
     result = frame.convert("RGBA")
 
-    # Soft blue/cyan bloom first, then the irregular hot strokes. Alpha values
-    # are intentionally additive-looking but remain deterministic RGBA layers.
-    cyan_wide = cyan_mask.filter(ImageFilter.GaussianBlur(7.0))
-    cyan_tight = cyan_mask.filter(ImageFilter.GaussianBlur(2.5))
-    white_glow = white_mask.filter(ImageFilter.GaussianBlur(3.5))
-    result = Image.alpha_composite(result, _mask_layer(cyan_wide, body, 0.16))
-    result = Image.alpha_composite(result, _mask_layer(cyan_tight, inner, 0.32))
-    result = Image.alpha_composite(result, _mask_layer(white_glow, inner, 0.30))
-    result = Image.alpha_composite(result, _mask_layer(cyan_mask.filter(ImageFilter.GaussianBlur(0.45)), inner, 0.46))
-    result = Image.alpha_composite(result, _mask_layer(white_mask.filter(ImageFilter.GaussianBlur(0.55)), core, 0.82))
-    result = Image.alpha_composite(result, _mask_layer(sparks.filter(ImageFilter.GaussianBlur(1.8)), inner, 0.35))
-    result = Image.alpha_composite(result, _mask_layer(sparks, core, 0.42))
+    cyan_wide = cyan_mask.filter(ImageFilter.GaussianBlur(6.0))
+    cyan_tight = cyan_mask.filter(ImageFilter.GaussianBlur(2.2))
+    white_glow = white_mask.filter(ImageFilter.GaussianBlur(3.0))
+    result = Image.alpha_composite(result, _mask_layer(cyan_wide, body, 0.13))
+    result = Image.alpha_composite(result, _mask_layer(cyan_tight, inner, 0.26))
+    result = Image.alpha_composite(result, _mask_layer(white_glow, inner, 0.25))
+    result = Image.alpha_composite(result, _mask_layer(cyan_mask.filter(ImageFilter.GaussianBlur(0.42)), inner, 0.38))
+    result = Image.alpha_composite(result, _mask_layer(white_mask.filter(ImageFilter.GaussianBlur(0.48)), core, 0.62))
+    result = Image.alpha_composite(result, _mask_layer(sparks.filter(ImageFilter.GaussianBlur(1.6)), inner, 0.28))
+    result = Image.alpha_composite(result, _mask_layer(sparks, core, 0.34))
     return result
 
 
