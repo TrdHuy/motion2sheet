@@ -7,11 +7,11 @@
   "sheetColumns": 4,
   "seed": 42891,
   "colors": {
-    "outer": "#0018D8",
-    "body": "#0048FF",
-    "inner": "#00A8FF",
+    "outer": "#0010F0",
+    "body": "#003CFF",
+    "inner": "#18C8FF",
     "core": "#FFFFFF",
-    "lightning": "#9CEEFF"
+    "lightning": "#A8F4FF"
   },
   "intensity": {
     "outer": 0.75,
@@ -27,6 +27,22 @@
     "outer_strength": 0.24,
     "inner_strength": 0.20,
     "core_strength": 0.14
+  },
+  "energy": {
+    "body_floor": 0.24,
+    "body_gain": 0.88,
+    "cyan_threshold": 0.72,
+    "white_threshold": 0.90,
+    "turbulence": 0.060,
+    "turbulence_frequency": 5.8,
+    "core_gain": 1.02,
+    "lightning_gain": 1.04,
+    "root_width_coupling": 0.82,
+    "alpha_power": 1.12,
+    "alpha_gain": 0.92,
+    "base_alpha_mix": 0.64,
+    "glow_radius": 8.5,
+    "glow_strength": 0.68
   },
   "core": {
     "width_min": 5.0,
@@ -71,8 +87,8 @@
     "edge_bias": 0.92,
     "cluster_strength": 0.62,
     "major_count": 4,
-    "major_width_min": 6.5,
-    "major_width_max": 11.0,
+    "major_width_min": 7.0,
+    "major_width_max": 12.0,
     "tip_width": 0.38,
     "width_jitter": 0.46,
     "width_smoothness": 0.62,
@@ -81,7 +97,7 @@
     "branch_depth": 2,
     "minor_width_ratio": 0.44,
     "minor_length_ratio": 0.54,
-    "micro_count": 16,
+    "micro_count": 14,
     "micro_width": 0.64,
     "micro_intensity": 0.22,
     "glow_radius": 7.0,
