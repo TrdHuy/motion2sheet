@@ -11,6 +11,7 @@ from .decay import apply_decay_to_frames
 from .packer import compose_sheet, write_preview
 from .spec import VfxSpec, load_profile
 from .stroke_bundle import apply_stroke_bundle_to_frames
+from .sweep_wisps import apply_sweep_wisps_to_frames
 from .validator import validate_output
 
 
@@ -62,11 +63,14 @@ def build(args) -> int:
 
     frame_paths = sorted((output / "frames").glob("*.png"))
     # Blender remains part of the deterministic build/toolchain contract, but
-    # the approved 2D lightning slash silhouette is now rendered completely
-    # from the shared EnergyGraph as tapered flow strokes. This intentionally
-    # prevents Blender body geometry/radial spokes from leaking into final RGBA.
+    # the approved 2D lightning slash silhouette is rendered completely from
+    # the shared EnergyGraph as tapered flow strokes. This prevents Blender
+    # body geometry/radial spokes from leaking into final RGBA.
     apply_stroke_bundle_to_frames(frame_paths, spec.params, seed=spec.seed)
-    # Residual shards remain a small secondary detail; the main F6-F8 topology
+    # Long tangent-biased wisps and hot terminal streaks are separate stroke
+    # identities, still driven by the same graph and deterministic lifetime.
+    apply_sweep_wisps_to_frames(frame_paths, spec.params, seed=spec.seed)
+    # Residual shards remain a small secondary detail; main F6-F8 topology
     # breakup already happens through independent per-stroke lifetimes.
     apply_decay_to_frames(frame_paths, spec.params, seed=spec.seed)
     compose_sheet(frame_paths, output / "vfx_sheet.png", columns=spec.sheet_columns)
@@ -75,7 +79,7 @@ def build(args) -> int:
         "tool": "vfx2sheet", "version": 1, "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
-        "renderer": "blender-headless+shared-energy-graph+deterministic-stroke-bundle+embedded-lightning+per-stroke-decay",
+        "renderer": "blender-headless+shared-energy-graph+deterministic-stroke-bundle+directional-sweep-wisps+embedded-lightning+per-stroke-decay",
         "profile": str(args.profile) if args.profile else None,
     }
     write_json(output / "metadata.json", metadata)
