@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from .decay import apply_decay_to_frames
+from .hot_core_bundle import apply_hot_core_bundle_to_frames
 from .packer import compose_sheet, write_preview
 from .spec import VfxSpec, load_profile
 from .stroke_bundle import apply_stroke_bundle_to_frames
@@ -63,15 +64,15 @@ def build(args) -> int:
 
     frame_paths = sorted((output / "frames").glob("*.png"))
     # Blender remains part of the deterministic build/toolchain contract, but
-    # the approved 2D lightning slash silhouette is rendered completely from
-    # the shared EnergyGraph as tapered flow strokes. This prevents Blender
-    # body geometry/radial spokes from leaking into final RGBA.
+    # final 2D pixels come from EnergyGraph-driven tapered flow strokes.
     apply_stroke_bundle_to_frames(frame_paths, spec.params, seed=spec.seed)
-    # Long tangent-biased wisps and hot terminal streaks are separate stroke
-    # identities, still driven by the same graph and deterministic lifetime.
+    # Tangent-biased plasma wisps establish the directional swept silhouette.
     apply_sweep_wisps_to_frames(frame_paths, spec.params, seed=spec.seed)
-    # Residual shards remain a small secondary detail; main F6-F8 topology
-    # breakup already happens through independent per-stroke lifetimes.
+    # A separate graph-connected hot bundle makes the cutting core broad,
+    # irregular and cyan-coupled without inflating the shared body node width.
+    apply_hot_core_bundle_to_frames(frame_paths, spec.params, seed=spec.seed)
+    # Residual shards are secondary; main F6-F8 topology breakup comes from
+    # independent stroke lifetimes on the preserved residual graph span.
     apply_decay_to_frames(frame_paths, spec.params, seed=spec.seed)
     compose_sheet(frame_paths, output / "vfx_sheet.png", columns=spec.sheet_columns)
     write_preview(frame_paths, output / "preview.gif", fps=spec.fps)
@@ -79,7 +80,7 @@ def build(args) -> int:
         "tool": "vfx2sheet", "version": 1, "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
-        "renderer": "blender-headless+shared-energy-graph+deterministic-stroke-bundle+directional-sweep-wisps+embedded-lightning+per-stroke-decay",
+        "renderer": "blender-headless+shared-energy-graph+deterministic-stroke-bundle+directional-sweep-wisps+irregular-hot-core+embedded-lightning+per-stroke-decay",
         "profile": str(args.profile) if args.profile else None,
     }
     write_json(output / "metadata.json", metadata)
