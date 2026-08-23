@@ -16,6 +16,13 @@ SLASH_VARIANTS: dict[str, dict[str, Any]] = {
         "intensity.outer": 0.75, "intensity.body": 0.95, "intensity.inner": 1.25, "intensity.core": 4.0, "intensity.lightning": 3.8,
         "glow.outer_radius": 18.0, "glow.inner_radius": 8.0, "glow.core_radius": 3.0,
         "glow.outer_strength": 0.55, "glow.inner_strength": 0.34, "glow.core_strength": 0.22,
+        "energy.body_floor": 0.26, "energy.body_gain": 0.94,
+        "energy.cyan_threshold": 0.69, "energy.white_threshold": 0.88,
+        "energy.turbulence": 0.055, "energy.turbulence_frequency": 5.4,
+        "energy.core_gain": 1.0, "energy.lightning_gain": 1.0,
+        "energy.root_width_coupling": 0.70,
+        "energy.alpha_power": 1.08, "energy.alpha_gain": 0.94, "energy.base_alpha_mix": 0.70,
+        "energy.glow_radius": 8.0, "energy.glow_strength": 0.62,
         "core.width_min": 3.8, "core.width_max": 8.6, "core.width_jitter": 0.42, "core.width_smoothness": 0.70,
         "core.center_jitter": 3.2, "core.center_frequency": 4.8, "core.streak_count": 3,
         "core.streak_width_ratio": 0.30, "core.split_probability": 0.38, "core.hotspot_count": 4, "core.hotspot_scale": 1.15,
@@ -47,6 +54,13 @@ PARAM_RANGES: dict[str, tuple[float, float]] = {
     "intensity.outer": (0.0, 100.0), "intensity.body": (0.0, 100.0), "intensity.inner": (0.0, 100.0), "intensity.core": (0.0, 100.0), "intensity.lightning": (0.0, 100.0),
     "glow.outer_radius": (0.0, 64.0), "glow.inner_radius": (0.0, 64.0), "glow.core_radius": (0.0, 32.0),
     "glow.outer_strength": (0.0, 2.0), "glow.inner_strength": (0.0, 2.0), "glow.core_strength": (0.0, 2.0),
+    "energy.body_floor": (0.0, 1.0), "energy.body_gain": (0.1, 2.0),
+    "energy.cyan_threshold": (0.40, 0.90), "energy.white_threshold": (0.60, 0.99),
+    "energy.turbulence": (0.0, 0.25), "energy.turbulence_frequency": (0.25, 24.0),
+    "energy.core_gain": (0.1, 2.0), "energy.lightning_gain": (0.1, 2.0),
+    "energy.root_width_coupling": (0.1, 1.5),
+    "energy.alpha_power": (0.4, 3.0), "energy.alpha_gain": (0.1, 1.5), "energy.base_alpha_mix": (0.0, 1.0),
+    "energy.glow_radius": (0.0, 32.0), "energy.glow_strength": (0.0, 2.0),
     "core.width_min": (0.2, 24.0), "core.width_max": (0.2, 32.0), "core.width_jitter": (0.0, 0.95), "core.width_smoothness": (0.0, 1.0),
     "core.center_jitter": (0.0, 16.0), "core.center_frequency": (0.25, 16.0), "core.streak_count": (0.0, 12.0),
     "core.streak_width_ratio": (0.05, 1.0), "core.split_probability": (0.0, 1.0), "core.hotspot_count": (0.0, 16.0), "core.hotspot_scale": (0.1, 3.0),
@@ -79,7 +93,7 @@ INTEGER_PARAMS = {
     "lightning.major_count", "lightning.branch_depth", "lightning.micro_count", "shape.tongue_count", "fragments.count",
 }
 PARAM_ALIASES = {"core.intensity": "intensity.core", "glow.intensity": "intensity.outer", "lightning.branches": "lightning.branch_count"}
-PROFILE_PARAM_GROUPS = {"colors", "intensity", "glow", "core", "sparks", "lightning", "shape", "fragments", "timing"}
+PROFILE_PARAM_GROUPS = {"colors", "intensity", "glow", "energy", "core", "sparks", "lightning", "shape", "fragments", "timing"}
 _HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
@@ -205,6 +219,8 @@ def _validate_params(params: dict[str, Any]) -> dict[str, str | float | int]:
         raise ValueError("lightning.tip_width must be smaller than lightning.major_width_max")
     if float(result["core.width_min"]) > float(result["core.width_max"]):
         raise ValueError("core.width_min must be <= core.width_max")
+    if float(result["energy.cyan_threshold"]) >= float(result["energy.white_threshold"]):
+        raise ValueError("energy.cyan_threshold must be smaller than energy.white_threshold")
     return result
 
 
