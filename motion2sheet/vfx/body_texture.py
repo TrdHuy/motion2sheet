@@ -22,8 +22,10 @@ def _mask_layer(mask: Image.Image, color: tuple[int, int, int], amount: float) -
 
 
 def _activity(graph: EnergyGraph) -> float:
+    if graph.breakup > 0.55:
+        return 0.0
     if graph.breakup > 0.0:
-        return max(0.0, 1.0 - graph.breakup * 1.08)
+        return max(0.0, 1.0 - graph.breakup * 1.45)
     span = max(0.0, min(1.0, (graph.head_t - graph.tail_t) / 0.90))
     return smoothstep01(span)
 
@@ -36,16 +38,12 @@ def _body_support(frame: Image.Image) -> Image.Image:
         if a < 72 or b < 128:
             values.append(0)
             continue
-        # Protect the hot cyan/white cutting region. The body palette has a much
-        # lower green-to-blue ratio than the core/support strokes.
         if g > b * 0.68 or r > max(70, g * 0.72):
             values.append(0)
             continue
         values.append(min(255, round(a * 1.12)))
     support = Image.new("L", rgba.size, 0)
     support.putdata(values)
-    # Keep texture away from the outermost silhouette edge. This guarantees the
-    # pass cannot grow the accepted run-117 silhouette or damage its plume tips.
     return support.filter(ImageFilter.MinFilter(5))
 
 
@@ -107,13 +105,12 @@ def _render_texture_masks(
 
     rng = random.Random(seed * 433494437 + frame_index * 13007 + 271)
     min_dim = min(size)
-    hole_count = max(2, round(10 * activity))
-    cyan_count = max(1, round(7 * activity))
+    hole_count = max(3, round(14 * activity))
+    cyan_count = max(2, round(9 * activity))
 
-    for index in range(hole_count):
-        node_index = rng.randint(5, len(graph.nodes) - 6)
-        node = graph.nodes[node_index]
-        length = min_dim * rng.uniform(0.028, 0.082) * activity
+    for _ in range(hole_count):
+        node = graph.nodes[rng.randint(5, len(graph.nodes) - 6)]
+        length = min_dim * rng.uniform(0.032, 0.095) * activity
         path = _texture_path(
             node,
             length=length,
@@ -124,15 +121,14 @@ def _render_texture_masks(
         _draw_tapered(
             holes,
             path,
-            root_width=max(0.7, node.width * rng.uniform(0.055, 0.125)),
-            value=rng.randint(105, 165),
+            root_width=max(0.8, node.width * rng.uniform(0.070, 0.150)),
+            value=rng.randint(125, 185),
             scale=scale,
         )
 
-    for index in range(cyan_count):
-        node_index = rng.randint(5, len(graph.nodes) - 6)
-        node = graph.nodes[node_index]
-        length = min_dim * rng.uniform(0.035, 0.095) * activity
+    for _ in range(cyan_count):
+        node = graph.nodes[rng.randint(5, len(graph.nodes) - 6)]
+        length = min_dim * rng.uniform(0.040, 0.110) * activity
         path = _texture_path(
             node,
             length=length,
@@ -143,8 +139,8 @@ def _render_texture_masks(
         _draw_tapered(
             cyan,
             path,
-            root_width=max(0.55, node.width * rng.uniform(0.040, 0.090)),
-            value=rng.randint(105, 155),
+            root_width=max(0.65, node.width * rng.uniform(0.050, 0.105)),
+            value=rng.randint(120, 170),
             scale=scale,
         )
 
@@ -168,14 +164,12 @@ def add_body_texture(
 
     result = frame.convert("RGBA")
     alpha = result.getchannel("A")
-    # Mild local erosion creates painterly transparent channels without changing
-    # the external silhouette or touching the protected hot core.
-    reduction = holes.point(lambda value: round(value * 0.18))
+    reduction = holes.point(lambda value: round(value * 0.30))
     result.putalpha(ImageChops.subtract(alpha, reduction))
 
     inner = _hex_rgb(str(params["colors.inner"]))
-    result = Image.alpha_composite(result, _mask_layer(cyan_glow, inner, 0.09))
-    result = Image.alpha_composite(result, _mask_layer(cyan_sharp, inner, 0.24))
+    result = Image.alpha_composite(result, _mask_layer(cyan_glow, inner, 0.12))
+    result = Image.alpha_composite(result, _mask_layer(cyan_sharp, inner, 0.34))
     return result
 
 
