@@ -21,12 +21,12 @@
     "lightning": 3.8
   },
   "glow": {
-    "outer_radius": 18.0,
-    "inner_radius": 8.0,
-    "core_radius": 3.0,
-    "outer_strength": 0.55,
-    "inner_strength": 0.34,
-    "core_strength": 0.22
+    "outer_radius": 10.0,
+    "inner_radius": 5.0,
+    "core_radius": 2.0,
+    "outer_strength": 0.24,
+    "inner_strength": 0.20,
+    "core_strength": 0.14
   },
   "shape": {
     "body_scale": 3.30,
