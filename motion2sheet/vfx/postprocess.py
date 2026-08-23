@@ -30,22 +30,35 @@ def _color_layer(size: tuple[int, int], color: str, alpha: Image.Image) -> Image
 
 
 def _energy_masks(frame: Image.Image) -> tuple[Image.Image, Image.Image, Image.Image, Image.Image]:
+    """Split the decoded render into slash-body, cyan and white-energy masks.
+
+    The body mask deliberately excludes near-white lightning. This prevents the
+    wide outer halo from turning detached branches into one opaque blue blob;
+    lightning receives only the tight core glow through the white mask.
+    """
     rgba = frame.convert("RGBA")
     alpha = rgba.getchannel("A")
+    body = Image.new("L", rgba.size, 0)
     inner = Image.new("L", rgba.size, 0)
     core = Image.new("L", rgba.size, 0)
+    body_data: list[int] = []
     inner_data: list[int] = []
     core_data: list[int] = []
     for r, g, b, a in rgba.getdata():
         if a <= 8:
+            body_data.append(0)
             inner_data.append(0)
             core_data.append(0)
             continue
-        inner_data.append(a if b > 135 and g > 75 else 0)
-        core_data.append(a if r > 190 and g > 205 and b > 210 else 0)
+        is_white_energy = r > 180 and g > 195 and b > 205
+        is_blue_energy = b > 115 and b >= r * 1.25 and not is_white_energy
+        is_cyan_energy = is_blue_energy and g > 90
+        body_data.append(a if is_blue_energy else 0)
+        inner_data.append(a if is_cyan_energy else 0)
+        core_data.append(a if is_white_energy else 0)
+    body.putdata(body_data)
     inner.putdata(inner_data)
     core.putdata(core_data)
-    body = alpha.point(lambda value: value if value > 16 else 0)
     return alpha, body, inner, core
 
 
