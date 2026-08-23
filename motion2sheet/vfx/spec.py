@@ -7,126 +7,57 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-BUILD_DEFAULTS = {
-    "frames": 8,
-    "fps": 12,
-    "canvas": (512, 512),
-    "sheet_columns": 4,
-    "seed": 42891,
-}
+BUILD_DEFAULTS = {"frames": 8, "fps": 12, "canvas": (512, 512), "sheet_columns": 4, "seed": 42891}
 
 SLASH_VARIANTS: dict[str, dict[str, Any]] = {
     "lightning": {
-        "radius": 1.5,
-        "arc_angle": 150.0,
-        "thickness": 0.12,
-        "colors.outer": "#1028FF",
-        "colors.body": "#008DFF",
-        "colors.inner": "#55E8FF",
-        "colors.core": "#FFFFFF",
-        "colors.lightning": "#C8FBFF",
-        "intensity.outer": 4.2,
-        "intensity.body": 6.2,
-        "intensity.inner": 7.4,
-        "intensity.core": 11.0,
-        "intensity.lightning": 13.0,
-        "sparks.count": 30,
-        "sparks.spread": 0.45,
-        "sparks.size": 0.040,
-        "lightning.jitter": 0.30,
-        "lightning.branch_count": 20,
-        "lightning.secondary_branch_count": 12,
-        "lightning.surface_crack_count": 14,
-        "lightning.length": 0.50,
-        "lightning.spread": 0.55,
-        "shape.body_scale": 3.5,
-        "shape.inner_scale": 1.58,
-        "shape.core_scale": 0.30,
-        "shape.edge_noise": 1.65,
-        "shape.edge_noise_frequency": 7.5,
-        "shape.taper_power": 0.50,
-        "shape.flare": 0.48,
-        "shape.tongue_count": 8,
-        "shape.tongue_length": 0.85,
-        "fragments.count": 24,
-        "fragments.spread": 0.50,
-        "fragments.size": 0.090,
-        "timing.peak": 0.57,
-        "timing.decay": 0.68,
-        "start_angle": -75.0,
-        "rotation": 0.0,
-        "fade_in": 0.25,
-        "fade_out": 0.45,
+        "radius": 1.5, "arc_angle": 150.0, "thickness": 0.12,
+        "colors.outer": "#0018D8", "colors.body": "#0048FF", "colors.inner": "#00A8FF", "colors.core": "#FFFFFF", "colors.lightning": "#9CEEFF",
+        "intensity.outer": 0.75, "intensity.body": 0.95, "intensity.inner": 1.25, "intensity.core": 4.0, "intensity.lightning": 3.8,
+        "glow.outer_radius": 18.0, "glow.inner_radius": 8.0, "glow.core_radius": 3.0,
+        "glow.outer_strength": 0.55, "glow.inner_strength": 0.34, "glow.core_strength": 0.22,
+        "sparks.count": 40, "sparks.spread": 0.55, "sparks.size": 0.042,
+        "lightning.jitter": 0.38, "lightning.branch_count": 24, "lightning.secondary_branch_count": 18,
+        "lightning.surface_crack_count": 18, "lightning.length": 0.58, "lightning.spread": 0.75,
+        "lightning.width": 1.55, "lightning.secondary_width": 0.90, "lightning.surface_width": 0.80,
+        "lightning.edge_bias": 0.92, "lightning.cluster_strength": 0.62,
+        "shape.body_scale": 3.30, "shape.inner_scale": 1.35, "shape.core_scale": 0.18,
+        "shape.form_noise": 0.52, "shape.form_noise_frequency": 2.4,
+        "shape.edge_noise": 1.60, "shape.edge_noise_frequency": 12.0,
+        "shape.detail_noise": 0.42, "shape.detail_noise_frequency": 24.0,
+        "shape.taper_power": 0.50, "shape.flare": 0.50,
+        "shape.tongue_count": 16, "shape.tongue_length": 0.58, "shape.tongue_curve": 0.85, "shape.tongue_width": 0.72,
+        "fragments.count": 30, "fragments.spread": 0.58, "fragments.size": 0.075,
+        "timing.peak": 0.57, "timing.decay": 0.68,
+        "start_angle": -75.0, "rotation": 0.0, "fade_in": 0.25, "fade_out": 0.45,
     }
 }
 
 PARAM_RANGES: dict[str, tuple[float, float]] = {
-    "radius": (0.1, 10.0),
-    "arc_angle": (10.0, 340.0),
-    "thickness": (0.01, 1.0),
-    "intensity.outer": (0.0, 100.0),
-    "intensity.body": (0.0, 100.0),
-    "intensity.inner": (0.0, 100.0),
-    "intensity.core": (0.0, 100.0),
-    "intensity.lightning": (0.0, 100.0),
-    "sparks.count": (0.0, 500.0),
-    "sparks.spread": (0.0, 3.0),
-    "sparks.size": (0.001, 1.0),
-    "lightning.jitter": (0.0, 1.5),
-    "lightning.branch_count": (0.0, 100.0),
-    "lightning.secondary_branch_count": (0.0, 300.0),
-    "lightning.surface_crack_count": (0.0, 300.0),
-    "lightning.length": (0.01, 3.0),
-    "lightning.spread": (0.0, 3.0),
-    "shape.body_scale": (0.2, 8.0),
-    "shape.inner_scale": (0.1, 8.0),
-    "shape.core_scale": (0.05, 4.0),
-    "shape.edge_noise": (0.0, 3.0),
-    "shape.edge_noise_frequency": (0.5, 40.0),
-    "shape.taper_power": (0.1, 3.0),
-    "shape.flare": (0.0, 2.0),
-    "shape.tongue_count": (0.0, 50.0),
-    "shape.tongue_length": (0.0, 3.0),
-    "fragments.count": (0.0, 300.0),
-    "fragments.spread": (0.0, 3.0),
-    "fragments.size": (0.001, 1.0),
-    "timing.peak": (0.25, 0.80),
-    "timing.decay": (0.45, 0.95),
-    "start_angle": (-720.0, 720.0),
-    "rotation": (-720.0, 720.0),
-    "fade_in": (0.0, 1.0),
-    "fade_out": (0.0, 1.0),
+    "radius": (0.1, 10.0), "arc_angle": (10.0, 340.0), "thickness": (0.01, 1.0),
+    "intensity.outer": (0.0, 100.0), "intensity.body": (0.0, 100.0), "intensity.inner": (0.0, 100.0), "intensity.core": (0.0, 100.0), "intensity.lightning": (0.0, 100.0),
+    "glow.outer_radius": (0.0, 64.0), "glow.inner_radius": (0.0, 64.0), "glow.core_radius": (0.0, 32.0),
+    "glow.outer_strength": (0.0, 2.0), "glow.inner_strength": (0.0, 2.0), "glow.core_strength": (0.0, 2.0),
+    "sparks.count": (0.0, 500.0), "sparks.spread": (0.0, 3.0), "sparks.size": (0.001, 1.0),
+    "lightning.jitter": (0.0, 1.5), "lightning.branch_count": (0.0, 100.0), "lightning.secondary_branch_count": (0.0, 300.0),
+    "lightning.surface_crack_count": (0.0, 300.0), "lightning.length": (0.01, 3.0), "lightning.spread": (0.0, 3.0),
+    "lightning.width": (0.1, 5.0), "lightning.secondary_width": (0.1, 5.0), "lightning.surface_width": (0.1, 5.0),
+    "lightning.edge_bias": (0.0, 1.5), "lightning.cluster_strength": (0.0, 1.0),
+    "shape.body_scale": (0.2, 8.0), "shape.inner_scale": (0.1, 8.0), "shape.core_scale": (0.05, 4.0),
+    "shape.form_noise": (0.0, 2.0), "shape.form_noise_frequency": (0.25, 12.0),
+    "shape.edge_noise": (0.0, 3.0), "shape.edge_noise_frequency": (0.5, 40.0),
+    "shape.detail_noise": (0.0, 2.0), "shape.detail_noise_frequency": (1.0, 80.0),
+    "shape.taper_power": (0.1, 3.0), "shape.flare": (0.0, 2.0),
+    "shape.tongue_count": (0.0, 50.0), "shape.tongue_length": (0.0, 3.0), "shape.tongue_curve": (0.0, 2.0), "shape.tongue_width": (0.1, 2.0),
+    "fragments.count": (0.0, 300.0), "fragments.spread": (0.0, 3.0), "fragments.size": (0.001, 1.0),
+    "timing.peak": (0.25, 0.80), "timing.decay": (0.45, 0.95),
+    "start_angle": (-720.0, 720.0), "rotation": (-720.0, 720.0), "fade_in": (0.0, 1.0), "fade_out": (0.0, 1.0),
 }
 
-COLOR_PARAMS = {
-    "colors.outer",
-    "colors.body",
-    "colors.inner",
-    "colors.core",
-    "colors.lightning",
-}
-INTEGER_PARAMS = {
-    "sparks.count",
-    "lightning.branch_count",
-    "lightning.secondary_branch_count",
-    "lightning.surface_crack_count",
-    "shape.tongue_count",
-    "fragments.count",
-}
-PARAM_ALIASES = {
-    "core.intensity": "intensity.core",
-    "glow.intensity": "intensity.outer",
-    "lightning.branches": "lightning.branch_count",
-}
-PROFILE_PARAM_GROUPS = {
-    "colors",
-    "intensity",
-    "sparks",
-    "lightning",
-    "shape",
-    "fragments",
-    "timing",
-}
+COLOR_PARAMS = {"colors.outer", "colors.body", "colors.inner", "colors.core", "colors.lightning"}
+INTEGER_PARAMS = {"sparks.count", "lightning.branch_count", "lightning.secondary_branch_count", "lightning.surface_crack_count", "shape.tongue_count", "fragments.count"}
+PARAM_ALIASES = {"core.intensity": "intensity.core", "glow.intensity": "intensity.outer", "lightning.branches": "lightning.branch_count"}
+PROFILE_PARAM_GROUPS = {"colors", "intensity", "glow", "sparks", "lightning", "shape", "fragments", "timing"}
 _HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
@@ -169,8 +100,7 @@ def parse_set(value: str) -> tuple[str, str | float | int]:
 def _flatten_mapping(prefix: str, value: Any, result: dict[str, Any]) -> None:
     if isinstance(value, dict):
         for child_key, child_value in value.items():
-            child_prefix = f"{prefix}.{child_key}" if prefix else str(child_key)
-            _flatten_mapping(child_prefix, child_value, result)
+            _flatten_mapping(f"{prefix}.{child_key}" if prefix else str(child_key), child_value, result)
     else:
         result[prefix] = value
 
@@ -262,19 +192,7 @@ class VfxSpec:
     params: dict[str, str | float | int]
 
     @classmethod
-    def create(
-        cls,
-        *,
-        template: str | None = None,
-        variant: str | None = None,
-        frames: int | None = None,
-        fps: int | None = None,
-        canvas: tuple[int, int] | None = None,
-        sheet_columns: int | None = None,
-        seed: int | None = None,
-        overrides: list[str] | None = None,
-        profile: dict[str, Any] | None = None,
-    ) -> "VfxSpec":
+    def create(cls, *, template: str | None = None, variant: str | None = None, frames: int | None = None, fps: int | None = None, canvas: tuple[int, int] | None = None, sheet_columns: int | None = None, seed: int | None = None, overrides: list[str] | None = None, profile: dict[str, Any] | None = None) -> "VfxSpec":
         profile = profile or {}
         resolved_template = template or profile.get("template")
         resolved_variant = variant or profile.get("variant")
@@ -282,7 +200,6 @@ class VfxSpec:
             raise ValueError(f"Unsupported VFX template: {resolved_template}")
         if resolved_variant not in SLASH_VARIANTS:
             raise ValueError(f"Unsupported slash variant: {resolved_variant}")
-
         params: dict[str, Any] = dict(SLASH_VARIANTS[str(resolved_variant)])
         for key, value in profile_params(profile).items():
             parsed_key, parsed_value = parse_param(key, value)
@@ -290,75 +207,32 @@ class VfxSpec:
         for override in overrides or []:
             key, value = parse_set(override)
             params[key] = value
-
-        profile_canvas = profile.get("canvas", BUILD_DEFAULTS["canvas"])
-        resolved_canvas = canvas if canvas is not None else parse_profile_canvas(profile_canvas)
+        resolved_canvas = canvas if canvas is not None else parse_profile_canvas(profile.get("canvas", BUILD_DEFAULTS["canvas"]))
         resolved_frames = int(frames if frames is not None else profile.get("frames", BUILD_DEFAULTS["frames"]))
         resolved_fps = int(fps if fps is not None else profile.get("fps", BUILD_DEFAULTS["fps"]))
-        resolved_columns = int(
-            sheet_columns
-            if sheet_columns is not None
-            else profile.get("sheetColumns", profile.get("sheet_columns", BUILD_DEFAULTS["sheet_columns"]))
-        )
+        resolved_columns = int(sheet_columns if sheet_columns is not None else profile.get("sheetColumns", profile.get("sheet_columns", BUILD_DEFAULTS["sheet_columns"])))
         resolved_seed = int(seed if seed is not None else profile.get("seed", BUILD_DEFAULTS["seed"]))
-
-        return cls(
-            template=str(resolved_template),
-            variant=str(resolved_variant),
-            frames=resolved_frames,
-            fps=resolved_fps,
-            canvas=resolved_canvas,
-            sheet_columns=resolved_columns,
-            seed=resolved_seed,
-            params=_validate_params(params),
-        ).validated()
+        return cls(template=str(resolved_template), variant=str(resolved_variant), frames=resolved_frames, fps=resolved_fps, canvas=resolved_canvas, sheet_columns=resolved_columns, seed=resolved_seed, params=_validate_params(params)).validated()
 
     def validated(self) -> "VfxSpec":
-        if self.template != "slash":
-            raise ValueError(f"Unsupported VFX template: {self.template}")
-        if self.variant not in SLASH_VARIANTS:
-            raise ValueError(f"Unsupported slash variant: {self.variant}")
-        if self.frames < 2 or self.frames > 120:
-            raise ValueError("frames must be between 2 and 120")
-        if self.fps <= 0 or self.fps > 240:
-            raise ValueError("fps must be between 1 and 240")
-        if self.canvas[0] <= 0 or self.canvas[1] <= 0:
-            raise ValueError("canvas dimensions must be positive")
-        if self.sheet_columns <= 0 or self.sheet_columns > self.frames:
-            raise ValueError("sheet-columns must be between 1 and frame count")
-        if self.seed < 0 or self.seed > 2**31 - 1:
-            raise ValueError("seed must be between 0 and 2147483647")
+        if self.template != "slash": raise ValueError(f"Unsupported VFX template: {self.template}")
+        if self.variant not in SLASH_VARIANTS: raise ValueError(f"Unsupported slash variant: {self.variant}")
+        if self.frames < 2 or self.frames > 120: raise ValueError("frames must be between 2 and 120")
+        if self.fps <= 0 or self.fps > 240: raise ValueError("fps must be between 1 and 240")
+        if self.canvas[0] <= 0 or self.canvas[1] <= 0: raise ValueError("canvas dimensions must be positive")
+        if self.sheet_columns <= 0 or self.sheet_columns > self.frames: raise ValueError("sheet-columns must be between 1 and frame count")
+        if self.seed < 0 or self.seed > 2**31 - 1: raise ValueError("seed must be between 0 and 2147483647")
         _validate_params(self.params)
         return self
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "schemaVersion": 1,
-            "template": self.template,
-            "variant": self.variant,
-            "frames": self.frames,
-            "fps": self.fps,
-            "canvas": [self.canvas[0], self.canvas[1]],
-            "sheetColumns": self.sheet_columns,
-            "seed": self.seed,
-            "params": dict(self.params),
-        }
+        return {"schemaVersion": 1, "template": self.template, "variant": self.variant, "frames": self.frames, "fps": self.fps, "canvas": list(self.canvas), "sheetColumns": self.sheet_columns, "seed": self.seed, "params": dict(self.params)}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "VfxSpec":
-        if int(data.get("schemaVersion", 1)) != 1:
-            raise ValueError("Unsupported VFX spec schemaVersion")
+        if int(data.get("schemaVersion", 1)) != 1: raise ValueError("Unsupported VFX spec schemaVersion")
         canvas = data["canvas"]
-        return cls(
-            template=str(data["template"]),
-            variant=str(data["variant"]),
-            frames=int(data["frames"]),
-            fps=int(data["fps"]),
-            canvas=(int(canvas[0]), int(canvas[1])),
-            sheet_columns=int(data["sheetColumns"]),
-            seed=int(data["seed"]),
-            params=_validate_params(dict(data["params"])),
-        ).validated()
+        return cls(template=str(data["template"]), variant=str(data["variant"]), frames=int(data["frames"]), fps=int(data["fps"]), canvas=(int(canvas[0]), int(canvas[1])), sheet_columns=int(data["sheetColumns"]), seed=int(data["seed"]), params=_validate_params(dict(data["params"]))).validated()
 
     @classmethod
     def load(cls, path: Path) -> "VfxSpec":
