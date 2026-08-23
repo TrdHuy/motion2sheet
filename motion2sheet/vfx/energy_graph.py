@@ -81,10 +81,15 @@ def _arc_point(
         + float(params["arc_angle"]) * canonical_t
         + float(params["rotation"])
     )
-    scale = min(size) / max(1e-6, radius * 3.35)
+    # The old formula divided by `radius` here and then multiplied by radius
+    # below, accidentally cancelling the artist-facing radius parameter. Keep
+    # 1.5 as the historical neutral scale so existing profiles remain stable,
+    # while radius now genuinely scales the shared core/body/lightning spine.
+    reference_radius = 1.5
+    pixel_scale = min(size) / (reference_radius * 3.35)
     nx, ny = math.cos(angle), -math.sin(angle)
-    x = size[0] * 0.5 + radius * math.cos(angle) * scale + nx * radial_offset_px
-    y = size[1] * 0.5 - radius * math.sin(angle) * scale + ny * radial_offset_px
+    x = size[0] * 0.5 + radius * math.cos(angle) * pixel_scale + nx * radial_offset_px
+    y = size[1] * 0.5 - radius * math.sin(angle) * pixel_scale + ny * radial_offset_px
     return x, y
 
 
@@ -99,6 +104,7 @@ def build_energy_graph(
     tail_t, head_t, energy, breakup = motion_window(frame_index, frame_count, float(params["timing.peak"]))
     count = 72
     rng = random.Random(seed * 104729 + frame_index * 7919 + 503)
+    radius_scale = float(params["radius"]) / 1.5
     width_jitter = float(params["core.width_jitter"])
     smoothness = float(params["core.width_smoothness"])
     center_jitter = float(params["core.center_jitter"])
@@ -129,7 +135,7 @@ def build_energy_graph(
             math.sin(u * math.tau * center_frequency + phase_a) * 0.62
             + math.sin(u * math.tau * center_frequency * 0.47 + phase_b) * 0.38
         )
-        radial = center_jitter * (0.72 * coherent + 0.28 * center_noise[index]) * (0.76 + 0.24 * energy)
+        radial = center_jitter * radius_scale * (0.72 * coherent + 0.28 * center_noise[index]) * (0.76 + 0.24 * energy)
         points.append(_arc_point(size, params, canonical_t, radial))
 
         tail_taper = smoothstep01(u / 0.10)
@@ -140,7 +146,7 @@ def build_energy_graph(
         for center, sigma, amplitude in hotspots:
             hotspot_boost += amplitude * math.exp(-((u - center) ** 2) / max(1e-6, 2.0 * sigma * sigma))
         body_bias = 0.80 + 0.20 * math.sin(math.pi * u)
-        width = nominal * body_bias * local * (1.0 + hotspot_boost) * envelope
+        width = nominal * radius_scale * body_bias * local * (1.0 + hotspot_boost) * envelope
         width *= (0.72 + 0.28 * energy) * (1.0 - 0.20 * breakup)
         widths.append(max(0.30, width))
         node_energy.append(min(1.0, 0.88 + 0.08 * hotspot_boost + 0.04 * max(0.0, local - 1.0)))
