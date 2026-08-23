@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from .packer import compose_sheet, write_preview
+from .postprocess import apply_glow_to_frames
 from .spec import VfxSpec, load_profile
 from .validator import validate_output
 
@@ -37,35 +38,18 @@ def run_blender(spec_path: Path, output: Path, blender_name: str) -> None:
     if not blender:
         raise RuntimeError(f"Blender executable not found: {blender_name}")
     script = package_root() / "blender" / "generate_vfx.py"
-    subprocess.run(
-        [
-            str(blender),
-            "--background",
-            "--factory-startup",
-            "--python",
-            str(script),
-            "--",
-            "--spec",
-            str(spec_path.resolve()),
-            "--output",
-            str(output.resolve()),
-        ],
-        check=True,
-    )
+    subprocess.run([
+        str(blender), "--background", "--factory-startup", "--python", str(script), "--",
+        "--spec", str(spec_path.resolve()), "--output", str(output.resolve()),
+    ], check=True)
 
 
 def build(args) -> int:
     profile = load_profile(Path(args.profile)) if args.profile else None
     spec = VfxSpec.create(
-        template=args.template,
-        variant=args.variant,
-        frames=args.frames,
-        fps=args.fps,
-        canvas=args.canvas,
-        sheet_columns=args.sheet_columns,
-        seed=args.seed,
-        overrides=args.set_values,
-        profile=profile,
+        template=args.template, variant=args.variant, frames=args.frames, fps=args.fps,
+        canvas=args.canvas, sheet_columns=args.sheet_columns, seed=args.seed,
+        overrides=args.set_values, profile=profile,
     )
     output = Path(args.output)
     if output.exists():
@@ -76,20 +60,14 @@ def build(args) -> int:
     run_blender(source_path, output, args.blender)
 
     frame_paths = sorted((output / "frames").glob("*.png"))
+    apply_glow_to_frames(frame_paths, spec.params)
     compose_sheet(frame_paths, output / "vfx_sheet.png", columns=spec.sheet_columns)
     write_preview(frame_paths, output / "preview.gif", fps=spec.fps)
     metadata = {
-        "tool": "vfx2sheet",
-        "version": 1,
-        "template": spec.template,
-        "variant": spec.variant,
-        "frames": spec.frames,
-        "fps": spec.fps,
-        "canvas": list(spec.canvas),
-        "sheetColumns": spec.sheet_columns,
-        "seed": spec.seed,
-        "background": "transparent",
-        "renderer": "blender-headless",
+        "tool": "vfx2sheet", "version": 1, "template": spec.template, "variant": spec.variant,
+        "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
+        "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
+        "renderer": "blender-headless+deterministic-pillow-glow",
         "profile": str(args.profile) if args.profile else None,
     }
     write_json(output / "metadata.json", metadata)
@@ -113,7 +91,6 @@ def validate(args) -> int:
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="vfx2sheet")
     sub = root.add_subparsers(dest="command", required=True)
-
     build_parser = sub.add_parser("build", help="Build a deterministic standalone VFX sprite sheet")
     build_parser.add_argument("--profile", help="JSON VFX profile/preset")
     build_parser.add_argument("--template", choices=("slash",))
@@ -127,7 +104,6 @@ def parser() -> argparse.ArgumentParser:
     build_parser.add_argument("--blender", default="blender")
     build_parser.add_argument("--output", required=True)
     build_parser.set_defaults(func=build)
-
     validate_parser = sub.add_parser("validate", help="Validate generated VFX output")
     validate_parser.add_argument("output")
     validate_parser.set_defaults(func=validate)
