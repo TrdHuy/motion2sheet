@@ -10,6 +10,7 @@ from pathlib import Path
 from .body_texture import apply_body_texture_to_frames
 from .decay import apply_decay_to_frames
 from .hot_core_bundle import apply_hot_core_bundle_to_frames
+from .lightning_root_finish import apply_lightning_root_finish_to_frames
 from .packer import compose_sheet, write_preview
 from .plasma_finish import apply_plasma_finish_to_frames
 from .spec import VfxSpec, load_profile
@@ -69,6 +70,9 @@ def build(args) -> int:
     apply_stroke_bundle_to_frames(frame_paths, spec.params, seed=spec.seed)
     apply_sweep_wisps_to_frames(frame_paths, spec.params, seed=spec.seed)
     apply_terminal_plumes_to_frames(frame_paths, spec.params, seed=spec.seed)
+    # Cyan root bridges are clipped to existing support and sit below the hot
+    # core, making major lightning read as embedded rather than pasted on.
+    apply_lightning_root_finish_to_frames(frame_paths, spec.params, seed=spec.seed)
     apply_hot_core_bundle_to_frames(frame_paths, spec.params, seed=spec.seed)
     # Per-stroke topology is already fragmented before these residual shards.
     apply_decay_to_frames(frame_paths, spec.params, seed=spec.seed)
@@ -84,7 +88,7 @@ def build(args) -> int:
         "tool": "vfx2sheet", "version": 1, "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
-        "renderer": "blender-headless+shared-energy-graph+stroke-bundle+sweep-wisps+terminal-plumes+irregular-hot-core+embedded-lightning+per-stroke-decay+soft-plasma-finish+silhouette-safe-body-texture",
+        "renderer": "blender-headless+shared-energy-graph+stroke-bundle+sweep-wisps+terminal-plumes+embedded-cyan-lightning-roots+irregular-hot-core+embedded-lightning+per-stroke-decay+soft-plasma-finish+silhouette-safe-body-texture",
         "profile": str(args.profile) if args.profile else None,
     }
     write_json(output / "metadata.json", metadata)
