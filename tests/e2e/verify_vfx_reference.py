@@ -75,11 +75,26 @@ def glow_fraction(frame: Image.Image) -> float:
 
 
 def bright_outside_fraction(frame: Image.Image) -> float:
+    """Measure white/cyan lightning that visibly escapes the saturated slash body.
+
+    The old alpha-only body mask accidentally classified branch pixels and their
+    glow as body, then a 15 px dilation swallowed the very lightning this metric
+    was supposed to measure. Use chroma to identify blue/cyan body pixels and a
+    small 5 px guard band around them instead.
+    """
     rgba = frame.convert("RGBA"); pixels = list(rgba.getdata())
-    body = rgba.getchannel("A").point(lambda v: 255 if v > 150 else 0).filter(ImageFilter.MaxFilter(15)); body_data = list(body.getdata())
+    body = Image.new("L", rgba.size, 0)
+    body.putdata([
+        255 if a > 80 and b > 120 and b >= r * 1.25 and not (r > 175 and g > 190 and b > 200) else 0
+        for r,g,b,a in pixels
+    ])
+    body = body.filter(ImageFilter.MaxFilter(5)); body_data = list(body.getdata())
     active = sum(1 for *_,a in pixels if a > 16)
     if not active: return 0.0
-    count = sum(1 for i,(r,g,b,a) in enumerate(pixels) if a > 16 and not body_data[i] and b > 160 and g > 145 and (r > 125 or g > 190))
+    count = sum(
+        1 for i,(r,g,b,a) in enumerate(pixels)
+        if a > 32 and not body_data[i] and b > 175 and g > 165 and (r > 150 or g > 205)
+    )
     return count / active
 
 
