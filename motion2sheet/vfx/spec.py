@@ -21,6 +21,11 @@ SLASH_VARIANTS: dict[str, dict[str, Any]] = {
         "lightning.surface_crack_count": 18, "lightning.length": 0.58, "lightning.spread": 0.75,
         "lightning.width": 1.55, "lightning.secondary_width": 0.90, "lightning.surface_width": 0.80,
         "lightning.edge_bias": 0.92, "lightning.cluster_strength": 0.62,
+        "lightning.major_count": 4, "lightning.major_width_min": 2.2, "lightning.major_width_max": 4.8,
+        "lightning.tip_width": 0.35, "lightning.width_jitter": 0.34, "lightning.width_smoothness": 0.72,
+        "lightning.taper_power": 1.35, "lightning.branch_probability": 0.52, "lightning.branch_depth": 2,
+        "lightning.minor_width_ratio": 0.46, "lightning.minor_length_ratio": 0.48,
+        "lightning.micro_count": 22, "lightning.micro_width": 0.75, "lightning.micro_intensity": 0.34,
         "shape.body_scale": 3.30, "shape.inner_scale": 1.35, "shape.core_scale": 0.18,
         "shape.form_noise": 0.52, "shape.form_noise_frequency": 2.4,
         "shape.edge_noise": 1.60, "shape.edge_noise_frequency": 12.0,
@@ -43,6 +48,11 @@ PARAM_RANGES: dict[str, tuple[float, float]] = {
     "lightning.surface_crack_count": (0.0, 300.0), "lightning.length": (0.01, 3.0), "lightning.spread": (0.0, 3.0),
     "lightning.width": (0.1, 5.0), "lightning.secondary_width": (0.1, 5.0), "lightning.surface_width": (0.1, 5.0),
     "lightning.edge_bias": (0.0, 1.5), "lightning.cluster_strength": (0.0, 1.0),
+    "lightning.major_count": (0.0, 24.0), "lightning.major_width_min": (0.1, 12.0), "lightning.major_width_max": (0.1, 16.0),
+    "lightning.tip_width": (0.05, 4.0), "lightning.width_jitter": (0.0, 0.9), "lightning.width_smoothness": (0.0, 1.0),
+    "lightning.taper_power": (0.2, 4.0), "lightning.branch_probability": (0.0, 1.0), "lightning.branch_depth": (0.0, 3.0),
+    "lightning.minor_width_ratio": (0.1, 0.9), "lightning.minor_length_ratio": (0.1, 0.9),
+    "lightning.micro_count": (0.0, 200.0), "lightning.micro_width": (0.1, 4.0), "lightning.micro_intensity": (0.0, 1.0),
     "shape.body_scale": (0.2, 8.0), "shape.inner_scale": (0.1, 8.0), "shape.core_scale": (0.05, 4.0),
     "shape.form_noise": (0.0, 2.0), "shape.form_noise_frequency": (0.25, 12.0),
     "shape.edge_noise": (0.0, 3.0), "shape.edge_noise_frequency": (0.5, 40.0),
@@ -55,7 +65,10 @@ PARAM_RANGES: dict[str, tuple[float, float]] = {
 }
 
 COLOR_PARAMS = {"colors.outer", "colors.body", "colors.inner", "colors.core", "colors.lightning"}
-INTEGER_PARAMS = {"sparks.count", "lightning.branch_count", "lightning.secondary_branch_count", "lightning.surface_crack_count", "shape.tongue_count", "fragments.count"}
+INTEGER_PARAMS = {
+    "sparks.count", "lightning.branch_count", "lightning.secondary_branch_count", "lightning.surface_crack_count",
+    "lightning.major_count", "lightning.branch_depth", "lightning.micro_count", "shape.tongue_count", "fragments.count",
+}
 PARAM_ALIASES = {"core.intensity": "intensity.core", "glow.intensity": "intensity.outer", "lightning.branches": "lightning.branch_count"}
 PROFILE_PARAM_GROUPS = {"colors", "intensity", "glow", "sparks", "lightning", "shape", "fragments", "timing"}
 _HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -177,6 +190,10 @@ def _validate_params(params: dict[str, Any]) -> dict[str, str | float | int]:
         raise ValueError("shape.core_scale must be smaller than shape.inner_scale")
     if float(result["shape.inner_scale"]) >= float(result["shape.body_scale"]):
         raise ValueError("shape.inner_scale must be smaller than shape.body_scale")
+    if float(result["lightning.major_width_min"]) > float(result["lightning.major_width_max"]):
+        raise ValueError("lightning.major_width_min must be <= lightning.major_width_max")
+    if float(result["lightning.tip_width"]) >= float(result["lightning.major_width_max"]):
+        raise ValueError("lightning.tip_width must be smaller than lightning.major_width_max")
     return result
 
 
