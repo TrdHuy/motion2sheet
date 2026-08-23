@@ -7,191 +7,130 @@ import json
 import math
 from pathlib import Path
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageFilter, ImageOps
 
 
 def load_reference(path: Path) -> Image.Image:
-    """Load a golden reference without requiring binary GitHub writes.
-
-    `.b64` fixtures contain an exact PNG payload encoded as UTF-8 text.  This is
-    intentionally strict: malformed/truncated data must fail rather than being
-    accepted through Pillow's LOAD_TRUNCATED_IMAGES fallback.
-    """
     if path.suffix == ".b64":
-        try:
-            raw = base64.b64decode(path.read_text(encoding="ascii"), validate=True)
-        except (OSError, ValueError) as exc:
-            raise AssertionError(f"invalid base64 golden fixture {path}: {exc}") from exc
-        try:
-            image = Image.open(BytesIO(raw))
-            image.load()
-            return image.convert("RGBA")
-        except OSError as exc:
-            raise AssertionError(f"invalid PNG payload in golden fixture {path}: {exc}") from exc
-    try:
-        image = Image.open(path)
-        image.load()
-        return image.convert("RGBA")
-    except OSError as exc:
-        raise AssertionError(f"invalid golden reference {path}: {exc}") from exc
+        raw = base64.b64decode(path.read_text(encoding="ascii"), validate=True)
+        image = Image.open(BytesIO(raw)); image.load(); return image.convert("RGBA")
+    image = Image.open(path); image.load(); return image.convert("RGBA")
 
 
 def split_sheet(image: Image.Image, columns: int = 4, rows: int = 2) -> list[Image.Image]:
     width, height = image.size
     if width % columns or height % rows:
         raise AssertionError(f"sheet {image.size} is not divisible by {columns}x{rows}")
-    cell_w, cell_h = width // columns, height // rows
-    return [
-        image.crop((column * cell_w, row * cell_h, (column + 1) * cell_w, (row + 1) * cell_h)).convert("RGBA")
-        for row in range(rows)
-        for column in range(columns)
-    ]
-
-
-def alpha_area(frame: Image.Image) -> int:
-    return sum(1 for value in frame.getchannel("A").getdata() if value > 8)
+    cw, ch = width // columns, height // rows
+    return [image.crop((c * cw, r * ch, (c + 1) * cw, (r + 1) * ch)).convert("RGBA") for r in range(rows) for c in range(columns)]
 
 
 def color_fractions(frame: Image.Image) -> dict[str, float]:
-    rgba = frame.convert("RGBA")
-    pixels = [pixel for pixel in rgba.getdata() if pixel[3] > 8]
-    if not pixels:
-        return {"white": 0.0, "cyan": 0.0, "blue": 0.0}
-    count = len(pixels)
-    white = sum(1 for r, g, b, _ in pixels if r > 210 and g > 225 and b > 225) / count
-    cyan = sum(1 for r, g, b, _ in pixels if g > 125 and b > 160 and b >= r * 1.15) / count
-    blue = sum(1 for r, g, b, _ in pixels if b > 105 and b >= r * 1.30) / count
-    return {"white": white, "cyan": cyan, "blue": blue}
+    pixels = [pixel for pixel in frame.getdata() if pixel[3] > 16]
+    if not pixels: return {"white": 0.0, "cyan": 0.0, "blue": 0.0}
+    n = len(pixels)
+    return {
+        "white": sum(1 for r,g,b,_ in pixels if r > 210 and g > 225 and b > 225) / n,
+        "cyan": sum(1 for r,g,b,_ in pixels if g > 125 and b > 160 and b >= r * 1.15) / n,
+        "blue": sum(1 for r,g,b,_ in pixels if b > 105 and b >= r * 1.30) / n,
+    }
 
 
-def normalized_mask(frame: Image.Image, size: int = 96) -> Image.Image:
-    alpha = frame.getchannel("A").point(lambda value: 255 if value > 8 else 0)
+def alpha_area(frame: Image.Image, threshold: int = 16) -> int:
+    return sum(1 for value in frame.getchannel("A").getdata() if value > threshold)
+
+
+def normalized_mask(frame: Image.Image, size: int = 96, threshold: int = 32) -> Image.Image:
+    alpha = frame.getchannel("A").point(lambda v: 255 if v > threshold else 0)
     bbox = alpha.getbbox()
-    if bbox is None:
-        return Image.new("1", (size, size), 0)
-    crop = alpha.crop(bbox)
-    target = size - 12
+    if bbox is None: return Image.new("1", (size, size), 0)
+    crop = alpha.crop(bbox); target = size - 12
     scale = min(target / crop.width, target / crop.height)
     resized = crop.resize((max(1, round(crop.width * scale)), max(1, round(crop.height * scale))), Image.Resampling.NEAREST)
-    canvas = Image.new("L", (size, size), 0)
-    canvas.paste(resized, ((size - resized.width) // 2, (size - resized.height) // 2))
-    return canvas.point(lambda value: 255 if value > 0 else 0).convert("1")
+    canvas = Image.new("L", (size, size), 0); canvas.paste(resized, ((size-resized.width)//2, (size-resized.height)//2))
+    return canvas.point(lambda v: 255 if v else 0).convert("1")
 
 
 def mask_iou(left: Image.Image, right: Image.Image) -> float:
-    left_data = list(left.getdata())
-    right_data = list(right.getdata())
-    intersection = sum(1 for a, b in zip(left_data, right_data) if a and b)
-    union = sum(1 for a, b in zip(left_data, right_data) if a or b)
-    return intersection / union if union else 1.0
+    a, b = list(left.getdata()), list(right.getdata())
+    inter = sum(1 for x,y in zip(a,b) if x and y); union = sum(1 for x,y in zip(a,b) if x or y)
+    return inter / union if union else 1.0
 
 
 def roughness(frame: Image.Image) -> float:
-    mask = normalized_mask(frame, 96)
-    data = list(mask.getdata())
-    width, height = mask.size
-    area = sum(1 for value in data if value)
-    if not area:
-        return 0.0
+    mask = normalized_mask(frame, 96, threshold=96); data = list(mask.getdata()); w,h = mask.size
+    area = sum(1 for v in data if v)
+    if not area: return 0.0
     boundary = 0
-    for y in range(1, height - 1):
-        for x in range(1, width - 1):
-            index = y * width + x
-            if not data[index]:
-                continue
-            if not (data[index - 1] and data[index + 1] and data[index - width] and data[index + width]):
-                boundary += 1
+    for y in range(1,h-1):
+        for x in range(1,w-1):
+            i = y*w+x
+            if data[i] and not (data[i-1] and data[i+1] and data[i-w] and data[i+w]): boundary += 1
     return boundary / math.sqrt(area)
 
 
+def glow_fraction(frame: Image.Image) -> float:
+    alpha = list(frame.getchannel("A").getdata()); active = sum(1 for v in alpha if v > 8)
+    return (sum(1 for v in alpha if 8 < v < 96) / active) if active else 0.0
+
+
+def bright_outside_fraction(frame: Image.Image) -> float:
+    rgba = frame.convert("RGBA"); pixels = list(rgba.getdata())
+    body = rgba.getchannel("A").point(lambda v: 255 if v > 150 else 0).filter(ImageFilter.MaxFilter(15)); body_data = list(body.getdata())
+    active = sum(1 for *_,a in pixels if a > 16)
+    if not active: return 0.0
+    count = sum(1 for i,(r,g,b,a) in enumerate(pixels) if a > 16 and not body_data[i] and b > 160 and g > 145 and (r > 125 or g > 190))
+    return count / active
+
+
 def frame_metrics(frames: list[Image.Image]) -> list[dict[str, float | int]]:
-    metrics = []
+    result=[]
     for frame in frames:
-        colors = color_fractions(frame)
-        metrics.append({
-            "area": alpha_area(frame),
-            "white": colors["white"],
-            "cyan": colors["cyan"],
-            "blue": colors["blue"],
-            "roughness": roughness(frame),
-        })
-    return metrics
+        c=color_fractions(frame)
+        result.append({"area":alpha_area(frame),"white":c["white"],"cyan":c["cyan"],"blue":c["blue"],"roughness":roughness(frame),"glowFraction":glow_fraction(frame),"brightOutsideFraction":bright_outside_fraction(frame)})
+    return result
 
 
 def write_overlay(reference: Image.Image, output: Image.Image, path: Path) -> None:
-    width = max(reference.width, output.width)
-    ref_scaled = ImageOps.contain(reference, (width, max(1, round(reference.height * width / reference.width))))
-    out_scaled = ImageOps.contain(output, (width, max(1, round(output.height * width / output.width))))
-    canvas = Image.new("RGBA", (width, ref_scaled.height + out_scaled.height), (0, 0, 0, 0))
-    canvas.paste(ref_scaled, ((width - ref_scaled.width) // 2, 0), ref_scaled)
-    canvas.paste(out_scaled, ((width - out_scaled.width) // 2, ref_scaled.height), out_scaled)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    canvas.save(path)
+    width=max(reference.width, output.width)
+    ref=ImageOps.contain(reference,(width,max(1,round(reference.height*width/reference.width))))
+    out=ImageOps.contain(output,(width,max(1,round(output.height*width/output.width))))
+    canvas=Image.new("RGBA",(width,ref.height+out.height),(0,0,0,0)); canvas.paste(ref,((width-ref.width)//2,0),ref); canvas.paste(out,((width-out.width)//2,ref.height),out)
+    path.parent.mkdir(parents=True,exist_ok=True); canvas.save(path)
 
 
 def verify(reference_path: Path, output_root: Path, qa_root: Path) -> None:
-    reference_sheet = load_reference(reference_path)
-    output_sheet = Image.open(output_root / "vfx_sheet.png").convert("RGBA")
-    reference_frames = split_sheet(reference_sheet)
-    output_frames = split_sheet(output_sheet)
-    if len(reference_frames) != len(output_frames):
-        raise AssertionError("golden reference and output frame counts differ")
-
-    ref_metrics = frame_metrics(reference_frames)
-    out_metrics = frame_metrics(output_frames)
-    ref_areas = [int(item["area"]) for item in ref_metrics]
-    out_areas = [int(item["area"]) for item in out_metrics]
-    ref_peak = max(range(len(ref_areas)), key=ref_areas.__getitem__)
-    out_peak = max(range(len(out_areas)), key=out_areas.__getitem__)
-    if abs(ref_peak - out_peak) > 1:
-        raise AssertionError(f"peak timing differs too much: reference={ref_peak + 1}, output={out_peak + 1}")
-    if out_areas[out_peak] <= out_areas[0] * 1.65:
-        raise AssertionError("output lacks reference-like buildup")
-    if out_areas[-1] >= out_areas[out_peak] * 0.58:
-        raise AssertionError("output lacks reference-like breakup/decay")
-
-    peak_colors = out_metrics[out_peak]
-    if float(peak_colors["white"]) < 0.025:
-        raise AssertionError("peak frame lacks a white-hot core")
-    if float(peak_colors["cyan"]) < 0.10:
-        raise AssertionError("peak frame lacks a cyan inner-energy layer")
-    if float(peak_colors["blue"]) < 0.45:
-        raise AssertionError("peak frame lacks a dominant blue outer body")
-
-    ious = [mask_iou(normalized_mask(ref), normalized_mask(out)) for ref, out in zip(reference_frames, output_frames)]
-    peak_iou = ious[out_peak]
-    mean_iou = sum(ious) / len(ious)
-    if peak_iou < 0.16 or mean_iou < 0.12:
-        raise AssertionError(f"crescent silhouette is too far from golden direction: peak IoU={peak_iou:.3f}, mean IoU={mean_iou:.3f}")
-
-    if float(out_metrics[-1]["roughness"]) <= float(out_metrics[out_peak]["roughness"]) * 1.02:
-        raise AssertionError("decay frame is not visibly more fragmented than the peak")
-
-    report = {
-        "reference": str(reference_path),
-        "output": str(output_root / "vfx_sheet.png"),
-        "referencePeakFrame": ref_peak + 1,
-        "outputPeakFrame": out_peak + 1,
-        "frameIoU": [round(value, 4) for value in ious],
-        "meanIoU": round(mean_iou, 4),
-        "peakIoU": round(peak_iou, 4),
-        "referenceMetrics": ref_metrics,
-        "outputMetrics": out_metrics,
-    }
-    qa_root.mkdir(parents=True, exist_ok=True)
-    (qa_root / "comparison_report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    write_overlay(reference_sheet, output_sheet, qa_root / "comparison_overlay.png")
+    reference_sheet=load_reference(reference_path); output_sheet=Image.open(output_root/"vfx_sheet.png").convert("RGBA")
+    refs, outs=split_sheet(reference_sheet), split_sheet(output_sheet)
+    ref_metrics,out_metrics=frame_metrics(refs),frame_metrics(outs)
+    ref_areas=[int(x["area"]) for x in ref_metrics]; out_areas=[int(x["area"]) for x in out_metrics]
+    ref_peak=max(range(len(ref_areas)),key=ref_areas.__getitem__); out_peak=max(range(len(out_areas)),key=out_areas.__getitem__)
+    ious=[mask_iou(normalized_mask(r),normalized_mask(o)) for r,o in zip(refs,outs)]; peak_iou=ious[out_peak]; mean_iou=sum(ious)/len(ious)
+    failures=[]
+    if abs(ref_peak-out_peak)>1: failures.append(f"peak timing differs too much: reference={ref_peak+1}, output={out_peak+1}")
+    if out_areas[out_peak] <= out_areas[0]*1.65: failures.append("output lacks reference-like buildup")
+    if out_areas[-1] >= out_areas[out_peak]*0.58: failures.append("output lacks reference-like breakup/decay")
+    peak, ref_peak_m = out_metrics[out_peak], ref_metrics[ref_peak]
+    if float(peak["white"]) < 0.025: failures.append("peak frame lacks a white-hot core")
+    if float(peak["white"]) > max(0.30,float(ref_peak_m["white"])+0.14): failures.append("peak frame is too white/wash-out relative to golden")
+    if float(peak["cyan"]) < 0.10: failures.append("peak frame lacks a cyan inner-energy layer")
+    if float(peak["cyan"]) > min(0.80,float(ref_peak_m["cyan"])+0.36): failures.append("peak frame has too much cyan coverage relative to golden")
+    if float(peak["blue"]) < max(0.45,float(ref_peak_m["blue"])*0.68): failures.append("peak frame lacks a dominant deep-blue body")
+    if peak_iou < 0.16 or mean_iou < 0.12: failures.append(f"crescent silhouette is too far from golden direction: peak IoU={peak_iou:.3f}, mean IoU={mean_iou:.3f}")
+    if float(peak["roughness"]) < float(ref_peak_m["roughness"])*0.55: failures.append("peak silhouette is still too smooth/vector-like relative to golden")
+    if float(out_metrics[-1]["roughness"]) <= float(peak["roughness"])*1.02: failures.append("decay frame is not visibly more fragmented than the peak")
+    if float(peak["glowFraction"]) < 0.03: failures.append("peak frame lacks a soft external glow falloff")
+    if float(peak["brightOutsideFraction"]) < 0.001: failures.append("peak frame lacks visible bright lightning outside the main body")
+    report={"reference":str(reference_path),"output":str(output_root/"vfx_sheet.png"),"referencePeakFrame":ref_peak+1,"outputPeakFrame":out_peak+1,"frameIoU":[round(v,4) for v in ious],"meanIoU":round(mean_iou,4),"peakIoU":round(peak_iou,4),"referenceMetrics":ref_metrics,"outputMetrics":out_metrics,"failures":failures}
+    qa_root.mkdir(parents=True,exist_ok=True); (qa_root/"comparison_report.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
+    write_overlay(reference_sheet,output_sheet,qa_root/"comparison_overlay.png"); write_overlay(reference_sheet,output_sheet,qa_root/"golden_vs_output.png")
+    if failures: raise AssertionError("VFX golden-reference QA failed:\n- "+"\n- ".join(failures))
     print(f"VFX golden-reference QA verified: peak IoU={peak_iou:.3f}, mean IoU={mean_iou:.3f}")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--reference", required=True)
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--qa-output", required=True)
-    args = parser.parse_args()
-    verify(Path(args.reference), Path(args.output), Path(args.qa_output))
+    parser=argparse.ArgumentParser(); parser.add_argument("--reference",required=True); parser.add_argument("--output",required=True); parser.add_argument("--qa-output",required=True); args=parser.parse_args()
+    verify(Path(args.reference),Path(args.output),Path(args.qa_output))
 
 
-if __name__ == "__main__":
-    main()
+if __name__=="__main__": main()
