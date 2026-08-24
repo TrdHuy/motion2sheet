@@ -241,28 +241,28 @@
     "noise_scale": 0.075,
     // Số tầng chi tiết của trường noise; lớn hơn tạo biên vỡ nhiều chi tiết hơn.
     "noise_detail": 3.4,
-    // Độ mềm ở biên vùng bị dissolve; tăng nhẹ để mảnh không bị khoét cứng như lỗ đen.
-    "edge_softness": 0.10,
-    // Mức dissolve áp dụng lên thân xanh chính; thân tan trước nhưng vẫn giữ xương cong chính.
-    "body_amount": 0.82,
-    // Mức dissolve áp dụng lên vùng cyan phía trong.
-    "inner_amount": 0.60,
-    // Mức dissolve áp dụng lên lõi trắng nóng để lõi sống lâu hơn thân.
-    "core_amount": 0.38,
+    // Độ mềm ở biên vùng bị dissolve; lớn hơn làm vùng tan chuyển tiếp mềm hơn thay vì thành lỗ đen sắc cạnh.
+    "edge_softness": 0.16,
+    // Mức dissolve áp dụng lên thân xanh chính; giảm để thân bị tách mảnh nhưng vẫn giữ được cung cong chính.
+    "body_amount": 0.72,
+    // Mức dissolve áp dụng lên vùng cyan phía trong; thấp hơn thân xanh để cyan còn kết nối các mảnh.
+    "inner_amount": 0.48,
+    // Mức dissolve áp dụng lên lõi trắng nóng; giữ thấp để lõi không bị thủng thành chấm đen.
+    "core_amount": 0.28,
     // Độ trễ để lõi trắng bắt đầu tan muộn hơn phần thân.
     "core_delay": 0.16,
-    // Số mảnh tối đa có thể tách khỏi vùng vừa bị dissolve.
-    "fragment_count": 22,
-    // Kích thước tương đối của mảnh tách rời; giảm để mảnh trông như residual shard thay vì tam giác lớn.
-    "fragment_size": 0.034,
+    // Số mảnh tối đa có thể tách khỏi vùng vừa bị dissolve; tăng để breakup đọc thành nhiều mảnh rời.
+    "fragment_count": 30,
+    // Kích thước tương đối của mảnh tách rời.
+    "fragment_size": 0.040,
     // Mức phân tán hướng bay của các mảnh tách rời.
-    "fragment_spread": 0.78,
-    // Khoảng trôi tương đối của mảnh ra khỏi thân gốc; giữ ngắn để mảnh còn liên hệ với cung slash.
-    "fragment_drift": 0.060,
+    "fragment_spread": 0.82,
+    // Khoảng trôi tương đối của mảnh ra khỏi thân gốc; đủ để thấy mảnh đã tách nhưng vẫn còn liên hệ với cung slash.
+    "fragment_drift": 0.085,
     // Số tia/hạt sáng nhỏ tối đa sinh ở vùng đang tan rã.
-    "spark_count": 12,
+    "spark_count": 14,
     // Chiều dài tương đối của tia sáng nhỏ khi tan rã.
-    "spark_length": 0.055,
+    "spark_length": 0.060,
   },
 
   // Bán kính hình học cơ sở của cung slash.
