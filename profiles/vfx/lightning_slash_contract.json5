@@ -1,22 +1,16 @@
 {
   // Loại VFX tổng quát mà renderer sẽ tạo.
   "template": "slash",
-
   // Biến thể cụ thể của slash; biến thể này sử dụng năng lượng điện và tia sét.
   "variant": "lightning",
-
   // Tổng số frame trong một chu kỳ animation.
   "frames": 8,
-
   // Tốc độ phát preview GIF, tính theo frame mỗi giây.
   "fps": 12,
-
   // Kích thước của từng frame theo thứ tự [rộng, cao].
   "canvas": [512, 512],
-
   // Số cột khi đóng gói các frame thành sprite sheet.
   "sheetColumns": 4,
-
   // Seed cố định để cùng cấu hình luôn sinh ra cùng một output.
   "seed": 42891,
 
@@ -238,37 +232,37 @@
 
   "dissolve": {
     // Mức tan rã tổng thể. Đặt 0 hoặc bỏ cả block dissolve để giữ nguyên output cũ.
-    "strength": 0.78,
-    // Thời điểm bắt đầu tan rã trên timeline chuẩn hóa 0..1.
-    "start": 0.62,
+    "strength": 0.56,
+    // Thời điểm bắt đầu tan rã trên timeline chuẩn hóa 0..1; đặt sau peak để F1-F5 giữ nguyên.
+    "start": 0.68,
     // Thời điểm tan rã đạt mức tối đa.
     "end": 1.0,
-    // Kích thước tương đối của các mảng noise dùng để khoét thân VFX.
-    "noise_scale": 0.16,
+    // Kích thước tương đối của các mảng noise; nhỏ hơn tạo nhiều mảng vỡ nhỏ thay vì lỗ lớn.
+    "noise_scale": 0.11,
     // Số tầng chi tiết của trường noise; lớn hơn tạo biên vỡ nhiều chi tiết hơn.
     "noise_detail": 3.4,
-    // Độ mềm ở biên vùng bị dissolve; nhỏ hơn tạo mép vỡ sắc hơn.
-    "edge_softness": 0.055,
-    // Mức dissolve áp dụng lên thân xanh chính.
-    "body_amount": 1.0,
+    // Độ mềm ở biên vùng bị dissolve; tăng nhẹ để mảnh không bị khoét cứng như lỗ đen.
+    "edge_softness": 0.10,
+    // Mức dissolve áp dụng lên thân xanh chính; thân tan trước nhưng vẫn giữ xương cong chính.
+    "body_amount": 0.82,
     // Mức dissolve áp dụng lên vùng cyan phía trong.
-    "inner_amount": 0.84,
-    // Mức dissolve áp dụng lên lõi trắng nóng.
-    "core_amount": 0.60,
+    "inner_amount": 0.60,
+    // Mức dissolve áp dụng lên lõi trắng nóng để lõi sống lâu hơn thân.
+    "core_amount": 0.38,
     // Độ trễ để lõi trắng bắt đầu tan muộn hơn phần thân.
-    "core_delay": 0.11,
+    "core_delay": 0.16,
     // Số mảnh tối đa có thể tách khỏi vùng vừa bị dissolve.
-    "fragment_count": 26,
-    // Kích thước tương đối của mảnh tách rời.
-    "fragment_size": 0.050,
+    "fragment_count": 22,
+    // Kích thước tương đối của mảnh tách rời; giảm để mảnh trông như residual shard thay vì tam giác lớn.
+    "fragment_size": 0.034,
     // Mức phân tán hướng bay của các mảnh tách rời.
-    "fragment_spread": 0.88,
-    // Khoảng trôi tương đối của mảnh ra khỏi thân gốc.
-    "fragment_drift": 0.10,
+    "fragment_spread": 0.78,
+    // Khoảng trôi tương đối của mảnh ra khỏi thân gốc; giữ ngắn để mảnh còn liên hệ với cung slash.
+    "fragment_drift": 0.060,
     // Số tia/hạt sáng nhỏ tối đa sinh ở vùng đang tan rã.
-    "spark_count": 14,
+    "spark_count": 12,
     // Chiều dài tương đối của tia sáng nhỏ khi tan rã.
-    "spark_length": 0.070,
+    "spark_length": 0.055,
   },
 
   // Bán kính hình học cơ sở của cung slash.
