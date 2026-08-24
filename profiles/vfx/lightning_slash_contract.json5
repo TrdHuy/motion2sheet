@@ -234,11 +234,11 @@
     // Mức tan rã tổng thể. Đặt 0 hoặc bỏ cả block dissolve để giữ nguyên output cũ.
     "strength": 0.56,
     // Thời điểm bắt đầu tan rã trên timeline chuẩn hóa 0..1; đặt sau peak để F1-F5 giữ nguyên.
-    "start": 0.68,
+    "start": 0.60,
     // Thời điểm tan rã đạt mức tối đa.
     "end": 1.0,
     // Kích thước tương đối của các mảng noise; nhỏ hơn tạo nhiều mảng vỡ nhỏ thay vì lỗ lớn.
-    "noise_scale": 0.11,
+    "noise_scale": 0.075,
     // Số tầng chi tiết của trường noise; lớn hơn tạo biên vỡ nhiều chi tiết hơn.
     "noise_detail": 3.4,
     // Độ mềm ở biên vùng bị dissolve; tăng nhẹ để mảnh không bị khoét cứng như lỗ đen.
