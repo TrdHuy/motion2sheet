@@ -20,7 +20,7 @@ def _frame() -> Image.Image:
 
 def _params(**overrides):
     values = ["dissolve.strength=0.8", "dissolve.start=0.55", "dissolve.end=1.0"]
-    values.extend(f"{key}={value}" for key, value in overrides.items())
+    values.extend(f"dissolve.{key}={value}" for key, value in overrides.items())
     return VfxSpec.create(template="slash", variant="lightning", overrides=values).params
 
 
