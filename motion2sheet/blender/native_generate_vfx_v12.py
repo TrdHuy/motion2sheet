@@ -16,18 +16,15 @@ v11 = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(v11)
 v10, v9, v8, v7, v6, base = v11.v10, v11.v9, v11.v8, v11.v7, v11.v6, v11.base
 
-# Contract-first open crescent/slash trajectory.  It deliberately avoids a
-# constant-radius horseshoe: upper shoulder, belly, lower turn and exit all
-# have different curvature and spacing.
 _CTRL = (
-    (1.16, 1.30),
-    (0.48, 1.20),
-    (-0.10, 0.91),
-    (-0.43, 0.48),
-    (-0.36, 0.02),
-    (-0.08, -0.42),
-    (0.31, -0.78),
-    (1.16, -1.00),
+    (1.02, 1.16),
+    (0.43, 1.08),
+    (-0.08, 0.82),
+    (-0.38, 0.43),
+    (-0.32, 0.02),
+    (-0.06, -0.37),
+    (0.28, -0.70),
+    (1.02, -0.90),
 )
 
 
@@ -49,22 +46,19 @@ def _raw_spine(radius, t, p):
     p0 = _CTRL[seg - 1] if seg > 0 else p1
     p3 = _CTRL[seg + 2] if seg + 2 < len(_CTRL) else p2
     x, y = _catmull(p0, p1, p2, p3, q)
-
-    # Low-frequency form deformation comes directly from the contract control.
     form = float(p["shape.form_noise"])
     ff = float(p["shape.form_noise_frequency"])
-    x += form * (0.050 * math.sin(math.tau * (0.52 * ff) * t + 0.31)
-                 + 0.018 * math.sin(math.tau * (0.91 * ff) * t + 1.17))
-    y += form * (0.038 * math.sin(math.tau * (0.43 * ff) * t + 0.94)
-                 + 0.014 * math.sin(math.tau * (0.78 * ff) * t + 0.22))
-
+    x += form * (0.044 * math.sin(math.tau * (0.52 * ff) * t + 0.31)
+                 + 0.016 * math.sin(math.tau * (0.91 * ff) * t + 1.17))
+    y += form * (0.034 * math.sin(math.tau * (0.43 * ff) * t + 0.94)
+                 + 0.012 * math.sin(math.tau * (0.78 * ff) * t + 0.22))
     rot = math.radians(float(p.get("rotation", 0.0)))
     cr, sr = math.cos(rot), math.sin(rot)
     x, y = x * cr - y * sr, x * sr + y * cr
     x *= radius
     y *= radius
-    x += float(p["shape.offset_x"]) * radius * 3.15
-    y -= float(p["shape.offset_y"]) * radius * 3.15
+    x += float(p["shape.offset_x"]) * radius * 2.92
+    y -= float(p["shape.offset_y"]) * radius * 2.92
     return x, y
 
 
@@ -81,8 +75,6 @@ def _g(u, c, w):
 
 
 def macro_width(u, side, phase):
-    # Broad asymmetric mass.  The outer contour owns most of the flare; the
-    # inner edge stays tighter so the layers do not read as concentric bands.
     belly = _g(u, .54, .25)
     upper = _g(u, .23, .14)
     lower = _g(u, .79, .15)
@@ -103,10 +95,6 @@ def tri_visibility(u, v, tier, p, seed, index, frames, tri):
     progress *= amount
     if progress <= 0.0:
         return 1.0
-
-    # Shared low-frequency islands plus a smaller detail term.  Contract
-    # noise_scale/detail influence the breakup density, but the field remains
-    # coherent enough to create readable holes rather than comb-like strips.
     scale = max(.025, float(p["dissolve.noise_scale"]))
     detail = float(p["dissolve.noise_detail"])
     phase = (seed % 997) * .013
@@ -115,7 +103,6 @@ def tri_visibility(u, v, tier, p, seed, index, frames, tri):
     field = .53 + .20 * math.sin(math.tau * (f1*u + .48*v) + phase)
     field += .13 * math.sin(math.tau * (f2*u - 1.20*v) + phase * .43)
     field += .075 * math.sin(math.tau * (1.12*u + 3.35*v) + 1.28 + phase * .71)
-
     hr = random.Random(seed * 32452843 + 913)
     hole = 0.0
     for _ in range(10):
@@ -125,10 +112,6 @@ def tri_visibility(u, v, tier, p, seed, index, frames, tri):
         if d < 1.0:
             hole = max(hole, (1.0-d)**.60)
     field -= hole * (.30 + .62 * progress)
-
-    # The previous native renderer under-dissolved the contract: at F8 almost
-    # half of the powered support remained.  This slope realizes the requested
-    # "mostly dissolved" terminal frame while preserving curved islands.
     threshold = .245 + progress * .80
     edge = max(.038, float(p["dissolve.edge_softness"]) * .34)
     vis = base.smoothstep((field - threshold + edge) / (2.0 * edge))
@@ -164,9 +147,7 @@ def add_flow_bundle(prefix, p, radius, tail, head, energy, materials, layers, se
         ("body", max(3, round(body_n*factor)), -.04, 1.45, .060, .155, materials["body"], layers["WISPS"]),
         ("inner", max(1, round(inner_n*factor)), -.39, -.06, .030, .060, materials["inner"], layers["CORE"]),
     )
-    # Long tangent tongues are purposeful accents, not an endpoint forest.
     plume_slots = {("outer",1), ("outer",6), ("outer",11), ("body",2), ("body",9), ("body",15)}
-
     for tier, count, omin, omax, wmin, wmax, mat, coll in specs:
         for stroke in range(count):
             rng = random.Random(seed*100003 + stroke*7919 + sum(map(ord,tier))*257)
@@ -195,8 +176,7 @@ def add_flow_bundle(prefix, p, radius, tail, head, energy, materials, layers, se
                 env = base.smoothstep(q/.075)*base.smoothstep((1-q)/.060)
                 w = nominal*width*env*(1+.25*math.sin(math.tau*1.75*q+phase))
                 pts.append((x,y)); ws.append(max(.0012,w))
-
-            if (tier,stroke) in plume_slots and breakup < .42 and energy > .58:
+            if (tier,stroke) in plume_slots and breakup < .42 and energy > .62:
                 extend_end = (stroke % 2) == 1
                 ai, au = (-1,end) if extend_end else (0,start)
                 _,_,a = point_on_spine(radius, tail+(head-tail)*au, p)
@@ -205,24 +185,21 @@ def add_flow_bundle(prefix, p, radius, tail, head, energy, materials, layers, se
                     tx,ty = -tx,-ty
                 px,py = -ty,tx
                 anchor = pts[ai]
-                length = radius*length_ctl*rng.uniform(.92,1.55)*(.74+.32*energy)
+                length = radius*length_ctl*rng.uniform(.68,1.15)*(.72+.26*energy)
                 rootw = max(ws[ai], nominal*width*.36)
                 extp, extw = [], []
                 sign = -1.0 if stroke%3==0 else 1.0
-                for step in range(1,13):
-                    q = step/12.0
-                    bend = sign*math.sin(math.pi*q)*length*.105*curve_ctl
-                    jitter = math.sin(math.tau*2.0*q+phase)*length*.015*curve_ctl
+                for step in range(1,11):
+                    q = step/10.0
+                    bend = sign*math.sin(math.pi*q)*length*.090*curve_ctl
+                    jitter = math.sin(math.tau*2.0*q+phase)*length*.012*curve_ctl
                     extp.append((anchor[0]+tx*length*q+px*(bend+jitter), anchor[1]+ty*length*q+py*(bend+jitter)))
                     extw.append(max(.0010,rootw*((1-q)**1.42)))
                 if extend_end:
                     pts += extp; ws += extw
                 else:
                     pts = list(reversed(extp))+pts; ws = list(reversed(extw))+ws
-
             z = .33 if tier=="outer" else .40 if tier=="body" else .52
-            # Only every other powered stroke gets a glow duplicate; this keeps
-            # the mass rich without filling negative-space holes with haze.
             if tier != "inner" and stroke % 2 == 0:
                 glow = materials["outer_glow"] if tier=="outer" else materials["body_glow"]
                 base.add_curve(f"{prefix}_{tier}_flow_glow_{stroke}", pts, [w*1.48 for w in ws], glow, layers["PLASMA"], z=z-.025, frame=index+1, frames=frames)
@@ -240,7 +217,6 @@ def add_hot_core(prefix, p, radius, tail, head, energy, materials, layers, seed,
     split_p = float(p["core.split_probability"])
     base_scale = float(p["shape.core_scale"])
     late = max(.05, 1.0-max(0.0,breakup-.20)*1.55)
-
     for stroke in range(count):
         rng = random.Random(seed*900001 + stroke*611 + index*3571)
         phase = rng.uniform(0,math.tau)
@@ -265,7 +241,6 @@ def add_hot_core(prefix, p, radius, tail, head, energy, materials, layers, seed,
             jitter=1.0+width_jitter*.40*math.sin(math.tau*2.1*q+phase)
             w=nominal*base_scale*(.22+.08*(stroke%3))*pinch*max(.16,jitter)*heat*late
             pts.append((x,y)); widths.append(max(.0011,w))
-
         chunks=[]; cp=[]; cw=[]
         for i,(pt,w) in enumerate(zip(pts,widths)):
             q=i/91.0
@@ -283,14 +258,11 @@ def add_hot_core(prefix, p, radius, tail, head, energy, materials, layers, seed,
 
 def _bolt_points(radius, p, u, outward, length, jitter, rng):
     x,y,a=point_on_spine(radius,u,p)
-    nx,ny=math.cos(a),math.sin(a)
-    tx,ty=-math.sin(a),math.cos(a)
+    nx,ny=math.cos(a),math.sin(a); tx,ty=-math.sin(a),math.cos(a)
     if outward < 0: nx,ny=-nx,-ny
-    pts=[]
-    steps=12
-    phase=rng.uniform(0,math.tau)
-    for i in range(steps):
-        q=i/(steps-1)
+    pts=[]; phase=rng.uniform(0,math.tau)
+    for i in range(12):
+        q=i/11.0
         side=math.sin(math.pi*q)*(math.sin(math.tau*2.1*q+phase)*jitter*length*.17 + rng.uniform(-1,1)*jitter*length*.035)
         pts.append((x+nx*length*q+tx*side,y+ny*length*q+ty*side))
     return pts
@@ -301,55 +273,40 @@ def add_lightning(prefix,p,radius,tail,head,energy,breakup,materials,layers,seed
         return
     rng=random.Random(seed*700001+index*10007)
     major=max(1,int(p["lightning.major_count"]))
-    jitter=float(p["lightning.jitter"])
-    length_ctl=float(p["lightning.length"])
-    branch_p=float(p["lightning.branch_probability"])
-    depth=max(0,int(p["lightning.branch_depth"]))
-    minor_ratio=float(p["lightning.minor_width_ratio"])
-    minor_len=float(p["lightning.minor_length_ratio"])
+    jitter=float(p["lightning.jitter"]); length_ctl=float(p["lightning.length"])
+    branch_p=float(p["lightning.branch_probability"]); depth=max(0,int(p["lightning.branch_depth"]))
+    minor_ratio=float(p["lightning.minor_width_ratio"]); minor_len=float(p["lightning.minor_length_ratio"])
     nominal=float(p["thickness"])*float(p["shape.body_scale"])
     anchors=(.31,.67,.48)
-
     for bi in range(major):
-        local_u=anchors[bi%len(anchors)]
-        u=tail+(head-tail)*local_u
+        u=tail+(head-tail)*anchors[bi%len(anchors)]
         outward=1 if bi%2==0 else -1
-        length=radius*length_ctl*rng.uniform(.30,.46)*(.72+.28*energy)
+        length=radius*length_ctl*rng.uniform(.27,.40)*(.72+.28*energy)
         pts=_bolt_points(radius,p,u,outward,length,jitter,rng)
         rootw=nominal*rng.uniform(.036,.058)
         ws=[max(.0010,rootw*((1-i/(len(pts)-1))**1.35)) for i in range(len(pts))]
         base.add_curve(f"{prefix}_major_lightning_glow_{bi}",pts,[w*1.65 for w in ws],materials["lightning_glow"],layers["PLASMA"],z=.69,frame=index+1,frames=frames)
         base.add_curve(f"{prefix}_major_lightning_{bi}",pts,ws,materials["lightning"],layers["LIGHTNING"],z=.72,frame=index+1,frames=frames)
         if depth>0 and rng.random()<branch_p:
-            start_i=rng.randint(4,8)
-            bx,by=pts[start_i]
+            start_i=rng.randint(4,8); bx,by=pts[start_i]
             dx=pts[start_i][0]-pts[start_i-1][0]; dy=pts[start_i][1]-pts[start_i-1][1]
-            dl=max(1e-6,math.hypot(dx,dy)); dx/=dl; dy/=dl
-            px,py=-dy,dx
-            bl=length*minor_len*rng.uniform(.45,.75)
-            sign=-1 if bi%2==0 else 1
+            dl=max(1e-6,math.hypot(dx,dy)); dx/=dl; dy/=dl; px,py=-dy,dx
+            bl=length*minor_len*rng.uniform(.45,.75); sign=-1 if bi%2==0 else 1
             bpts=[(bx+dx*bl*q+px*sign*math.sin(math.pi*q)*bl*.24,by+dy*bl*q+py*sign*math.sin(math.pi*q)*bl*.24) for q in (0,.18,.36,.55,.73,.88,1.0)]
             bws=[max(.0010,rootw*minor_ratio*((1-i/(len(bpts)-1))**1.25)) for i in range(len(bpts))]
             base.add_curve(f"{prefix}_branch_{bi}",bpts,bws,materials["lightning"],layers["LIGHTNING"],z=.73,frame=index+1,frames=frames)
-
-    # Surface micro-cracks stay embedded in the plasma instead of creating an
-    # external hair forest.  Honor both micro_count and surface_crack_count.
     micro=max(int(p["lightning.surface_crack_count"]),int(p["lightning.micro_count"]))
     micro=round(micro*(1.0 if breakup<.35 else max(.22,1-(breakup-.35)*1.55)))
     mw=nominal*.0105
     for mi in range(micro):
         rr=random.Random(seed*99001+index*4099+mi*313)
-        local=rr.uniform(.12,.90)
-        u=tail+(head-tail)*local
+        local=rr.uniform(.12,.90); u=tail+(head-tail)*local
         x,y,a=point_on_spine(radius,u,p)
         nx,ny=math.cos(a),math.sin(a); tx,ty=-math.sin(a),math.cos(a)
-        lateral=nominal*rr.uniform(-.22,.80)
-        x+=nx*lateral; y+=ny*lateral
-        ln=radius*rr.uniform(.035,.085)*length_ctl
-        sign=-1 if rr.random()<.5 else 1
+        lateral=nominal*rr.uniform(-.22,.80); x+=nx*lateral; y+=ny*lateral
+        ln=radius*rr.uniform(.035,.078)*length_ctl; sign=-1 if rr.random()<.5 else 1
         pts=[(x,y),(x+tx*ln*.45+nx*sign*ln*.12,y+ty*ln*.45+ny*sign*ln*.12),(x+tx*ln,y+ty*ln)]
-        ws=[mw,mw*.72,.0010]
-        base.add_curve(f"{prefix}_micro_{mi}",pts,ws,materials["lightning"],layers["LIGHTNING"],z=.70,frame=index+1,frames=frames)
+        base.add_curve(f"{prefix}_micro_{mi}",pts,[mw,mw*.72,.0010],materials["lightning"],layers["LIGHTNING"],z=.70,frame=index+1,frames=frames)
 
 
 def build_frame(spec,index,materials,layers):
@@ -358,15 +315,10 @@ def build_frame(spec,index,materials,layers):
     tail,head,energy,breakup=v6.motion_window(index,frames,float(p["timing.peak"]))
     prefix=f"F{index+1:02d}"
     if index==0:
-        v9.add_ignition(prefix,p,radius,materials,layers,seed,index,frames)
-        return
-
+        v9.add_ignition(prefix,p,radius,materials,layers,seed,index,frames); return
     removed=[]
-    # Preserve V11's coherent late baseline so semantic fragmentation measures
-    # the dissolve itself, not unrelated detached decorations.
     if index>=frames-2:
         removed += v9.add_ribbon(prefix+"_coherent_underlay","body",p,radius,tail,head,materials["outer"],layers["BODY"],seed+113,index,frames,.045,3.28,.62,.74)
-
     removed += v9.add_ribbon(prefix+"_outer_haze","body",p,radius,tail,head,materials["outer_glow"],layers["PLASMA"],seed,index,frames,.02,3.12,.50,1.12)
     removed += v9.add_ribbon(prefix+"_outer","body",p,radius,tail,head,materials["outer"],layers["BODY"],seed,index,frames,.08,2.58,.37,1.10)
     removed += v9.add_ribbon(prefix+"_body","body",p,radius,tail,head,materials["body"],layers["BODY"],seed+31,index,frames,.14,1.52,.22,.98)
@@ -386,8 +338,6 @@ def embed_sources(spec):
         pass
 
 
-# Patch the imported helpers so reused ribbon/ignition code follows V12's
-# contract geometry rather than the historical checkpoint geometry.
 v9.point_on_spine=point_on_spine
 v8.point_on_spine=point_on_spine
 v7.point_on_spine=point_on_spine
