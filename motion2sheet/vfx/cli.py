@@ -36,7 +36,7 @@ def run_blender(spec_path: Path, output: Path, blender_name: str) -> None:
     blender = shutil.which(blender_name) if Path(blender_name).name == blender_name else blender_name
     if not blender:
         raise RuntimeError(f"Blender executable not found: {blender_name}")
-    script = package_root() / "blender" / "native_generate_vfx.py"
+    script = package_root() / "blender" / "native_generate_vfx_v2.py"
     subprocess.run([
         str(blender), "--background", "--factory-startup", "--python", str(script), "--",
         "--spec", str(spec_path.resolve()), "--output", str(output.resolve()),
@@ -67,7 +67,7 @@ def build(args) -> int:
         "tool": "vfx2sheet", "version": 2, "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
-        "renderer": "blender-native-editable-source",
+        "renderer": "blender-native-editable-source-v2",
         "visualPipeline": "blender-native",
         "blendSource": "source.blend",
         "postRenderVisualProcessing": False,
