@@ -36,7 +36,7 @@ def run_blender(spec_path: Path, output: Path, blender_name: str) -> None:
     blender = shutil.which(blender_name) if Path(blender_name).name == blender_name else blender_name
     if not blender:
         raise RuntimeError(f"Blender executable not found: {blender_name}")
-    script = package_root() / "blender" / "native_generate_vfx_v16.py"
+    script = package_root() / "blender" / "native_generate_vfx_v17.py"
     subprocess.run([
         str(blender), "--background", "--factory-startup", "--python", str(script), "--",
         "--spec", str(spec_path.resolve()), "--output", str(output.resolve()),
@@ -51,30 +51,25 @@ def build(args) -> int:
         overrides=args.set_values, profile=profile,
     )
     output = Path(args.output)
-    if output.exists():
-        shutil.rmtree(output)
+    if output.exists(): shutil.rmtree(output)
     output.mkdir(parents=True)
     source_path = output / "source.json"
     write_json(source_path, spec.to_dict())
     run_blender(source_path, output, args.blender)
-
     frame_paths = sorted((output / "frames").glob("*.png"))
     compose_sheet(frame_paths, output / "vfx_sheet.png", columns=spec.sheet_columns)
     write_preview(frame_paths, output / "preview.gif", fps=spec.fps)
     metadata = {
-        "tool": "vfx2sheet", "version": 16, "template": spec.template, "variant": spec.variant,
+        "tool": "vfx2sheet", "version": 17, "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
-        "renderer": "blender-native-editable-source-v16",
-        "visualPipeline": "blender-native",
-        "blendSource": "source.blend",
-        "postRenderVisualProcessing": False,
+        "renderer": "blender-native-editable-source-v17", "visualPipeline": "blender-native",
+        "blendSource": "source.blend", "postRenderVisualProcessing": False,
         "profile": str(args.profile) if args.profile else None,
     }
     write_json(output / "metadata.json", metadata)
     errors = validate_output(output)
-    if errors:
-        raise RuntimeError("VFX validation failed:\n" + "\n".join(errors))
+    if errors: raise RuntimeError("VFX validation failed:\n" + "\n".join(errors))
     print(f"vfx2sheet: build OK -> {output}")
     return 0
 
@@ -82,45 +77,26 @@ def build(args) -> int:
 def validate(args) -> int:
     errors = validate_output(Path(args.output))
     if errors:
-        for error in errors:
-            print(f"ERROR: {error}", file=sys.stderr)
+        for error in errors: print(f"ERROR: {error}", file=sys.stderr)
         return 1
     print(f"vfx2sheet: validation OK -> {args.output}")
     return 0
 
 
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(prog="vfx2sheet")
-    sub = root.add_subparsers(dest="command", required=True)
-    build_parser = sub.add_parser("build", help="Build a deterministic standalone VFX sprite sheet")
-    build_parser.add_argument("--profile", help="JSON/JSON5 VFX profile/preset")
-    build_parser.add_argument("--template", choices=("slash",))
-    build_parser.add_argument("--variant", choices=("lightning",))
-    build_parser.add_argument("--frames", type=int)
-    build_parser.add_argument("--fps", type=int)
-    build_parser.add_argument("--canvas", type=parse_canvas)
-    build_parser.add_argument("--sheet-columns", type=int)
-    build_parser.add_argument("--seed", type=int)
-    build_parser.add_argument("--set", dest="set_values", action="append", default=[])
-    build_parser.add_argument("--blender", default="blender")
-    build_parser.add_argument("--output", required=True)
-    build_parser.set_defaults(func=build)
-    validate_parser = sub.add_parser("validate", help="Validate generated VFX output")
-    validate_parser.add_argument("output")
-    validate_parser.set_defaults(func=validate)
+    root=argparse.ArgumentParser(prog="vfx2sheet"); sub=root.add_subparsers(dest="command",required=True)
+    b=sub.add_parser("build",help="Build a deterministic standalone VFX sprite sheet")
+    b.add_argument("--profile",help="JSON/JSON5 VFX profile/preset"); b.add_argument("--template",choices=("slash",)); b.add_argument("--variant",choices=("lightning",)); b.add_argument("--frames",type=int); b.add_argument("--fps",type=int); b.add_argument("--canvas",type=parse_canvas); b.add_argument("--sheet-columns",type=int); b.add_argument("--seed",type=int); b.add_argument("--set",dest="set_values",action="append",default=[]); b.add_argument("--blender",default="blender"); b.add_argument("--output",required=True); b.set_defaults(func=build)
+    v=sub.add_parser("validate",help="Validate generated VFX output"); v.add_argument("output"); v.set_defaults(func=validate)
     return root
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = parser().parse_args(argv)
+def main(argv: list[str] | None=None)->int:
+    args=parser().parse_args(argv)
     try:
-        if args.command == "build" and not args.profile and (not args.template or not args.variant):
-            raise ValueError("build requires --profile or both --template and --variant")
+        if args.command=="build" and not args.profile and (not args.template or not args.variant): raise ValueError("build requires --profile or both --template and --variant")
         return args.func(args)
-    except (RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
-        print(f"vfx2sheet: {exc}", file=sys.stderr)
-        return 2
+    except (RuntimeError,ValueError,subprocess.CalledProcessError) as exc:
+        print(f"vfx2sheet: {exc}",file=sys.stderr); return 2
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__=="__main__": raise SystemExit(main())
