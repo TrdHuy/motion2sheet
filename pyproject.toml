@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "Pillow>=10.4,<12",
+  "json5>=0.9,<1",
 ]
 
 [project.optional-dependencies]
@@ -25,7 +26,7 @@ vfx2sheet = "motion2sheet.vfx.cli:main"
 include = ["motion2sheet*"]
 
 [tool.setuptools.package-data]
-motion2sheet = ["profiles/*.json"]
+motion2sheet = ["profiles/*.json", "profiles/*.json5"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
