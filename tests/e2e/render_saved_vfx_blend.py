@@ -18,7 +18,8 @@ def main() -> None:
     args = parser.parse_args(argv())
 
     scene = bpy.context.scene
-    if scene.get("vfx_renderer") != "blender-native":
+    renderer = str(scene.get("vfx_renderer", ""))
+    if not renderer.startswith("blender-native"):
         raise RuntimeError("source.blend does not identify itself as blender-native")
     required = {
         "VFX_ROOT", "VFX_BODY", "VFX_CORE", "VFX_LIGHTNING", "VFX_WISPS",
