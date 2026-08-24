@@ -80,34 +80,35 @@ jobs:
           python tests/e2e/verify_retarget_output.py
           build/fbx_chibi build/bvh_chibi
 
-      - name: Build dissolve-off baseline A
+      - name: Build legacy JSON baseline
+        run: >-
+          vfx2sheet build
+          --profile profiles/vfx/lightning_slash_contract.json
+          --output build/vfx/baseline_legacy
+
+      - name: Build JSON5 dissolve-off baseline
         run: >-
           vfx2sheet build
           --profile profiles/vfx/lightning_slash_contract.json5
           --set dissolve.strength=0
-          --output build/vfx/baseline_a
+          --output build/vfx/baseline_off
 
-      - name: Build dissolve-off baseline B
-        run: >-
-          vfx2sheet build
-          --profile profiles/vfx/lightning_slash_contract.json5
-          --set dissolve.strength=0
-          --output build/vfx/baseline_b
-
-      - name: Validate dissolve-off baseline
+      - name: Validate dissolve-off compatibility outputs
         run: |
-          vfx2sheet validate build/vfx/baseline_a
-          vfx2sheet validate build/vfx/baseline_b
+          vfx2sheet validate build/vfx/baseline_legacy
+          vfx2sheet validate build/vfx/baseline_off
 
-      - name: Verify baseline VFX semantics and determinism
-        run: python tests/e2e/verify_vfx_output.py build/vfx/baseline_a build/vfx/baseline_b
+      - name: Verify dissolve-off is pixel-identical to run 124
+        run: >-
+          python tests/e2e/verify_vfx_legacy_baseline.py
+          build/vfx/baseline_legacy build/vfx/baseline_off
 
       - name: Verify baseline against approved golden reference
         run: >-
           python tests/e2e/verify_vfx_reference.py
           --reference tests/golden/vfx/lightning_slash_reference.b64
-          --output build/vfx/baseline_a
-          --qa-output build/vfx/qa
+          --output build/vfx/baseline_legacy
+          --qa-output build/vfx/qa_baseline
 
       - name: Build active dissolve run A from JSON5 profile
         run: >-
@@ -129,7 +130,7 @@ jobs:
       - name: Verify dissolve determinism and breakup semantics
         run: >-
           python tests/e2e/verify_vfx_dissolve_output.py
-          build/vfx/baseline_a build/vfx/run_a build/vfx/run_b
+          build/vfx/baseline_off build/vfx/run_a build/vfx/run_b
           --qa-output build/vfx/dissolve_qa
 
       - name: Upload generated pose sheets
