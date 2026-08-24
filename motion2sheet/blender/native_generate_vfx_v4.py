@@ -81,8 +81,7 @@ def add_ribbon(name: str, tier: str, p: dict, radius: float, tail: float, head: 
         for lane in range(lanes):
             v = (lane + 0.5) / lanes
             vis = cell_visibility(mid_u, v, tier, p, seed, index, frames)
-            # Preserve more body mass than V3 while using much finer holes.
-            if vis < 0.34:
+            if vis < 0.42:
                 lateral_offset = -iw + (iw + ow) * v
                 removed.append((x0 + nx * lateral_offset, y0 + ny * lateral_offset, tx, ty, nx, ny,
                                 max((iw + ow) / lanes, radius * 0.006), 1.0 - vis, tier))
@@ -103,9 +102,9 @@ def add_ribbon(name: str, tier: str, p: dict, radius: float, tail: float, head: 
 
 def add_tongues(prefix: str, p: dict, radius: float, tail: float, head: float, energy: float, breakup: float,
                 materials, layers, seed: int, index: int, frames: int):
-    if breakup >= 0.45:
+    if breakup >= 0.40:
         return
-    return _base_add_tongues(prefix, p, radius, tail, head, energy, breakup * 1.9,
+    return _base_add_tongues(prefix, p, radius, tail, head, energy, breakup * 2.0,
                              materials, layers, seed, index, frames)
 
 
@@ -115,20 +114,19 @@ def add_fragments(prefix: str, removed, p: dict, materials, layers, radius: floa
     if progress <= 0.0 or not removed:
         return
     rng = random.Random(seed * 49979687 + index * 8191 + 421)
-    count = round(int(p["dissolve.fragment_count"]) * progress * 2.25)
+    count = round(int(p["dissolve.fragment_count"]) * progress * 1.50)
     for frag in range(count):
         x, y, tx, ty, nx, ny, width, erase, tier = removed[rng.randrange(len(removed))]
         sign = -1.0 if rng.random() < 0.45 else 1.0
-        radial = radius * (0.025 + 0.105 * progress) * rng.uniform(0.55, 1.55)
-        tangent = radius * (0.008 + 0.035 * progress) * rng.uniform(-0.8, 0.55)
+        radial = radius * (0.055 + 0.140 * progress) * rng.uniform(0.75, 1.70)
+        tangent = radius * (0.006 + 0.025 * progress) * rng.uniform(-0.70, 0.45)
         x += nx * radial * sign + tx * tangent
         y += ny * radial * sign + ty * tangent
-        size = max(radius * 0.012, radius * float(p["dissolve.fragment_size"]) * rng.uniform(0.22, 0.62))
-        tangent_len = size * rng.uniform(0.55, 1.05)
-        normal_len = size * rng.uniform(0.45, 0.90)
-        jitter = rng.uniform(-0.20, 0.20) * size
+        size = max(radius * 0.009, radius * float(p["dissolve.fragment_size"]) * rng.uniform(0.16, 0.42))
+        tangent_len = size * rng.uniform(0.45, 0.80)
+        normal_len = size * rng.uniform(0.50, 0.95)
+        jitter = rng.uniform(-0.18, 0.18) * size
         mat = materials["inner"] if tier == "inner" else materials["core"] if tier == "core" else materials["body"]
-        # Compact torn shard instead of a long tangential bar.
         base.add_polygon(
             f"{prefix}_fragment_{frag}",
             [
@@ -139,18 +137,18 @@ def add_fragments(prefix: str, removed, p: dict, materials, layers, radius: floa
             ],
             mat, layers["DISSOLVE"], z=0.82, frame=index + 1, frames=frames,
         )
-    sparks = round(int(p["dissolve.spark_count"]) * progress * 1.55)
+    sparks = round(int(p["dissolve.spark_count"]) * progress * 0.95)
     for s in range(sparks):
         x, y, tx, ty, nx, ny, width, erase, tier = removed[rng.randrange(len(removed))]
-        radial = radius * (0.035 + 0.095 * progress) * rng.uniform(-1.0, 1.0)
+        radial = radius * (0.060 + 0.145 * progress) * rng.uniform(-1.0, 1.0)
         x += nx * radial
         y += ny * radial
-        length = radius * float(p["dissolve.spark_length"]) * progress * rng.uniform(0.30, 0.95)
-        angle = rng.uniform(-1.15, 1.15) * float(p["dissolve.fragment_spread"])
+        length = radius * float(p["dissolve.spark_length"]) * progress * rng.uniform(0.25, 0.75)
+        angle = rng.uniform(-1.25, 1.25) * float(p["dissolve.fragment_spread"])
         dx = tx * math.cos(angle) - ty * math.sin(angle)
         dy = tx * math.sin(angle) + ty * math.cos(angle)
         base.add_curve(f"{prefix}_dissolve_spark_{s}", [(x, y), (x + dx * length, y + dy * length)],
-                       [0.0035, 0.001], materials["lightning"], layers["DISSOLVE"],
+                       [0.0030, 0.001], materials["lightning"], layers["DISSOLVE"],
                        z=0.86, frame=index + 1, frames=frames)
 
 
