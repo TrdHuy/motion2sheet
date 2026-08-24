@@ -18,6 +18,8 @@ if _SPEC is None or _SPEC.loader is None:
     raise RuntimeError("Unable to load Blender-native V2 renderer")
 base = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(base)
+_base_add_tongues = base.add_tongues
+_base_embed_sources = base.embed_sources
 
 
 def cell_visibility(u: float, v: float, tier: str, p: dict, seed: int, index: int, frames: int) -> float:
@@ -32,7 +34,6 @@ def cell_visibility(u: float, v: float, tier: str, p: dict, seed: int, index: in
     scale = max(0.015, float(p["dissolve.noise_scale"]))
     frequency = max(3.8, 0.72 / scale)
     shared = base.noise01(u, seed * 32452843 + 179, frequency)
-    # Cross-section variation prevents the old full-width rib/fishbone cuts.
     phase = (seed % 997) * 0.017
     lateral = 0.50 + 0.26 * math.sin(u * math.tau * frequency * 0.73 + v * 8.7 + phase)
     lateral += 0.14 * math.sin(u * math.tau * frequency * 1.91 - v * 15.1 + phase * 0.37)
@@ -106,12 +107,10 @@ def add_ribbon(name: str, tier: str, p: dict, radius: float, tail: float, head: 
 
 def add_tongues(prefix: str, p: dict, radius: float, tail: float, head: float, energy: float, breakup: float,
                 materials, layers, seed: int, index: int, frames: int):
-    # V2 tongues looked like radial ribs late in the dissolve. Preserve them in
-    # the powered phase, then hand late-frame breakup over to real fragments.
     if breakup >= 0.52:
         return
-    return base.add_tongues(prefix, p, radius, tail, head, energy, breakup * 1.7,
-                            materials, layers, seed, index, frames)
+    return _base_add_tongues(prefix, p, radius, tail, head, energy, breakup * 1.7,
+                             materials, layers, seed, index, frames)
 
 
 def add_fragments(prefix: str, removed, p: dict, materials, layers, radius: float,
@@ -120,8 +119,6 @@ def add_fragments(prefix: str, removed, p: dict, materials, layers, radius: floa
     if progress <= 0.0 or not removed:
         return
     rng = random.Random(seed * 49979687 + index * 8191 + 421)
-    # Enough genuinely detached geometry to read as disintegration and to make
-    # the final frame more fragmented than its dissolve-off baseline.
     count = round(int(p["dissolve.fragment_count"]) * progress * 3.0)
     for frag in range(count):
         x, y, tx, ty, nx, ny, width, erase, tier = removed[rng.randrange(len(removed))]
@@ -161,7 +158,7 @@ def add_fragments(prefix: str, removed, p: dict, materials, layers, radius: floa
 
 
 def embed_sources(spec: dict) -> None:
-    base.embed_sources(spec)
+    _base_embed_sources(spec)
     try:
         src = bpy.data.texts.new("SOURCE_native_generate_vfx_v3.py")
         src.write(Path(__file__).read_text(encoding="utf-8"))
