@@ -491,4 +491,6 @@ base.add_ribbon = add_ribbon
 base.add_fragments = add_fragments
 base.build_frame = build_frame
 base.embed_sources = embed_sources
-base.main()
+
+if __name__ == "__main__":
+    base.main()
