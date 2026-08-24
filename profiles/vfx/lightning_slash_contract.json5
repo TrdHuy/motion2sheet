@@ -231,8 +231,8 @@
   },
 
   "dissolve": {
-    // Mức tan rã tổng thể. Đặt 0 hoặc bỏ cả block dissolve để giữ nguyên output cũ.
-    "strength": 0.56,
+    // Mức tan rã tổng thể; tăng đủ để F7/F8 đọc thành breakup thật thay vì chỉ fade nhẹ.
+    "strength": 0.68,
     // Thời điểm bắt đầu tan rã trên timeline chuẩn hóa 0..1; đặt sau peak để F1-F5 giữ nguyên.
     "start": 0.60,
     // Thời điểm tan rã đạt mức tối đa.
@@ -241,14 +241,14 @@
     "noise_scale": 0.075,
     // Số tầng chi tiết của trường noise; lớn hơn tạo biên vỡ nhiều chi tiết hơn.
     "noise_detail": 3.4,
-    // Độ mềm ở biên vùng bị dissolve; lớn hơn làm vùng tan chuyển tiếp mềm hơn thay vì thành lỗ đen sắc cạnh.
+    // Độ mềm ở biên vùng bị dissolve; giữ mềm để breakup không thành các lỗ đen sắc cạnh.
     "edge_softness": 0.16,
-    // Mức dissolve áp dụng lên thân xanh chính; tăng vừa phải để F7/F8 tách mảng rõ hơn nhưng vẫn giữ cyan/lõi làm xương chuyển động.
-    "body_amount": 0.84,
-    // Mức dissolve áp dụng lên vùng cyan phía trong; thấp hơn thân xanh để cyan còn kết nối các mảnh.
-    "inner_amount": 0.48,
-    // Mức dissolve áp dụng lên lõi trắng nóng; giữ thấp để lõi không bị thủng thành chấm đen.
-    "core_amount": 0.28,
+    // Thân xanh tan mạnh hơn để F7/F8 tách mảng nhưng vẫn giữ lượng xanh đáng kể.
+    "body_amount": 0.92,
+    // Cyan tan vừa phải để F8 đứt kết nối rõ hơn nhưng vẫn giữ được ký ức chuyển động cong.
+    "inner_amount": 0.70,
+    // Lõi trắng tan ít hơn thân/cyan để tránh biến thành nhiều chấm trắng rời hoặc white-slab lỗi.
+    "core_amount": 0.34,
     // Độ trễ để lõi trắng bắt đầu tan muộn hơn phần thân.
     "core_delay": 0.16,
     // Số mảnh tối đa có thể tách khỏi vùng vừa bị dissolve; tăng để breakup đọc thành nhiều mảnh rời.
