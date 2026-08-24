@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import json5
+
 BUILD_DEFAULTS = {"frames": 8, "fps": 12, "canvas": (512, 512), "sheet_columns": 4, "seed": 42891}
 
 SLASH_VARIANTS: dict[str, dict[str, Any]] = {
@@ -46,6 +48,13 @@ SLASH_VARIANTS: dict[str, dict[str, Any]] = {
         "shape.tongue_count": 16, "shape.tongue_length": 0.58, "shape.tongue_curve": 0.85, "shape.tongue_width": 0.72,
         "fragments.count": 30, "fragments.spread": 0.58, "fragments.size": 0.075,
         "timing.peak": 0.57, "timing.decay": 0.68,
+        # Dissolve is opt-in. Keeping strength at zero preserves legacy output exactly.
+        "dissolve.strength": 0.0,
+        "dissolve.start": 0.62, "dissolve.end": 1.0,
+        "dissolve.noise_scale": 0.18, "dissolve.noise_detail": 3.0, "dissolve.edge_softness": 0.08,
+        "dissolve.body_amount": 1.0, "dissolve.inner_amount": 0.85, "dissolve.core_amount": 0.65, "dissolve.core_delay": 0.12,
+        "dissolve.fragment_count": 18, "dissolve.fragment_size": 0.055, "dissolve.fragment_spread": 0.75, "dissolve.fragment_drift": 0.11,
+        "dissolve.spark_count": 10, "dissolve.spark_length": 0.08,
         "start_angle": -75.0, "rotation": 0.0, "fade_in": 0.25, "fade_out": 0.45,
     }
 }
@@ -85,6 +94,11 @@ PARAM_RANGES: dict[str, tuple[float, float]] = {
     "shape.tongue_count": (0.0, 50.0), "shape.tongue_length": (0.0, 3.0), "shape.tongue_curve": (0.0, 2.0), "shape.tongue_width": (0.1, 2.0),
     "fragments.count": (0.0, 300.0), "fragments.spread": (0.0, 3.0), "fragments.size": (0.001, 1.0),
     "timing.peak": (0.25, 0.80), "timing.decay": (0.45, 0.95),
+    "dissolve.strength": (0.0, 1.0), "dissolve.start": (0.0, 0.99), "dissolve.end": (0.01, 1.0),
+    "dissolve.noise_scale": (0.01, 1.0), "dissolve.noise_detail": (1.0, 8.0), "dissolve.edge_softness": (0.001, 0.5),
+    "dissolve.body_amount": (0.0, 1.0), "dissolve.inner_amount": (0.0, 1.0), "dissolve.core_amount": (0.0, 1.0), "dissolve.core_delay": (0.0, 0.5),
+    "dissolve.fragment_count": (0.0, 300.0), "dissolve.fragment_size": (0.001, 0.5), "dissolve.fragment_spread": (0.0, 3.0), "dissolve.fragment_drift": (0.0, 1.0),
+    "dissolve.spark_count": (0.0, 300.0), "dissolve.spark_length": (0.001, 0.5),
     "start_angle": (-720.0, 720.0), "rotation": (-720.0, 720.0), "fade_in": (0.0, 1.0), "fade_out": (0.0, 1.0),
 }
 
@@ -93,9 +107,10 @@ INTEGER_PARAMS = {
     "sparks.count", "core.streak_count", "core.hotspot_count",
     "lightning.branch_count", "lightning.secondary_branch_count", "lightning.surface_crack_count",
     "lightning.major_count", "lightning.branch_depth", "lightning.micro_count", "shape.tongue_count", "fragments.count",
+    "dissolve.fragment_count", "dissolve.spark_count",
 }
 PARAM_ALIASES = {"core.intensity": "intensity.core", "glow.intensity": "intensity.outer", "lightning.branches": "lightning.branch_count"}
-PROFILE_PARAM_GROUPS = {"colors", "intensity", "glow", "energy", "core", "sparks", "lightning", "shape", "fragments", "timing"}
+PROFILE_PARAM_GROUPS = {"colors", "intensity", "glow", "energy", "core", "sparks", "lightning", "shape", "fragments", "timing", "dissolve"}
 _HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
@@ -168,8 +183,12 @@ def profile_params(profile: dict[str, Any]) -> dict[str, Any]:
 
 def load_profile(path: Path) -> dict[str, Any]:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        text = path.read_text(encoding="utf-8")
+        if path.suffix.lower() == ".json5":
+            data = json5.loads(text)
+        else:
+            data = json.loads(text)
+    except (OSError, ValueError) as exc:
         raise ValueError(f"Unable to read VFX profile {path}: {exc}") from exc
     if not isinstance(data, dict):
         raise ValueError("VFX profile root must be an object")
@@ -223,6 +242,8 @@ def _validate_params(params: dict[str, Any]) -> dict[str, str | float | int]:
         raise ValueError("core.width_min must be <= core.width_max")
     if float(result["energy.cyan_threshold"]) >= float(result["energy.white_threshold"]):
         raise ValueError("energy.cyan_threshold must be smaller than energy.white_threshold")
+    if float(result["dissolve.end"]) <= float(result["dissolve.start"]):
+        raise ValueError("dissolve.end must be greater than dissolve.start")
     return result
 
 
