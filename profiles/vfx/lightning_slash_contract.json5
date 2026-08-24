@@ -243,8 +243,8 @@
     "noise_detail": 3.4,
     // Độ mềm ở biên vùng bị dissolve; lớn hơn làm vùng tan chuyển tiếp mềm hơn thay vì thành lỗ đen sắc cạnh.
     "edge_softness": 0.16,
-    // Mức dissolve áp dụng lên thân xanh chính; giảm để thân bị tách mảnh nhưng vẫn giữ được cung cong chính.
-    "body_amount": 0.72,
+    // Mức dissolve áp dụng lên thân xanh chính; tăng vừa phải để F7/F8 tách mảng rõ hơn nhưng vẫn giữ cyan/lõi làm xương chuyển động.
+    "body_amount": 0.84,
     // Mức dissolve áp dụng lên vùng cyan phía trong; thấp hơn thân xanh để cyan còn kết nối các mảnh.
     "inner_amount": 0.48,
     // Mức dissolve áp dụng lên lõi trắng nóng; giữ thấp để lõi không bị thủng thành chấm đen.
