@@ -46,7 +46,6 @@ def _raw_spine(radius, t, p):
     p0 = _CTRL[seg - 1] if seg > 0 else p1
     p3 = _CTRL[seg + 2] if seg + 2 < len(_CTRL) else p2
     x, y = _catmull(p0, p1, p2, p3, q)
-    # Slow coherent meander keeps the master path hand-drawn rather than CAD-like.
     x += 0.045 * math.sin(math.tau * 1.55 * t + 0.35) + 0.018 * math.sin(math.tau * 3.1 * t + 0.9)
     y += 0.028 * math.sin(math.tau * 1.20 * t + 1.1)
     rot = math.radians(float(p.get("rotation", 0.0)))
@@ -218,12 +217,35 @@ def add_flow_bundle(prefix,p,radius,tail,head,energy,materials,layers,seed,index
             base.add_curve(f"{prefix}_{tier}_flow_{stroke}",pts,ws,mat,coll,z=z,frame=index+1,frames=frames)
 
 
+def add_ignition(prefix,p,radius,materials,layers,seed,index,frames):
+    # F1 is a dedicated ignition event, not a short prefix of the slash path.
+    # Keep it safely inside the camera and bias it horizontally like Run 144.
+    x = radius * 0.48
+    y = radius * 0.58
+    tx,ty,nx,ny = 1.0,0.0,0.0,1.0
+    specs=(
+        (.56,.34,materials["outer_glow"],layers["PLASMA"],.04),
+        (.50,.30,materials["outer"],layers["BODY"],.10),
+        (.39,.23,materials["body"],layers["BODY"],.16),
+        (.18,.11,materials["inner"],layers["BODY"],.28),
+    )
+    for li,(tr,nr,mat,coll,z) in enumerate(specs):
+        rng=random.Random(seed+li*131)
+        p1,p2=rng.uniform(0,math.tau),rng.uniform(0,math.tau)
+        loop=[]
+        for k in range(28):
+            aa=math.tau*k/28.0
+            wobble=1.0+.14*math.sin(3*aa+p1)+.08*math.sin(5*aa+p2)
+            loop.append((x+tx*radius*tr*wobble*math.cos(aa)+nx*radius*nr*math.sin(aa),y+ty*radius*tr*wobble*math.cos(aa)+ny*radius*nr*math.sin(aa)))
+        base.add_polygon(f"{prefix}_ignition_{li}",loop,mat,coll,z=z,frame=index+1,frames=frames)
+
+
 def build_frame(spec,index,materials,layers):
     p=spec["params"]; radius=float(p["radius"]); frames=int(spec["frames"]); seed=int(spec["seed"])
     tail,head,energy,breakup=v6.motion_window(index,frames,float(p["timing.peak"]))
     prefix=f"F{index+1:02d}"
     if index==0:
-        v8.add_ignition(prefix,p,radius,materials,layers,seed,index,frames); return
+        add_ignition(prefix,p,radius,materials,layers,seed,index,frames); return
     removed=[]
     removed += add_ribbon(prefix+"_outer_haze","body",p,radius,tail,head,materials["outer_glow"],layers["PLASMA"],seed,index,frames,.02,3.15,.62,1.05)
     removed += add_ribbon(prefix+"_outer","body",p,radius,tail,head,materials["outer"],layers["BODY"],seed,index,frames,.08,2.62,.46,1.0)
@@ -245,7 +267,6 @@ def embed_sources(spec):
             pass
 
 
-# Imported helpers look up these globals dynamically.
 v8.point_on_spine=point_on_spine
 v7.point_on_spine=point_on_spine
 v7._macro_width=macro_width
