@@ -21,6 +21,10 @@ _base_setup_scene = base.setup_scene
 
 def setup_scene(spec: dict):
     scene, layers = _base_setup_scene(spec)
+    # Emission-only 2D geometry does not need Eevee's 64-sample default. Keep
+    # enough TAA for clean edges while making iterative CI renders much faster.
+    if getattr(scene, "eevee", None) is not None:
+        scene.eevee.taa_render_samples = 16
     # Native compositor pass. This stays embedded in source.blend, so the blend
     # remains the authoritative visual source while restoring the soft electric
     # halo and white-hot bloom of the approved pre-refactor contract.
