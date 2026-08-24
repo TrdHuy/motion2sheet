@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from .decay import apply_decay_to_frames
+from .dissolve import apply_dissolve_to_frames
 from .hot_core_bundle import apply_hot_core_bundle_to_frames
 from .lightning_root_finish import apply_lightning_root_finish_to_frames
 from .packer import compose_sheet, write_preview
@@ -78,13 +79,16 @@ def build(args) -> int:
     # Final aura is derived from sparse final stroke occupancy rather than a
     # geometric body mask, and also gives residual shards their own energy haze.
     apply_plasma_finish_to_frames(frame_paths, spec.params, seed=spec.seed)
+    # Dissolve is deliberately the last visual pass: it erodes the final VFX
+    # itself so glow cannot fill the holes back in. strength=0 is a strict no-op.
+    apply_dissolve_to_frames(frame_paths, spec.params, seed=spec.seed)
     compose_sheet(frame_paths, output / "vfx_sheet.png", columns=spec.sheet_columns)
     write_preview(frame_paths, output / "preview.gif", fps=spec.fps)
     metadata = {
         "tool": "vfx2sheet", "version": 1, "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
-        "renderer": "blender-headless+shared-energy-graph+stroke-bundle+sweep-wisps+terminal-plumes+embedded-cyan-lightning-roots+irregular-hot-core+embedded-lightning+per-stroke-decay+soft-plasma-finish",
+        "renderer": "blender-headless+shared-energy-graph+stroke-bundle+sweep-wisps+terminal-plumes+embedded-cyan-lightning-roots+irregular-hot-core+embedded-lightning+per-stroke-decay+soft-plasma-finish+configurable-dissolve",
         "profile": str(args.profile) if args.profile else None,
     }
     write_json(output / "metadata.json", metadata)
@@ -109,7 +113,7 @@ def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="vfx2sheet")
     sub = root.add_subparsers(dest="command", required=True)
     build_parser = sub.add_parser("build", help="Build a deterministic standalone VFX sprite sheet")
-    build_parser.add_argument("--profile", help="JSON VFX profile/preset")
+    build_parser.add_argument("--profile", help="JSON/JSON5 VFX profile/preset")
     build_parser.add_argument("--template", choices=("slash",))
     build_parser.add_argument("--variant", choices=("lightning",))
     build_parser.add_argument("--frames", type=int)
