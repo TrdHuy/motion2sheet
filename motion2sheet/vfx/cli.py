@@ -7,16 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .decay import apply_decay_to_frames
-from .dissolve import apply_dissolve_to_frames
-from .hot_core_bundle import apply_hot_core_bundle_to_frames
-from .lightning_root_finish import apply_lightning_root_finish_to_frames
 from .packer import compose_sheet, write_preview
-from .plasma_finish import apply_plasma_finish_to_frames
 from .spec import VfxSpec, load_profile
-from .stroke_bundle import apply_stroke_bundle_to_frames
-from .sweep_wisps import apply_sweep_wisps_to_frames
-from .terminal_plumes import apply_terminal_plumes_to_frames
 from .validator import validate_output
 
 
@@ -44,7 +36,7 @@ def run_blender(spec_path: Path, output: Path, blender_name: str) -> None:
     blender = shutil.which(blender_name) if Path(blender_name).name == blender_name else blender_name
     if not blender:
         raise RuntimeError(f"Blender executable not found: {blender_name}")
-    script = package_root() / "blender" / "generate_vfx.py"
+    script = package_root() / "blender" / "native_generate_vfx.py"
     subprocess.run([
         str(blender), "--background", "--factory-startup", "--python", str(script), "--",
         "--spec", str(spec_path.resolve()), "--output", str(output.resolve()),
@@ -66,29 +58,19 @@ def build(args) -> int:
     write_json(source_path, spec.to_dict())
     run_blender(source_path, output, args.blender)
 
+    # Packaging only: rendered pixels are not altered. All VFX generation has
+    # already happened in source.blend through Blender APIs.
     frame_paths = sorted((output / "frames").glob("*.png"))
-    apply_stroke_bundle_to_frames(frame_paths, spec.params, seed=spec.seed)
-    apply_sweep_wisps_to_frames(frame_paths, spec.params, seed=spec.seed)
-    apply_terminal_plumes_to_frames(frame_paths, spec.params, seed=spec.seed)
-    # Cyan root bridges are clipped to existing support and sit below the hot
-    # core, making major lightning read as embedded rather than pasted on.
-    apply_lightning_root_finish_to_frames(frame_paths, spec.params, seed=spec.seed)
-    apply_hot_core_bundle_to_frames(frame_paths, spec.params, seed=spec.seed)
-    # Per-stroke topology is already fragmented before these residual shards.
-    apply_decay_to_frames(frame_paths, spec.params, seed=spec.seed)
-    # Final aura is derived from sparse final stroke occupancy rather than a
-    # geometric body mask, and also gives residual shards their own energy haze.
-    apply_plasma_finish_to_frames(frame_paths, spec.params, seed=spec.seed)
-    # Dissolve is deliberately the last visual pass: it erodes the final VFX
-    # itself so glow cannot fill the holes back in. strength=0 is a strict no-op.
-    apply_dissolve_to_frames(frame_paths, spec.params, seed=spec.seed)
     compose_sheet(frame_paths, output / "vfx_sheet.png", columns=spec.sheet_columns)
     write_preview(frame_paths, output / "preview.gif", fps=spec.fps)
     metadata = {
-        "tool": "vfx2sheet", "version": 1, "template": spec.template, "variant": spec.variant,
+        "tool": "vfx2sheet", "version": 2, "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
-        "renderer": "blender-headless+shared-energy-graph+stroke-bundle+sweep-wisps+terminal-plumes+embedded-cyan-lightning-roots+irregular-hot-core+embedded-lightning+per-stroke-decay+soft-plasma-finish+configurable-dissolve",
+        "renderer": "blender-native-editable-source",
+        "visualPipeline": "blender-native",
+        "blendSource": "source.blend",
+        "postRenderVisualProcessing": False,
         "profile": str(args.profile) if args.profile else None,
     }
     write_json(output / "metadata.json", metadata)

@@ -14,10 +14,15 @@ def validate_output(root: Path) -> list[str]:
     errors: list[str] = []
     source_path = root / "source.json"
     metadata_path = root / "metadata.json"
+    blend_path = root / "source.blend"
     if not source_path.exists():
         return ["source.json is missing"]
     if not metadata_path.exists():
         return ["metadata.json is missing"]
+    if not blend_path.exists():
+        errors.append("source.blend is missing")
+    elif blend_path.stat().st_size < 1024:
+        errors.append("source.blend is unexpectedly small")
 
     source = json.loads(source_path.read_text(encoding="utf-8"))
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -30,7 +35,6 @@ def validate_output(root: Path) -> list[str]:
         return errors
 
     alpha_areas: list[int] = []
-    bboxes = []
     previous = None
     changed_pairs = 0
     for path in frame_paths:
@@ -42,10 +46,14 @@ def validate_output(root: Path) -> list[str]:
             if bbox is None:
                 errors.append(f"{path.name} is fully transparent")
                 continue
-            bboxes.append(bbox)
             alpha = rgba.getchannel("A")
             alpha_areas.append(sum(1 for value in alpha.getdata() if value > 8))
-            corners = [alpha.getpixel((0, 0)), alpha.getpixel((canvas[0]-1, 0)), alpha.getpixel((0, canvas[1]-1)), alpha.getpixel((canvas[0]-1, canvas[1]-1))]
+            corners = [
+                alpha.getpixel((0, 0)),
+                alpha.getpixel((canvas[0] - 1, 0)),
+                alpha.getpixel((0, canvas[1] - 1)),
+                alpha.getpixel((canvas[0] - 1, canvas[1] - 1)),
+            ]
             if max(corners) > 4:
                 errors.append(f"{path.name} touches a canvas corner")
             if previous is not None:
@@ -78,4 +86,10 @@ def validate_output(root: Path) -> list[str]:
         errors.append("preview.gif is missing")
     if metadata.get("template") != source.get("template") or metadata.get("seed") != source.get("seed"):
         errors.append("metadata does not match source spec")
+    if metadata.get("visualPipeline") != "blender-native":
+        errors.append("metadata visualPipeline must be blender-native")
+    if metadata.get("blendSource") != "source.blend":
+        errors.append("metadata blendSource must reference source.blend")
+    if metadata.get("postRenderVisualProcessing") is not False:
+        errors.append("post-render visual processing must be disabled")
     return errors
