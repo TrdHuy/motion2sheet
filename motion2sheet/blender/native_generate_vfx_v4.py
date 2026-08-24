@@ -1,4 +1,4 @@
-"""Blender-native VFX renderer V4: finer organic breakup cells and compact shards."""
+"""Blender-native VFX renderer V4: organic breakup plus native compositor bloom."""
 from __future__ import annotations
 
 import importlib.util
@@ -16,6 +16,40 @@ base = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(base)
 _base_add_tongues = base.add_tongues
 _base_embed_sources = base.embed_sources
+_base_setup_scene = base.setup_scene
+
+
+def setup_scene(spec: dict):
+    scene, layers = _base_setup_scene(spec)
+    # Native compositor pass. This stays embedded in source.blend, so the blend
+    # remains the authoritative visual source while restoring the soft electric
+    # halo and white-hot bloom of the approved pre-refactor contract.
+    scene.use_nodes = True
+    tree = scene.node_tree
+    tree.nodes.clear()
+    render = tree.nodes.new("CompositorNodeRLayers")
+    render.name = "VFX_RenderLayers"
+    glow = tree.nodes.new("CompositorNodeGlare")
+    glow.name = "VFX_EnergyGlow"
+    glow.glare_type = "FOG_GLOW"
+    glow.quality = "HIGH"
+    glow.threshold = 0.35
+    glow.size = 7
+    glow.mix = -0.72
+    hot = tree.nodes.new("CompositorNodeGlare")
+    hot.name = "VFX_HotCoreGlow"
+    hot.glare_type = "FOG_GLOW"
+    hot.quality = "HIGH"
+    hot.threshold = 1.05
+    hot.size = 6
+    hot.mix = -0.82
+    composite = tree.nodes.new("CompositorNodeComposite")
+    composite.name = "VFX_Composite"
+    tree.links.new(render.outputs["Image"], glow.inputs["Image"])
+    tree.links.new(glow.outputs["Image"], hot.inputs["Image"])
+    tree.links.new(hot.outputs["Image"], composite.inputs["Image"])
+    scene["vfx_compositor"] = "native-dual-fog-glow"
+    return scene, layers
 
 
 def cell_visibility(u: float, v: float, tier: str, p: dict, seed: int, index: int, frames: int) -> float:
@@ -161,6 +195,7 @@ def embed_sources(spec: dict) -> None:
         pass
 
 
+base.setup_scene = setup_scene
 base.add_ribbon = add_ribbon
 base.add_tongues = add_tongues
 base.add_fragments = add_fragments
