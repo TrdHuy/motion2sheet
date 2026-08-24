@@ -19,15 +19,21 @@ _base_embed_sources = base.embed_sources
 _base_setup_scene = base.setup_scene
 
 
+def _constant_keyframes(node, values: dict[int, float]) -> None:
+    for frame, value in values.items():
+        node.mix = value
+        node.keyframe_insert(data_path="mix", frame=frame)
+    action = node.id_data.animation_data.action if node.id_data.animation_data else None
+    if action:
+        for curve in action.fcurves:
+            for point in curve.keyframe_points:
+                point.interpolation = "CONSTANT"
+
+
 def setup_scene(spec: dict):
     scene, layers = _base_setup_scene(spec)
-    # Emission-only 2D geometry does not need Eevee's 64-sample default. Keep
-    # enough TAA for clean edges while making iterative CI renders much faster.
-    if getattr(scene, "eevee", None) is not None:
-        scene.eevee.taa_render_samples = 16
-    # Native compositor pass. This stays embedded in source.blend, so the blend
-    # remains the authoritative visual source while restoring the soft electric
-    # halo and white-hot bloom of the approved pre-refactor contract.
+    # Native compositor pass. It stays embedded in source.blend and is disabled
+    # for the breakup tail so glow cannot visually reconnect detached islands.
     scene.use_nodes = True
     tree = scene.node_tree
     tree.nodes.clear()
@@ -37,22 +43,24 @@ def setup_scene(spec: dict):
     glow.name = "VFX_EnergyGlow"
     glow.glare_type = "FOG_GLOW"
     glow.quality = "HIGH"
-    glow.threshold = 0.35
+    glow.threshold = 0.95
     glow.size = 7
-    glow.mix = -0.72
     hot = tree.nodes.new("CompositorNodeGlare")
     hot.name = "VFX_HotCoreGlow"
     hot.glare_type = "FOG_GLOW"
     hot.quality = "HIGH"
-    hot.threshold = 1.05
+    hot.threshold = 1.80
     hot.size = 6
-    hot.mix = -0.82
+    frames = int(spec.get("frames", 8))
+    tail_off = max(2, frames - 1)
+    _constant_keyframes(glow, {1: -0.78, max(1, tail_off - 1): -0.78, tail_off: -1.0, frames: -1.0})
+    _constant_keyframes(hot, {1: -0.86, max(1, tail_off - 1): -0.86, tail_off: -1.0, frames: -1.0})
     composite = tree.nodes.new("CompositorNodeComposite")
     composite.name = "VFX_Composite"
     tree.links.new(render.outputs["Image"], glow.inputs["Image"])
     tree.links.new(glow.outputs["Image"], hot.inputs["Image"])
     tree.links.new(hot.outputs["Image"], composite.inputs["Image"])
-    scene["vfx_compositor"] = "native-dual-fog-glow"
+    scene["vfx_compositor"] = "native-powered-phase-fog-glow"
     return scene, layers
 
 
@@ -75,6 +83,17 @@ def cell_visibility(u: float, v: float, tier: str, p: dict, seed: int, index: in
     n = base.clamp01(shared * 0.52 + base.clamp01(lateral) * 0.48)
     edge = max(0.018, float(p["dissolve.edge_softness"]) * 0.46)
     return base.smoothstep((n - progress + edge) / (2.0 * edge))
+
+
+def _dissolve_seed(name: str, shape_seed: int) -> int:
+    # V2 intentionally offsets shape seeds for body/inner geometry. Dissolve is
+    # different: all overlapping ribbons must share one canonical field or an
+    # intact layer can bridge a hole removed from another layer.
+    if name.endswith("_body"):
+        return shape_seed - 31
+    if name.endswith("_inner"):
+        return shape_seed - 47
+    return shape_seed
 
 
 def add_ribbon(name: str, tier: str, p: dict, radius: float, tail: float, head: float,
@@ -112,13 +131,14 @@ def add_ribbon(name: str, tier: str, p: dict, radius: float, tail: float, head: 
             offset = -iw + (iw + ow) * v
             vertices.append((x + nx * offset, y + ny * offset, z))
 
+    dissolve_seed = _dissolve_seed(name, seed)
     for i in range(1, samples):
         mid_u = (i - 0.5) / (samples - 1)
         x0, y0, tx, ty, nx, ny = centers[i]
         ow, iw = widths_by_sample[i]
         for lane in range(lanes):
             v = (lane + 0.5) / lanes
-            vis = cell_visibility(mid_u, v, tier, p, seed, index, frames)
+            vis = cell_visibility(mid_u, v, tier, p, dissolve_seed, index, frames)
             if vis < 0.42:
                 lateral_offset = -iw + (iw + ow) * v
                 removed.append((x0 + nx * lateral_offset, y0 + ny * lateral_offset, tx, ty, nx, ny,
@@ -152,7 +172,7 @@ def add_fragments(prefix: str, removed, p: dict, materials, layers, radius: floa
     if progress <= 0.0 or not removed:
         return
     rng = random.Random(seed * 49979687 + index * 8191 + 421)
-    count = round(int(p["dissolve.fragment_count"]) * progress * 1.50)
+    count = round(int(p["dissolve.fragment_count"]) * progress * 2.30)
     for frag in range(count):
         x, y, tx, ty, nx, ny, width, erase, tier = removed[rng.randrange(len(removed))]
         sign = -1.0 if rng.random() < 0.45 else 1.0
@@ -175,7 +195,7 @@ def add_fragments(prefix: str, removed, p: dict, materials, layers, radius: floa
             ],
             mat, layers["DISSOLVE"], z=0.82, frame=index + 1, frames=frames,
         )
-    sparks = round(int(p["dissolve.spark_count"]) * progress * 0.95)
+    sparks = round(int(p["dissolve.spark_count"]) * progress * 1.15)
     for s in range(sparks):
         x, y, tx, ty, nx, ny, width, erase, tier = removed[rng.randrange(len(removed))]
         radial = radius * (0.060 + 0.145 * progress) * rng.uniform(-1.0, 1.0)
