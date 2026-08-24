@@ -83,7 +83,7 @@ jobs:
       - name: Build legacy JSON baseline
         run: >-
           vfx2sheet build
-          --profile profiles/vfx/lightning_slash_contract.json
+          --profile tests/fixtures/vfx/lightning_slash_legacy.json
           --output build/vfx/baseline_legacy
 
       - name: Build JSON5 dissolve-off baseline
