@@ -38,20 +38,35 @@ v12 = v47.v12
 v9, v8, v7, base = v47.v9, v47.v8, v47.v7, v47.base
 
 _ACTIVE_TRAJECTORY = trajectory_lib.BlenderTrajectory3D(None)
+_USE_V47_PROJECTED_SAMPLER = True
 
 
 def configure_trajectory(spec):
-    global _ACTIVE_TRAJECTORY
-    _ACTIVE_TRAJECTORY = trajectory_lib.BlenderTrajectory3D(spec.get("trajectory"))
+    global _ACTIVE_TRAJECTORY, _USE_V47_PROJECTED_SAMPLER
+    config = spec.get("trajectory")
+    _ACTIVE_TRAJECTORY = trajectory_lib.BlenderTrajectory3D(config)
+    _USE_V47_PROJECTED_SAMPLER = (
+        config is None or
+        (_ACTIVE_TRAJECTORY.kind == "points" and _ACTIVE_TRAJECTORY.dimensions == 2)
+    )
+    # Delegate legacy/2D sampling to the already-verified V47 provider so the
+    # V48 feature cannot perturb accepted pixels through tiny floating changes.
+    if _USE_V47_PROJECTED_SAMPLER:
+        v47.configure_trajectory(spec)
     return _ACTIVE_TRAJECTORY
 
 
 def point_on_spine(radius, t, params):
+    if _USE_V47_PROJECTED_SAMPLER:
+        return v47.point_on_spine(radius, t, params)
     return _ACTIVE_TRAJECTORY.point_on_spine(radius, t, params)
 
 
 def sample_trajectory(radius, t, params):
     """Projected compatibility API used by existing screen-facing VFX layers."""
+    if _USE_V47_PROJECTED_SAMPLER:
+        x, y, tx, ty, nx, ny = v47.sample_trajectory(radius, t, params)
+        return x, y, tx, ty, nx, ny, _ACTIVE_TRAJECTORY.scale_at(t)
     return _ACTIVE_TRAJECTORY.sample_projected(radius, t, params)
 
 
