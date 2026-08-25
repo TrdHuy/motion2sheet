@@ -7,6 +7,7 @@ from motion2sheet.vfx.cli import parser, resolve_trajectory
 from motion2sheet.vfx.spec import VfxSpec
 from motion2sheet.vfx.trajectory_config import load_trajectory_config, validate_trajectory_config
 from motion2sheet.blender.vfx_trajectory import BlenderTrajectory, LEGACY_POINTS
+from motion2sheet.blender.vfx_trajectory_v48 import BlenderTrajectory3D
 
 
 def _v16_catmull(p0, p1, p2, p3, t):
@@ -78,6 +79,10 @@ def test_invalid_trajectory_inputs_are_rejected():
         validate_trajectory_config({"points": [[0, 0], [1, 0]], "closed": True})
     with pytest.raises(ValueError, match="interpolation"):
         validate_trajectory_config({"points": [[0, 0], [1, 0]], "interpolation": "bezier"})
+    with pytest.raises(ValueError, match="exactly 3"):
+        validate_trajectory_config({"dimensions": 3, "points": [[0, 0, 0], [1, 1]]})
+    with pytest.raises(ValueError, match="top"):
+        validate_trajectory_config({"type": "conical-helix", "bottom": 1, "top": 0})
 
 
 def test_legacy_blender_trajectory_matches_v16_raw_spine_exactly():
@@ -100,3 +105,56 @@ def test_points_trajectory_returns_finite_unit_basis():
         assert math.hypot(tx, ty) == pytest.approx(1.0)
         assert math.hypot(nx, ny) == pytest.approx(1.0)
         assert tx * nx + ty * ny == pytest.approx(0.0, abs=1e-12)
+
+
+def test_v48_2d_points_preserve_v47_projected_positions():
+    p = VfxSpec.create(template="slash", variant="lightning").params
+    config = {
+        "type": "points", "dimensions": 2, "interpolation": "catmull-rom", "closed": False,
+        "points": [[-.8, .8], [-.2, .9], [.3, .3], [-.1, -.2], [.8, -.7]],
+    }
+    old = BlenderTrajectory(config)
+    new = BlenderTrajectory3D(config)
+    for t in (0.0, .06, .25, .5, .8, 1.0):
+        assert new.raw_position(1.4, t, p) == pytest.approx(old.raw_position(1.4, t, p), abs=1e-12)
+
+
+def test_v48_3d_points_return_orthonormal_basis_and_scale():
+    p = VfxSpec.create(template="slash", variant="lightning").params
+    trajectory = BlenderTrajectory3D({
+        "type": "points", "dimensions": 3, "interpolation": "catmull-rom", "closed": False,
+        "points": [[1, -1, 0], [0, -.4, 1], [-.7, .2, 0], [0, .8, -.4]],
+        "scale": {"start": 1.2, "end": .3},
+    })
+    assert trajectory.has_depth
+    for t in (0.0, .2, .5, .8, 1.0):
+        sample = trajectory.sample3d(1.0, t, p)
+        assert len(sample) == 13
+        assert all(math.isfinite(v) for v in sample)
+        tangent = sample[3:6]
+        normal = sample[6:9]
+        binormal = sample[9:12]
+        assert math.sqrt(sum(v*v for v in tangent)) == pytest.approx(1.0)
+        assert math.sqrt(sum(v*v for v in normal)) == pytest.approx(1.0)
+        assert math.sqrt(sum(v*v for v in binormal)) == pytest.approx(1.0)
+        assert sum(a*b for a, b in zip(tangent, normal)) == pytest.approx(0.0, abs=1e-10)
+    assert trajectory.scale_at(0.0) == pytest.approx(1.2)
+    assert trajectory.scale_at(1.0) == pytest.approx(.3)
+
+
+def test_conical_helix_is_3d_and_tapers_upward():
+    config = validate_trajectory_config({
+        "type": "conical-helix", "turns": 2.0, "bottom": -1.0, "top": 1.0,
+        "radiusStart": 1.0, "radiusEnd": .1, "phaseDegrees": 0, "samples": 33,
+    })
+    trajectory = BlenderTrajectory3D(config)
+    assert trajectory.kind == "conical-helix"
+    assert trajectory.dimensions == 3
+    assert trajectory.has_depth
+    assert len(trajectory.points) == 33
+    start_radius = math.hypot(trajectory.points[0][0], trajectory.points[0][2])
+    end_radius = math.hypot(trajectory.points[-1][0], trajectory.points[-1][2])
+    assert start_radius == pytest.approx(1.0)
+    assert end_radius == pytest.approx(.1)
+    assert trajectory.points[0][1] == pytest.approx(-1.0)
+    assert trajectory.points[-1][1] == pytest.approx(1.0)
