@@ -19,7 +19,8 @@ jobs:
             python tools/refactor_vfx2sheet_architecture.py
           fi
           git diff --binary > refactor.patch
-          tar --exclude=.git -czf refactor_snapshot.tar.gz .
+          tar --exclude=.git -czf /tmp/refactor_snapshot.tar.gz .
+          cp /tmp/refactor_snapshot.tar.gz ./refactor_snapshot.tar.gz
       - name: Upload refactor snapshot
         uses: actions/upload-artifact@v4
         with:
