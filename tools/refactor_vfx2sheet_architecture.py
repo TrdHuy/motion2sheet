@@ -362,9 +362,9 @@ def main() -> int:
     )
 
     # Profiles mirror the product/effect boundaries.
-    move("profiles/vfx/lightning_slash_contract.json5", "profiles/vfx2sheet/splash/lightning_slash.json5")
-    move("profiles/vfx/trajectory_points_example.json5", "profiles/vfx2sheet/trajectories/points_example.json5")
-    move("profiles/vfx/trajectory_conical_helix_tree.json5", "profiles/vfx2sheet/trajectories/conical_helix_tree.json5")
+    move("profiles/vfx2sheet/splash/lightning_slash.json5", "profiles/vfx2sheet/splash/lightning_slash.json5")
+    move("profiles/vfx2sheet/trajectories/points_example.json5", "profiles/vfx2sheet/trajectories/points_example.json5")
+    move("profiles/vfx2sheet/trajectories/conical_helix_tree.json5", "profiles/vfx2sheet/trajectories/conical_helix_tree.json5")
     old_profiles = ROOT / "profiles/vfx"
     if old_profiles.exists():
         shutil.rmtree(old_profiles)
@@ -395,11 +395,11 @@ def main() -> int:
         move(f"tests/e2e/{name}", f"tests/vfx2sheet/e2e/{name}")
 
     move(
-        "tests/fixtures/vfx/lightning_slash_legacy.json",
+        "tests/vfx2sheet/fixtures/splash/lightning_slash_legacy.json",
         "tests/vfx2sheet/fixtures/splash/lightning_slash_legacy.json",
     )
     move(
-        "tests/golden/vfx/lightning_slash_reference.b64",
+        "tests/vfx2sheet/golden/splash/lightning_slash_reference.b64",
         "tests/vfx2sheet/golden/splash/lightning_slash_reference.b64",
     )
     for old_dir in (ROOT / "tests/fixtures/vfx", ROOT / "tests/golden/vfx"):
@@ -407,23 +407,23 @@ def main() -> int:
             old_dir.rmdir()
 
     replacements = {
-        "motion2sheet.vfx.cli": "motion2sheet.vfx2sheet.cli",
-        "motion2sheet.vfx.spec": "motion2sheet.vfx2sheet.effects.splash.config",
-        "motion2sheet.vfx.trajectory_config": "motion2sheet.vfx2sheet.common.trajectory.config",
-        "motion2sheet.blender.vfx_trajectory": "motion2sheet.vfx2sheet.common.trajectory.blender",
-        "profiles/vfx/lightning_slash_contract.json5": "profiles/vfx2sheet/splash/lightning_slash.json5",
-        "profiles/vfx/trajectory_points_example.json5": "profiles/vfx2sheet/trajectories/points_example.json5",
-        "profiles/vfx/trajectory_conical_helix_tree.json5": "profiles/vfx2sheet/trajectories/conical_helix_tree.json5",
-        "tests/fixtures/vfx/lightning_slash_legacy.json": "tests/vfx2sheet/fixtures/splash/lightning_slash_legacy.json",
-        "tests/e2e/render_saved_vfx_blend.py": "tests/vfx2sheet/e2e/render_saved_vfx_blend.py",
-        "tests/e2e/verify_vfx_blend_reopen.py": "tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py",
-        "tests/e2e/verify_vfx_dissolve_output.py": "tests/vfx2sheet/e2e/verify_vfx_dissolve_output.py",
-        "tests/e2e/verify_vfx_legacy_baseline.py": "tests/vfx2sheet/e2e/verify_vfx_legacy_baseline.py",
-        "tests/e2e/verify_vfx_output.py": "tests/vfx2sheet/e2e/verify_vfx_output.py",
-        "tests/e2e/verify_vfx_reference.py": "tests/vfx2sheet/e2e/verify_vfx_reference.py",
-        "tests/e2e/verify_vfx_trajectory_3d_output.py": "tests/vfx2sheet/e2e/verify_vfx_trajectory_3d_output.py",
-        "tests/e2e/verify_vfx_trajectory_output.py": "tests/vfx2sheet/e2e/verify_vfx_trajectory_output.py",
-        "tests/golden/vfx/lightning_slash_reference.b64": "tests/vfx2sheet/golden/splash/lightning_slash_reference.b64",
+        "motion2sheet.vfx2sheet.cli": "motion2sheet.vfx2sheet.cli",
+        "motion2sheet.vfx2sheet.effects.splash.config": "motion2sheet.vfx2sheet.effects.splash.config",
+        "motion2sheet.vfx2sheet.common.trajectory.config": "motion2sheet.vfx2sheet.common.trajectory.config",
+        "motion2sheet.vfx2sheet.common.trajectory.blender": "motion2sheet.vfx2sheet.common.trajectory.blender",
+        "profiles/vfx2sheet/splash/lightning_slash.json5": "profiles/vfx2sheet/splash/lightning_slash.json5",
+        "profiles/vfx2sheet/trajectories/points_example.json5": "profiles/vfx2sheet/trajectories/points_example.json5",
+        "profiles/vfx2sheet/trajectories/conical_helix_tree.json5": "profiles/vfx2sheet/trajectories/conical_helix_tree.json5",
+        "tests/vfx2sheet/fixtures/splash/lightning_slash_legacy.json": "tests/vfx2sheet/fixtures/splash/lightning_slash_legacy.json",
+        "tests/vfx2sheet/e2e/render_saved_vfx_blend.py": "tests/vfx2sheet/e2e/render_saved_vfx_blend.py",
+        "tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py": "tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py",
+        "tests/vfx2sheet/e2e/verify_vfx_dissolve_output.py": "tests/vfx2sheet/e2e/verify_vfx_dissolve_output.py",
+        "tests/vfx2sheet/e2e/verify_vfx_legacy_baseline.py": "tests/vfx2sheet/e2e/verify_vfx_legacy_baseline.py",
+        "tests/vfx2sheet/e2e/verify_vfx_output.py": "tests/vfx2sheet/e2e/verify_vfx_output.py",
+        "tests/vfx2sheet/e2e/verify_vfx_reference.py": "tests/vfx2sheet/e2e/verify_vfx_reference.py",
+        "tests/vfx2sheet/e2e/verify_vfx_trajectory_3d_output.py": "tests/vfx2sheet/e2e/verify_vfx_trajectory_3d_output.py",
+        "tests/vfx2sheet/e2e/verify_vfx_trajectory_output.py": "tests/vfx2sheet/e2e/verify_vfx_trajectory_output.py",
+        "tests/vfx2sheet/golden/splash/lightning_slash_reference.b64": "tests/vfx2sheet/golden/splash/lightning_slash_reference.b64",
     }
 
     # Fix references in all human-readable project files after moving.

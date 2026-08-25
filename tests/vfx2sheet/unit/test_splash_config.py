@@ -2,15 +2,15 @@ import json
 
 import pytest
 
-from motion2sheet.vfx.cli import parser
-from motion2sheet.vfx.spec import VfxSpec, load_profile, parse_set
+from motion2sheet.vfx2sheet.cli import parser
+from motion2sheet.vfx2sheet.effects.splash.config import VfxSpec, load_profile, parse_set
 
 
 def test_cli_accepts_json5_profile_and_defers_build_defaults_to_spec():
     args = parser().parse_args([
-        "build", "--profile", "profiles/vfx/lightning_slash_contract.json5", "--output", "build/vfx",
+        "build", "--profile", "profiles/vfx2sheet/splash/lightning_slash.json5", "--output", "build/vfx",
     ])
-    assert args.profile == "profiles/vfx/lightning_slash_contract.json5"
+    assert args.profile == "profiles/vfx2sheet/splash/lightning_slash.json5"
     assert args.frames is None
     assert args.fps is None
     assert args.canvas is None

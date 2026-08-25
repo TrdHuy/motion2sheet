@@ -2,7 +2,7 @@
 
 This file freezes the accepted V48 visual implementation into one compatibility
 payload so the repository does not retain dozens of development-version files.
-Trajectory math remains editable in ``vfx_trajectory.py``. No image processing
+Trajectory math remains editable in ``common/trajectory/blender.py``. No image processing
 happens outside Blender; the payload only reconstructs Python renderer sources in
 a temporary directory before executing the accepted renderer.
 """
@@ -1886,7 +1886,7 @@ def _runtime_dir() -> Path:
 
 def _load_renderer():
     root = _runtime_dir()
-    trajectory_path = Path(__file__).with_name("vfx_trajectory.py").resolve()
+    trajectory_path = (Path(__file__).resolve().parents[3] / "common" / "trajectory" / "blender.py").resolve()
     if not trajectory_path.exists():
         raise RuntimeError(f"Missing final Blender trajectory module: {trajectory_path}")
     os.environ["MOTION2SHEET_VFX_TRAJECTORY_PATH"] = str(trajectory_path)

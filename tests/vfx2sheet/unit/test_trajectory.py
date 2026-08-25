@@ -3,10 +3,10 @@ import math
 
 import pytest
 
-from motion2sheet.vfx.cli import parser, resolve_trajectory
-from motion2sheet.vfx.spec import VfxSpec
-from motion2sheet.vfx.trajectory_config import load_trajectory_config, validate_trajectory_config
-from motion2sheet.blender.vfx_trajectory import BlenderTrajectory, BlenderTrajectory3D, LEGACY_POINTS
+from motion2sheet.vfx2sheet.cli import parser, resolve_trajectory
+from motion2sheet.vfx2sheet.effects.splash.config import VfxSpec
+from motion2sheet.vfx2sheet.common.trajectory.config import load_trajectory_config, validate_trajectory_config
+from motion2sheet.vfx2sheet.common.trajectory.blender import BlenderTrajectory, BlenderTrajectory3D, LEGACY_POINTS
 
 
 def _v16_catmull(p0, p1, p2, p3, t):
@@ -44,7 +44,7 @@ def _v16_raw(radius, t, p):
 
 def test_cli_accepts_trajectory_config():
     args = parser().parse_args([
-        "build", "--profile", "profiles/vfx/lightning_slash_contract.json5",
+        "build", "--profile", "profiles/vfx2sheet/splash/lightning_slash.json5",
         "--trajectory-config", "path.json5", "--output", "build/vfx",
     ])
     assert args.trajectory_config == "path.json5"

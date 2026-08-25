@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from .packer import compose_sheet, write_preview
-from .spec import VfxSpec, load_profile
-from .trajectory_config import load_trajectory_config, validate_trajectory_config
-from .validator import validate_output
+from .common.output.packer import compose_sheet, write_preview
+from .common.output.validator import validate_output
+from .common.trajectory.config import load_trajectory_config, validate_trajectory_config
+from .registry import DEFAULT_EFFECT, effect_names, get_effect
 
 
 def parse_canvas(value: str) -> tuple[int, int]:
@@ -24,10 +25,6 @@ def parse_canvas(value: str) -> tuple[int, int]:
     return parsed
 
 
-def package_root() -> Path:
-    return Path(__file__).resolve().parents[1]
-
-
 def write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -37,7 +34,7 @@ def run_blender(spec_path: Path, output: Path, blender_name: str) -> None:
     blender = shutil.which(blender_name) if Path(blender_name).name == blender_name else blender_name
     if not blender:
         raise RuntimeError(f"Blender executable not found: {blender_name}")
-    script = package_root() / "blender" / "native_generate_vfx.py"
+    script = Path(__file__).resolve().with_name("blender_entry.py")
     subprocess.run([
         str(blender), "--background", "--factory-startup", "--python", str(script), "--",
         "--spec", str(spec_path.resolve()), "--output", str(output.resolve()),
@@ -52,10 +49,20 @@ def resolve_trajectory(args, profile: dict | None) -> dict | None:
     return None
 
 
+def _effect_runtime(effect_name: str):
+    definition = get_effect(effect_name)
+    return definition, importlib.import_module(definition.runtime_module)
+
+
 def build(args) -> int:
-    profile = load_profile(Path(args.profile)) if args.profile else None
+    effect, runtime = _effect_runtime(args.effect)
+    profile = runtime.load_profile(Path(args.profile)) if args.profile else None
+    if profile and profile.get("effect") not in (None, effect.name):
+        raise ValueError(
+            f"Profile effect {profile['effect']!r} does not match --effect {effect.name!r}"
+        )
     trajectory = resolve_trajectory(args, profile)
-    spec = VfxSpec.create(
+    spec = runtime.create_spec(
         template=args.template, variant=args.variant, frames=args.frames, fps=args.fps,
         canvas=args.canvas, sheet_columns=args.sheet_columns, seed=args.seed,
         overrides=args.set_values, profile=profile,
@@ -66,6 +73,7 @@ def build(args) -> int:
     output.mkdir(parents=True)
     source_path = output / "source.json"
     source = spec.to_dict()
+    source["effect"] = effect.name
     if trajectory is not None:
         source["trajectory"] = trajectory
     write_json(source_path, source)
@@ -74,7 +82,8 @@ def build(args) -> int:
     compose_sheet(frame_paths, output / "vfx_sheet.png", columns=spec.sheet_columns)
     write_preview(frame_paths, output / "preview.gif", fps=spec.fps)
     metadata = {
-        "tool": "vfx2sheet", "version": 48, "template": spec.template, "variant": spec.variant,
+        "tool": "vfx2sheet", "version": 48, "effect": effect.name,
+        "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
         "renderer": "blender-native-editable-source-v48", "visualPipeline": "blender-native",
@@ -106,10 +115,11 @@ def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="vfx2sheet")
     sub = root.add_subparsers(dest="command", required=True)
     b = sub.add_parser("build", help="Build a deterministic standalone VFX sprite sheet")
-    b.add_argument("--profile", help="JSON/JSON5 VFX profile/preset")
+    b.add_argument("--effect", choices=effect_names(), default=DEFAULT_EFFECT)
+    b.add_argument("--profile", help="JSON/JSON5 effect profile/preset")
     b.add_argument("--trajectory-config", help="JSON/JSON5 2D/3D trajectory config; overrides profile trajectory")
-    b.add_argument("--template", choices=("slash",))
-    b.add_argument("--variant", choices=("lightning",))
+    b.add_argument("--template")
+    b.add_argument("--variant")
     b.add_argument("--frames", type=int)
     b.add_argument("--fps", type=int)
     b.add_argument("--canvas", type=parse_canvas)

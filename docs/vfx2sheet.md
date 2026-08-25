@@ -255,3 +255,29 @@ Pillow packer
 ```
 
 AI can later be an optional authoring layer that produces or edits profiles/specs. `vfx2sheet` itself remains deterministic and AI-independent.
+
+
+## Package architecture
+
+`vfx2sheet` is isolated from the motion pipeline under `motion2sheet/vfx2sheet/`.
+
+```text
+motion2sheet/vfx2sheet/
+├── cli.py
+├── registry.py
+├── blender_entry.py
+├── common/
+│   ├── trajectory/
+│   └── output/
+└── effects/
+    └── splash/
+        ├── effect.py
+        ├── config.py
+        └── blender/
+            └── renderer.py
+```
+
+New effects belong under `effects/<effect>/`. Code is promoted to `common/`
+only after it is genuinely shared by multiple effects. The generic CLI and
+Blender bootstrap resolve effects through `registry.py`; they do not contain
+splash rendering logic.
