@@ -24,7 +24,7 @@ jobs:
       - name: Setup Blender 4.5 LTS
         uses: bradyajohnston/setup-blender@v5
         with:
-          version: "4.5"
+          version: "4.5.12"
       - name: Verify Blender
         run: blender --version
       - name: Create deterministic motion fixtures
