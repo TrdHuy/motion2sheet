@@ -32,7 +32,8 @@ v42 = v43.v42
 v41 = v42.v41
 v40 = v41.v40
 v16 = v40.v16
-v12, v9, v8, v7, base = v40.v12, v40.v9, v40.v8, v40.v7, v40.base
+v12 = v40.v35.v12
+v9, v8, v7, base = v40.v9, v40.v8, v40.v7, v40.base
 
 _ACTIVE_TRAJECTORY = trajectory_lib.BlenderTrajectory(None)
 
