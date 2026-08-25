@@ -4,29 +4,31 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   migrate:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
-      - name: Apply architecture migration
+      - name: Apply and push architecture migration
         shell: bash
         run: |
-          if [ -d motion2sheet/vfx ]; then
-            python tools/refactor_vfx2sheet_architecture.py
+          if [ ! -d motion2sheet/vfx ]; then
+            echo "Architecture already migrated"
+            exit 0
           fi
-          git diff --binary > refactor.patch
-          tar --exclude=.git -czf /tmp/refactor_snapshot.tar.gz .
-          cp /tmp/refactor_snapshot.tar.gz ./refactor_snapshot.tar.gz
-      - name: Upload refactor snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: vfx2sheet-refactor-snapshot
-          path: |
-            refactor.patch
-            refactor_snapshot.tar.gz
-          if-no-files-found: error
-          retention-days: 1
+          python tools/refactor_vfx2sheet_architecture.py
+          # Workflow updates require a separate permission path. Keep CI unchanged
+          # in this migration commit; it is updated immediately afterwards.
+          git checkout -- .github/workflows/ci.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Refactor vfx2sheet into extensible effect architecture'
+          git push origin HEAD:${{ github.head_ref || github.ref_name }}
