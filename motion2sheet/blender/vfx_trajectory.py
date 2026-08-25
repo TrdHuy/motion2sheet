@@ -97,13 +97,7 @@ def _cross(a: tuple[float, float, float], b: tuple[float, float, float]) -> tupl
 
 
 class BlenderTrajectory3D:
-    """Blender-side 2D/3D trajectory with deterministic projected compatibility.
-
-    Existing VFX generators still author screen-facing geometry from
-    ``point_on_spine``. For a 3D trajectory V48 keeps the full Z centerline and
-    later warps generated Blender geometry onto that depth field. This makes the
-    saved source.blend genuinely 3D without moving visual processing outside Blender.
-    """
+    """Blender-side 2D/3D trajectory with deterministic projected compatibility."""
 
     def __init__(self, config: dict[str, Any] | None):
         self.config = config
@@ -156,17 +150,12 @@ class BlenderTrajectory3D:
     def raw_position3d(self, radius: float, t: float, params: dict[str, Any]) -> tuple[float, float, float]:
         t = clamp01(t)
         x, y, z = _sample_control_points(self.points, t)
-
-        # Preserve the V16/V47 transform order for X/Y exactly. Z is a new local
-        # depth coordinate and follows radius scaling, while 2D shape offsets
-        # intentionally remain screen-plane controls.
         form = float(params["shape.form_noise"])
         frequency = float(params["shape.form_noise_frequency"])
         x += form * (.042 * math.sin(math.tau * .43 * frequency * t + .22) +
                      .016 * math.sin(math.tau * .79 * frequency * t + 1.10))
         y += form * (.030 * math.sin(math.tau * .37 * frequency * t + .91) +
                      .012 * math.sin(math.tau * .73 * frequency * t + .35))
-
         rotation = math.radians(float(params.get("rotation", 0.0)))
         cosine, sine = math.cos(rotation), math.sin(rotation)
         x, y = x * cosine - y * sine, x * sine + y * cosine
@@ -242,3 +231,10 @@ class BlenderTrajectory3D:
         table = self._projection_table(radius, params)
         best = min(table, key=lambda item: (x - item[1]) ** 2 + (y - item[2]) ** 2)
         return best[0], best[1], best[2], best[3], self.scale_at(best[0])
+
+
+class BlenderTrajectory(BlenderTrajectory3D):
+    """Compatibility facade for the original 2D trajectory API."""
+
+    def sample(self, radius: float, t: float, params: dict[str, Any]) -> tuple[float, float, float, float, float, float]:
+        return self.sample_projected(radius, t, params)[:6]
