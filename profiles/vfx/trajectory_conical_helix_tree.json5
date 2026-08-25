@@ -1,0 +1,19 @@
+{
+  // 3D conical helix: large circle at the bottom, tapering upward like a tree.
+  type: "conical-helix",
+  turns: 2.35,
+  bottom: -0.82,
+  top: 0.96,
+  radiusStart: 0.92,
+  radiusEnd: 0.10,
+  phaseDegrees: 8.0,
+  samples: 32,
+
+  // Local VFX thickness multiplier along the trajectory. The current V48
+  // contract stores this on the authoritative Blender guide for downstream
+  // 3D-aware layers; radiusStart/radiusEnd already controls the visible cone.
+  scale: {
+    start: 1.20,
+    end: 0.34,
+  },
+}
