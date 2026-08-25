@@ -71,12 +71,12 @@ jobs:
       - name: Build legacy JSON Blender-native baseline
         run: >-
           vfx2sheet build
-          --profile tests/fixtures/vfx/lightning_slash_legacy.json
+          --profile tests/vfx2sheet/fixtures/splash/lightning_slash_legacy.json
           --output build/vfx/baseline_legacy
       - name: Build JSON5 dissolve-off Blender-native baseline
         run: >-
           vfx2sheet build
-          --profile profiles/vfx/lightning_slash_contract.json5
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
           --set dissolve.strength=0
           --output build/vfx/baseline_off
       - name: Validate Blender-native compatibility outputs
@@ -85,17 +85,17 @@ jobs:
           vfx2sheet validate build/vfx/baseline_off
       - name: Verify legacy JSON equals JSON5 dissolve-off
         run: >-
-          python tests/e2e/verify_vfx_legacy_baseline.py
+          python tests/vfx2sheet/e2e/verify_vfx_legacy_baseline.py
           build/vfx/baseline_legacy build/vfx/baseline_off
       - name: Build active dissolve run A from JSON5 profile
         run: >-
           vfx2sheet build
-          --profile profiles/vfx/lightning_slash_contract.json5
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
           --output build/vfx/run_a
       - name: Build active dissolve run B from JSON5 profile
         run: >-
           vfx2sheet build
-          --profile profiles/vfx/lightning_slash_contract.json5
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
           --output build/vfx/run_b
       - name: Validate active Blender-native dissolve outputs
         run: |
@@ -103,20 +103,20 @@ jobs:
           vfx2sheet validate build/vfx/run_b
       - name: Verify dissolve determinism and breakup semantics
         run: >-
-          python tests/e2e/verify_vfx_dissolve_output.py
+          python tests/vfx2sheet/e2e/verify_vfx_dissolve_output.py
           build/vfx/baseline_off build/vfx/run_a build/vfx/run_b
           --qa-output build/vfx/dissolve_qa
       - name: Build point trajectory run A through CLI config
         run: >-
           vfx2sheet build
-          --profile profiles/vfx/lightning_slash_contract.json5
-          --trajectory-config profiles/vfx/trajectory_points_example.json5
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
+          --trajectory-config profiles/vfx2sheet/trajectories/points_example.json5
           --output build/vfx/trajectory_a
       - name: Build point trajectory run B through CLI config
         run: >-
           vfx2sheet build
-          --profile profiles/vfx/lightning_slash_contract.json5
-          --trajectory-config profiles/vfx/trajectory_points_example.json5
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
+          --trajectory-config profiles/vfx2sheet/trajectories/points_example.json5
           --output build/vfx/trajectory_b
       - name: Validate point trajectory Blender outputs
         run: |
@@ -124,19 +124,19 @@ jobs:
           vfx2sheet validate build/vfx/trajectory_b
       - name: Verify point trajectory determinism and activation
         run: >-
-          python tests/e2e/verify_vfx_trajectory_output.py
+          python tests/vfx2sheet/e2e/verify_vfx_trajectory_output.py
           build/vfx/run_a build/vfx/trajectory_a build/vfx/trajectory_b
       - name: Build 3D conical helix run A
         run: >-
           vfx2sheet build
-          --profile profiles/vfx/lightning_slash_contract.json5
-          --trajectory-config profiles/vfx/trajectory_conical_helix_tree.json5
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
+          --trajectory-config profiles/vfx2sheet/trajectories/conical_helix_tree.json5
           --output build/vfx/helix_a
       - name: Build 3D conical helix run B
         run: >-
           vfx2sheet build
-          --profile profiles/vfx/lightning_slash_contract.json5
-          --trajectory-config profiles/vfx/trajectory_conical_helix_tree.json5
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
+          --trajectory-config profiles/vfx2sheet/trajectories/conical_helix_tree.json5
           --output build/vfx/helix_b
       - name: Validate 3D conical helix outputs
         run: |
@@ -144,34 +144,34 @@ jobs:
           vfx2sheet validate build/vfx/helix_b
       - name: Verify 3D conical helix determinism
         run: >-
-          python tests/e2e/verify_vfx_trajectory_3d_output.py
+          python tests/vfx2sheet/e2e/verify_vfx_trajectory_3d_output.py
           build/vfx/helix_a build/vfx/helix_b
       - name: Re-render saved Blender source
         run: >-
           blender --background build/vfx/run_a/source.blend
-          --python tests/e2e/render_saved_vfx_blend.py
+          --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py
           -- --output build/vfx/reopened_frames
       - name: Verify saved Blender source is authoritative
         run: >-
-          python tests/e2e/verify_vfx_blend_reopen.py
+          python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py
           build/vfx/run_a build/vfx/reopened_frames
       - name: Re-render saved point-trajectory Blender source
         run: >-
           blender --background build/vfx/trajectory_a/source.blend
-          --python tests/e2e/render_saved_vfx_blend.py
+          --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py
           -- --output build/vfx/trajectory_reopened_frames
       - name: Verify point-trajectory Blender source is authoritative
         run: >-
-          python tests/e2e/verify_vfx_blend_reopen.py
+          python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py
           build/vfx/trajectory_a build/vfx/trajectory_reopened_frames
       - name: Re-render saved 3D helix Blender source
         run: >-
           blender --background build/vfx/helix_a/source.blend
-          --python tests/e2e/render_saved_vfx_blend.py
+          --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py
           -- --output build/vfx/helix_reopened_frames
       - name: Verify 3D helix Blender source is authoritative
         run: >-
-          python tests/e2e/verify_vfx_blend_reopen.py
+          python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py
           build/vfx/helix_a build/vfx/helix_reopened_frames
       - name: Upload generated pose sheets
         if: always()
