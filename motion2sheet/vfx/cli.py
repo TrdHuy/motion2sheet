@@ -37,7 +37,7 @@ def run_blender(spec_path: Path, output: Path, blender_name: str) -> None:
     blender = shutil.which(blender_name) if Path(blender_name).name == blender_name else blender_name
     if not blender:
         raise RuntimeError(f"Blender executable not found: {blender_name}")
-    script = package_root() / "blender" / "native_generate_vfx_v47.py"
+    script = package_root() / "blender" / "native_generate_vfx_v48.py"
     subprocess.run([
         str(blender), "--background", "--factory-startup", "--python", str(script), "--",
         "--spec", str(spec_path.resolve()), "--output", str(output.resolve()),
@@ -74,14 +74,15 @@ def build(args) -> int:
     compose_sheet(frame_paths, output / "vfx_sheet.png", columns=spec.sheet_columns)
     write_preview(frame_paths, output / "preview.gif", fps=spec.fps)
     metadata = {
-        "tool": "vfx2sheet", "version": 47, "template": spec.template, "variant": spec.variant,
+        "tool": "vfx2sheet", "version": 48, "template": spec.template, "variant": spec.variant,
         "frames": spec.frames, "fps": spec.fps, "canvas": list(spec.canvas),
         "sheetColumns": spec.sheet_columns, "seed": spec.seed, "background": "transparent",
-        "renderer": "blender-native-editable-source-v47", "visualPipeline": "blender-native",
+        "renderer": "blender-native-editable-source-v48", "visualPipeline": "blender-native",
         "blendSource": "source.blend", "postRenderVisualProcessing": False,
         "profile": str(args.profile) if args.profile else None,
         "trajectoryConfig": str(args.trajectory_config) if args.trajectory_config else None,
         "trajectoryProvider": trajectory["type"] if trajectory is not None else "legacy",
+        "trajectoryDimensions": trajectory.get("dimensions", 2) if trajectory is not None else 2,
     }
     write_json(output / "metadata.json", metadata)
     errors = validate_output(output)
@@ -106,7 +107,7 @@ def parser() -> argparse.ArgumentParser:
     sub = root.add_subparsers(dest="command", required=True)
     b = sub.add_parser("build", help="Build a deterministic standalone VFX sprite sheet")
     b.add_argument("--profile", help="JSON/JSON5 VFX profile/preset")
-    b.add_argument("--trajectory-config", help="JSON/JSON5 point trajectory config; overrides profile trajectory")
+    b.add_argument("--trajectory-config", help="JSON/JSON5 2D/3D trajectory config; overrides profile trajectory")
     b.add_argument("--template", choices=("slash",))
     b.add_argument("--variant", choices=("lightning",))
     b.add_argument("--frames", type=int)
