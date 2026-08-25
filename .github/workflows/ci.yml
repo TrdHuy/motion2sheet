@@ -126,6 +126,26 @@ jobs:
         run: >-
           python tests/e2e/verify_vfx_trajectory_output.py
           build/vfx/run_a build/vfx/trajectory_a build/vfx/trajectory_b
+      - name: Build 3D conical helix run A
+        run: >-
+          vfx2sheet build
+          --profile profiles/vfx/lightning_slash_contract.json5
+          --trajectory-config profiles/vfx/trajectory_conical_helix_tree.json5
+          --output build/vfx/helix_a
+      - name: Build 3D conical helix run B
+        run: >-
+          vfx2sheet build
+          --profile profiles/vfx/lightning_slash_contract.json5
+          --trajectory-config profiles/vfx/trajectory_conical_helix_tree.json5
+          --output build/vfx/helix_b
+      - name: Validate 3D conical helix outputs
+        run: |
+          vfx2sheet validate build/vfx/helix_a
+          vfx2sheet validate build/vfx/helix_b
+      - name: Verify 3D conical helix determinism
+        run: >-
+          python tests/e2e/verify_vfx_trajectory_3d_output.py
+          build/vfx/helix_a build/vfx/helix_b
       - name: Re-render saved Blender source
         run: >-
           blender --background build/vfx/run_a/source.blend
@@ -144,6 +164,15 @@ jobs:
         run: >-
           python tests/e2e/verify_vfx_blend_reopen.py
           build/vfx/trajectory_a build/vfx/trajectory_reopened_frames
+      - name: Re-render saved 3D helix Blender source
+        run: >-
+          blender --background build/vfx/helix_a/source.blend
+          --python tests/e2e/render_saved_vfx_blend.py
+          -- --output build/vfx/helix_reopened_frames
+      - name: Verify 3D helix Blender source is authoritative
+        run: >-
+          python tests/e2e/verify_vfx_blend_reopen.py
+          build/vfx/helix_a build/vfx/helix_reopened_frames
       - name: Upload generated pose sheets
         if: always()
         uses: actions/upload-artifact@v4
