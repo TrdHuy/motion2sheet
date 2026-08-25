@@ -6,8 +6,7 @@ import pytest
 from motion2sheet.vfx.cli import parser, resolve_trajectory
 from motion2sheet.vfx.spec import VfxSpec
 from motion2sheet.vfx.trajectory_config import load_trajectory_config, validate_trajectory_config
-from motion2sheet.blender.vfx_trajectory import BlenderTrajectory, LEGACY_POINTS
-from motion2sheet.blender.vfx_trajectory_v48 import BlenderTrajectory3D
+from motion2sheet.blender.vfx_trajectory import BlenderTrajectory, BlenderTrajectory3D, LEGACY_POINTS
 
 
 def _v16_catmull(p0, p1, p2, p3, t):
