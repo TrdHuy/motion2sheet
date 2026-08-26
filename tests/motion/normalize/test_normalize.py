@@ -1,4 +1,4 @@
-from motion2sheet.normalize import normalize_projected_sequences
+from motion2sheet.motion.normalize import normalize_projected_sequences
 
 
 def frame(offset=0.0):

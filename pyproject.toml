@@ -19,15 +19,15 @@ dev = [
 ]
 
 [project.scripts]
-motion2sheet = "motion2sheet.cli:main"
+motion2sheet = "motion2sheet.motion.cli:main"
 vfx2sheet = "motion2sheet.vfx2sheet.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["motion2sheet*"]
 
 [tool.setuptools.package-data]
-motion2sheet = ["profiles/*.json", "profiles/*.json5"]
+"motion2sheet.motion" = ["profiles/*.json"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/unit", "tests/vfx2sheet/unit"]
+testpaths = ["tests/motion", "tests/vfx2sheet/unit", "tests/ci"]
 addopts = "-q"

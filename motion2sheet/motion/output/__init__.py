@@ -1,6 +1,6 @@
-"""Compatibility facade for motion2sheet.motion.output."""
+"""Motion output validation component."""
 
-from .motion.output import (
+from .validator import (
     DYNAMIC_JOINTS,
     ValidationError,
     assert_valid_output,

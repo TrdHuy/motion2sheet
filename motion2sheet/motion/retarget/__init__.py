@@ -1,6 +1,6 @@
-"""Compatibility facade for motion2sheet.motion.retarget."""
+"""Skeleton proportion retarget component."""
 
-from .motion.retarget import (
+from .core import (
     REQUIRED_SEGMENTS,
     Raw3DFrame,
     Vec3,

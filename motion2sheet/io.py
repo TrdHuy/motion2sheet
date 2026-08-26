@@ -1,19 +1,5 @@
-from __future__ import annotations
+"""Compatibility facade for motion2sheet.motion.common.io."""
 
-import json
-from pathlib import Path
+from .motion.common.io import read_json, write_json, write_pose_sequence
 
-from .model import PoseSequence
-
-
-def read_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def write_json(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
-def write_pose_sequence(path: Path, sequence: PoseSequence) -> None:
-    write_json(path, sequence.to_dict())
+__all__ = ["read_json", "write_json", "write_pose_sequence"]

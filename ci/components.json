@@ -1,0 +1,73 @@
+{
+  "global_paths": [
+    ".github/**",
+    "ci/**",
+    "pyproject.toml",
+    "motion2sheet/__init__.py"
+  ],
+  "ignore_paths": [
+    ".gitignore",
+    "README.md",
+    "docs/**",
+    "sample/README.md"
+  ],
+  "components": {
+    "motion-common": {
+      "paths": ["motion2sheet/motion/common/**", "motion2sheet/model.py", "motion2sheet/io.py"],
+      "depends_on": []
+    },
+    "motion-normalize": {
+      "paths": ["motion2sheet/motion/normalize/**", "motion2sheet/normalize.py"],
+      "depends_on": ["motion-common"]
+    },
+    "motion-retarget": {
+      "paths": ["motion2sheet/motion/retarget/**", "motion2sheet/retarget.py", "motion2sheet/motion/profiles/**"],
+      "depends_on": ["motion-common"]
+    },
+    "motion-render": {
+      "paths": ["motion2sheet/motion/render/**", "motion2sheet/renderer.py"],
+      "depends_on": ["motion-common"]
+    },
+    "motion-output": {
+      "paths": ["motion2sheet/motion/output/**", "motion2sheet/validator.py"],
+      "depends_on": ["motion-common"]
+    },
+    "motion-extract": {
+      "paths": ["motion2sheet/motion/extract/**", "motion2sheet/blender/extract_motion.py"],
+      "depends_on": ["motion-retarget"]
+    },
+    "motion-cli": {
+      "paths": ["motion2sheet/motion/cli.py", "motion2sheet/cli.py"],
+      "depends_on": ["motion-extract", "motion-normalize", "motion-retarget", "motion-render", "motion-output"]
+    },
+    "vfx-output": {
+      "paths": ["motion2sheet/vfx2sheet/common/output/**"],
+      "depends_on": []
+    },
+    "vfx-trajectory": {
+      "paths": ["motion2sheet/vfx2sheet/common/trajectory/**", "profiles/vfx2sheet/trajectories/**"],
+      "depends_on": []
+    },
+    "vfx-core": {
+      "paths": ["motion2sheet/vfx2sheet/__init__.py", "motion2sheet/vfx2sheet/cli.py", "motion2sheet/vfx2sheet/registry.py", "motion2sheet/vfx2sheet/blender_entry.py"],
+      "depends_on": ["vfx-output"]
+    },
+    "vfx-splash": {
+      "paths": ["motion2sheet/vfx2sheet/effects/splash/**", "profiles/vfx2sheet/splash/**"],
+      "depends_on": ["vfx-core", "vfx-output", "vfx-trajectory"]
+    }
+  },
+  "test_targets": {
+    "motion-common-compat-unit": {"kind": "unit", "path": "tests/motion/common/test_compatibility.py", "paths": ["tests/motion/common/**"], "depends_on": ["motion-cli"]},
+    "motion-normalize-unit": {"kind": "unit", "path": "tests/motion/normalize/test_normalize.py", "paths": ["tests/motion/normalize/**"], "depends_on": ["motion-normalize"]},
+    "motion-retarget-unit": {"kind": "unit", "path": "tests/motion/retarget/test_retarget.py", "paths": ["tests/motion/retarget/**"], "depends_on": ["motion-retarget"]},
+    "motion-render-unit": {"kind": "unit", "path": "tests/motion/render/test_renderer.py", "paths": ["tests/motion/render/**"], "depends_on": ["motion-render"]},
+    "motion-output-unit": {"kind": "unit", "path": "tests/motion/output/test_validator.py", "paths": ["tests/motion/output/**"], "depends_on": ["motion-output"]},
+    "motion-synthetic-fbx": {"kind": "motion-e2e", "target": "synthetic-fbx", "paths": ["tests/motion/fixtures/**", "tests/motion/e2e/verify_generated_output.py", "tests/motion/e2e/verify_retarget_output.py"], "depends_on": ["motion-cli"]},
+    "motion-synthetic-bvh": {"kind": "motion-e2e", "target": "synthetic-bvh", "paths": ["tests/motion/fixtures/**", "tests/motion/e2e/verify_generated_output.py", "tests/motion/e2e/verify_retarget_output.py"], "depends_on": ["motion-cli"]},
+    "motion-mixamo-real": {"kind": "motion-e2e", "target": "mixamo-real", "paths": ["tests/motion/e2e/verify_mixamo_output.py", "sample/walk_mixamo.fbx"], "depends_on": ["motion-cli"]},
+    "vfx-unit": {"kind": "unit", "path": "tests/vfx2sheet/unit", "paths": ["tests/vfx2sheet/unit/**"], "depends_on": ["vfx-splash"]},
+    "vfx-splash-e2e": {"kind": "vfx-e2e", "target": "splash", "paths": ["tests/vfx2sheet/e2e/**", "tests/vfx2sheet/fixtures/splash/**", "tests/vfx2sheet/golden/splash/**"], "depends_on": ["vfx-splash"]},
+    "ci-affected-unit": {"kind": "unit", "path": "tests/ci/test_detect_affected.py", "paths": ["tests/ci/**"], "depends_on": []}
+  }
+}
