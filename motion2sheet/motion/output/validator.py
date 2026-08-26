@@ -7,6 +7,7 @@ from pathlib import Path
 from PIL import Image
 
 from ..common.model import PoseSequence, missing_joints
+from .contracts import DEFAULT_OUTPUT_MODE, OUTPUT_MODES, mode_emits_frames, mode_emits_sheet
 
 
 class ValidationError(RuntimeError):
@@ -93,6 +94,12 @@ def validate_output_directory(root: Path) -> list[str]:
     expected_frames = int(metadata["frames"])
     canvas = tuple(metadata["canvas"])
     columns = int(metadata["sheetColumns"])
+    output_mode = str(metadata.get("outputMode", DEFAULT_OUTPUT_MODE))
+    if output_mode not in OUTPUT_MODES:
+        return [f"unsupported outputMode: {output_mode}"]
+
+    expect_frames = mode_emits_frames(output_mode)
+    expect_sheet = mode_emits_sheet(output_mode)
 
     for direction in metadata["directions"]:
         direction_dir = root / direction
@@ -105,22 +112,28 @@ def validate_output_directory(root: Path) -> list[str]:
         sequence = PoseSequence.from_dict(json.loads(pose_path.read_text(encoding="utf-8")))
         errors.extend(f"{direction}: {error}" for error in validate_sequence(sequence, expected_frames))
 
-        frame_paths = sorted(frames_dir.glob("*.png"))
-        if len(frame_paths) != expected_frames:
-            errors.append(f"{direction}: expected {expected_frames} frame PNGs, got {len(frame_paths)}")
-        for frame_path in frame_paths:
-            with Image.open(frame_path) as image:
-                if image.size != canvas:
-                    errors.append(f"{direction}: {frame_path.name} has size {image.size}, expected {canvas}")
+        if expect_frames:
+            frame_paths = sorted(frames_dir.glob("*.png")) if frames_dir.exists() else []
+            if len(frame_paths) != expected_frames:
+                errors.append(f"{direction}: expected {expected_frames} frame PNGs, got {len(frame_paths)}")
+            for frame_path in frame_paths:
+                with Image.open(frame_path) as image:
+                    if image.size != canvas:
+                        errors.append(f"{direction}: {frame_path.name} has size {image.size}, expected {canvas}")
+        elif frames_dir.exists():
+            errors.append(f"{direction}: frames directory must not exist in outputMode=sheet")
 
-        if not sheet_path.exists():
-            errors.append(f"{direction}: pose_sheet.png is missing")
-        else:
-            rows = (expected_frames + columns - 1) // columns
-            expected_size = (canvas[0] * columns, canvas[1] * rows)
-            with Image.open(sheet_path) as sheet:
-                if sheet.size != expected_size:
-                    errors.append(f"{direction}: sheet size {sheet.size}, expected {expected_size}")
+        if expect_sheet:
+            if not sheet_path.exists():
+                errors.append(f"{direction}: pose_sheet.png is missing")
+            else:
+                rows = (expected_frames + columns - 1) // columns
+                expected_size = (canvas[0] * columns, canvas[1] * rows)
+                with Image.open(sheet_path) as sheet:
+                    if sheet.size != expected_size:
+                        errors.append(f"{direction}: sheet size {sheet.size}, expected {expected_size}")
+        elif sheet_path.exists():
+            errors.append(f"{direction}: pose_sheet.png must not exist in outputMode=frames")
     return errors
 
 
