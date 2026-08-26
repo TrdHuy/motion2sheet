@@ -6,4 +6,4 @@ On pull requests, `detect_affected.py` maps changed paths to directly affected c
 
 On pushes to `master` and manual workflow dispatches, CI runs the complete graph.
 
-Motion production code is split into canonical component folders under `motion2sheet/motion/`. The legacy top-level motion modules remain compatibility facades during migration. `vfx2sheet` keeps its existing feature/effect architecture and is only mapped into this dependency graph.
+Motion production code has one canonical feature surface under `motion2sheet/motion/`; there are no legacy top-level motion facades. `vfx2sheet` keeps its existing feature/effect architecture and is only mapped into this dependency graph.

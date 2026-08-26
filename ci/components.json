@@ -13,31 +13,31 @@
   ],
   "components": {
     "motion-common": {
-      "paths": ["motion2sheet/motion/common/**", "motion2sheet/model.py", "motion2sheet/io.py"],
+      "paths": ["motion2sheet/motion/common/**"],
       "depends_on": []
     },
     "motion-normalize": {
-      "paths": ["motion2sheet/motion/normalize/**", "motion2sheet/normalize.py"],
+      "paths": ["motion2sheet/motion/normalize/**"],
       "depends_on": ["motion-common"]
     },
     "motion-retarget": {
-      "paths": ["motion2sheet/motion/retarget/**", "motion2sheet/retarget.py", "motion2sheet/motion/profiles/**"],
+      "paths": ["motion2sheet/motion/retarget/**", "motion2sheet/motion/profiles/**"],
       "depends_on": ["motion-common"]
     },
     "motion-render": {
-      "paths": ["motion2sheet/motion/render/**", "motion2sheet/renderer.py"],
+      "paths": ["motion2sheet/motion/render/**"],
       "depends_on": ["motion-common"]
     },
     "motion-output": {
-      "paths": ["motion2sheet/motion/output/**", "motion2sheet/validator.py"],
+      "paths": ["motion2sheet/motion/output/**"],
       "depends_on": ["motion-common"]
     },
     "motion-extract": {
-      "paths": ["motion2sheet/motion/extract/**", "motion2sheet/blender/extract_motion.py"],
+      "paths": ["motion2sheet/motion/extract/**"],
       "depends_on": ["motion-retarget"]
     },
     "motion-cli": {
-      "paths": ["motion2sheet/motion/cli.py", "motion2sheet/cli.py"],
+      "paths": ["motion2sheet/motion/cli.py"],
       "depends_on": ["motion-extract", "motion-normalize", "motion-retarget", "motion-render", "motion-output"]
     },
     "vfx-output": {
@@ -58,7 +58,6 @@
     }
   },
   "test_targets": {
-    "motion-common-compat-unit": {"kind": "unit", "path": "tests/motion/common/test_compatibility.py", "paths": ["tests/motion/common/**"], "depends_on": ["motion-cli"]},
     "motion-normalize-unit": {"kind": "unit", "path": "tests/motion/normalize/test_normalize.py", "paths": ["tests/motion/normalize/**"], "depends_on": ["motion-normalize"]},
     "motion-retarget-unit": {"kind": "unit", "path": "tests/motion/retarget/test_retarget.py", "paths": ["tests/motion/retarget/**"], "depends_on": ["motion-retarget"]},
     "motion-render-unit": {"kind": "unit", "path": "tests/motion/render/test_renderer.py", "paths": ["tests/motion/render/**"], "depends_on": ["motion-render"]},
