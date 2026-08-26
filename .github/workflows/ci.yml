@@ -11,75 +11,168 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
-
       - name: Install Python package
         run: python -m pip install -e '.[dev]'
-
       - name: Unit tests
         run: pytest
-
+      - name: Install Blender headless runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1
       - name: Setup Blender 4.5 LTS
         uses: bradyajohnston/setup-blender@v5
         with:
-          version: "4.5"
-
+          version: "4.5.12"
       - name: Verify Blender
         run: blender --version
-
       - name: Create deterministic motion fixtures
         run: >-
           blender --background --factory-startup
           --python tests/fixtures/create_synthetic_motion.py
           -- --output build/fixtures
-
       - name: Build source FBX pose sheets
         run: >-
           motion2sheet build build/fixtures/synthetic_walk.fbx
           --action walk --frames 8 --directions down,left,right,up
           --canvas 320x320 --output build/fbx --keep-raw
-
       - name: Build source BVH pose sheets
         run: >-
           motion2sheet build build/fixtures/synthetic_walk.bvh
           --action walk --frames 8 --directions down,left,right,up
           --canvas 320x320 --output build/bvh --keep-raw
-
       - name: Build chibi FBX pose sheets
         run: >-
           motion2sheet build build/fixtures/synthetic_walk.fbx
           --action walk --profile chibi_v1 --frames 8
           --directions down,left,right,up --canvas 320x320
           --output build/fbx_chibi --keep-raw
-
       - name: Build chibi BVH pose sheets
         run: >-
           motion2sheet build build/fixtures/synthetic_walk.bvh
           --action walk --profile chibi_v1 --frames 8
           --directions down,left,right,up --canvas 320x320
           --output build/bvh_chibi --keep-raw
-
-      - name: Validate all outputs
+      - name: Validate all pose outputs
         run: |
           motion2sheet validate build/fbx
           motion2sheet validate build/bvh
           motion2sheet validate build/fbx_chibi
           motion2sheet validate build/bvh_chibi
-
       - name: Verify visual motion semantics
         run: >-
           python tests/e2e/verify_generated_output.py
           build/fbx build/bvh build/fbx_chibi build/bvh_chibi
-
       - name: Verify proportion retarget semantics
         run: >-
           python tests/e2e/verify_retarget_output.py
           build/fbx_chibi build/bvh_chibi
-
+      - name: Build legacy JSON Blender-native baseline
+        run: >-
+          vfx2sheet build
+          --profile tests/vfx2sheet/fixtures/splash/lightning_slash_legacy.json
+          --output build/vfx/baseline_legacy
+      - name: Build JSON5 dissolve-off Blender-native baseline
+        run: >-
+          vfx2sheet build
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
+          --set dissolve.strength=0
+          --output build/vfx/baseline_off
+      - name: Validate Blender-native compatibility outputs
+        run: |
+          vfx2sheet validate build/vfx/baseline_legacy
+          vfx2sheet validate build/vfx/baseline_off
+      - name: Verify legacy JSON equals JSON5 dissolve-off
+        run: >-
+          python tests/vfx2sheet/e2e/verify_vfx_legacy_baseline.py
+          build/vfx/baseline_legacy build/vfx/baseline_off
+      - name: Build active dissolve run A from JSON5 profile
+        run: >-
+          vfx2sheet build
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
+          --output build/vfx/run_a
+      - name: Build active dissolve run B from JSON5 profile
+        run: >-
+          vfx2sheet build
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
+          --output build/vfx/run_b
+      - name: Validate active Blender-native dissolve outputs
+        run: |
+          vfx2sheet validate build/vfx/run_a
+          vfx2sheet validate build/vfx/run_b
+      - name: Verify dissolve determinism and breakup semantics
+        run: >-
+          python tests/vfx2sheet/e2e/verify_vfx_dissolve_output.py
+          build/vfx/baseline_off build/vfx/run_a build/vfx/run_b
+          --qa-output build/vfx/dissolve_qa
+      - name: Build point trajectory run A through CLI config
+        run: >-
+          vfx2sheet build
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
+          --trajectory-config profiles/vfx2sheet/trajectories/points_example.json5
+          --output build/vfx/trajectory_a
+      - name: Build point trajectory run B through CLI config
+        run: >-
+          vfx2sheet build
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
+          --trajectory-config profiles/vfx2sheet/trajectories/points_example.json5
+          --output build/vfx/trajectory_b
+      - name: Validate point trajectory Blender outputs
+        run: |
+          vfx2sheet validate build/vfx/trajectory_a
+          vfx2sheet validate build/vfx/trajectory_b
+      - name: Verify point trajectory determinism and activation
+        run: >-
+          python tests/vfx2sheet/e2e/verify_vfx_trajectory_output.py
+          build/vfx/run_a build/vfx/trajectory_a build/vfx/trajectory_b
+      - name: Build 3D conical helix run A
+        run: >-
+          vfx2sheet build
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
+          --trajectory-config profiles/vfx2sheet/trajectories/conical_helix_tree.json5
+          --output build/vfx/helix_a
+      - name: Build 3D conical helix run B
+        run: >-
+          vfx2sheet build
+          --profile profiles/vfx2sheet/splash/lightning_slash.json5
+          --trajectory-config profiles/vfx2sheet/trajectories/conical_helix_tree.json5
+          --output build/vfx/helix_b
+      - name: Validate 3D conical helix outputs
+        run: |
+          vfx2sheet validate build/vfx/helix_a
+          vfx2sheet validate build/vfx/helix_b
+      - name: Verify 3D conical helix determinism
+        run: >-
+          python tests/vfx2sheet/e2e/verify_vfx_trajectory_3d_output.py
+          build/vfx/helix_a build/vfx/helix_b
+      - name: Re-render saved Blender source
+        run: >-
+          blender --background build/vfx/run_a/source.blend
+          --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py
+          -- --output build/vfx/reopened_frames
+      - name: Verify saved Blender source is authoritative
+        run: >-
+          python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py
+          build/vfx/run_a build/vfx/reopened_frames
+      - name: Re-render saved point-trajectory Blender source
+        run: >-
+          blender --background build/vfx/trajectory_a/source.blend
+          --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py
+          -- --output build/vfx/trajectory_reopened_frames
+      - name: Verify point-trajectory Blender source is authoritative
+        run: >-
+          python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py
+          build/vfx/trajectory_a build/vfx/trajectory_reopened_frames
+      - name: Re-render saved 3D helix Blender source
+        run: >-
+          blender --background build/vfx/helix_a/source.blend
+          --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py
+          -- --output build/vfx/helix_reopened_frames
+      - name: Verify 3D helix Blender source is authoritative
+        run: >-
+          python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py
+          build/vfx/helix_a build/vfx/helix_reopened_frames
       - name: Upload generated pose sheets
         if: always()
         uses: actions/upload-artifact@v4
@@ -91,5 +184,13 @@ jobs:
             build/fbx_chibi/
             build/bvh_chibi/
             build/fixtures/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload generated VFX output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion2sheet-vfx-e2e-output
+          path: build/vfx/
           if-no-files-found: error
           retention-days: 7

@@ -1,0 +1,308 @@
+{
+  // Effect package dùng để resolve renderer.
+  "effect": "splash",
+  // Loại VFX tổng quát mà renderer sẽ tạo.
+  "template": "slash",
+  // Biến thể cụ thể của slash; biến thể này sử dụng năng lượng điện và tia sét.
+  "variant": "lightning",
+  // Tổng số frame trong một chu kỳ animation.
+  "frames": 8,
+  // Tốc độ phát preview GIF, tính theo frame mỗi giây.
+  "fps": 12,
+  // Kích thước của từng frame theo thứ tự [rộng, cao].
+  "canvas": [512, 512],
+  // Số cột khi đóng gói các frame thành sprite sheet.
+  "sheetColumns": 4,
+  // Seed cố định để cùng cấu hình luôn sinh ra cùng một output.
+  "seed": 42891,
+
+  // Trajectory mặc định của preset. Khai báo đầy đủ tại đây để profile tự mô tả
+  // toàn bộ đường chuyển động mà không cần đọc LEGACY_POINTS trong code.
+  "trajectory": {
+    "type": "points",
+    "dimensions": 2,
+    "interpolation": "catmull-rom",
+    "closed": false,
+    "points": [
+      [1.15, 1.06],
+      [0.57, 1.03],
+      [0.06, 0.83],
+      [-0.25, 0.49],
+      [-0.23, 0.10],
+      [0.02, -0.29],
+      [0.47, -0.54],
+      [1.18, -0.61],
+    ],
+    // Scale dọc trajectory; 1.0 -> 1.0 giữ nguyên kích thước legacy/default.
+    "scale": {
+      "start": 1.0,
+      "end": 1.0,
+    },
+  },
+
+  "colors": {
+    // Màu xanh đậm ở vùng ngoài cùng của luồng năng lượng.
+    "outer": "#0218EC",
+    // Màu xanh điện chính của thân slash.
+    "body": "#0668FF",
+    // Màu cyan của vùng năng lượng nóng phía trong.
+    "inner": "#12C8FF",
+    // Màu lõi nóng nhất của slash.
+    "core": "#FFFFFF",
+    // Màu của tia sét và các nhánh điện.
+    "lightning": "#A8F0FF",
+  },
+
+  "intensity": {
+    // Cường độ lớp năng lượng ngoài.
+    "outer": 0.75,
+    // Cường độ thân xanh chính.
+    "body": 0.95,
+    // Cường độ vùng cyan phía trong.
+    "inner": 1.25,
+    // Cường độ lõi trắng nóng nhất.
+    "core": 4.0,
+    // Cường độ tia sét.
+    "lightning": 3.8,
+  },
+
+  "glow": {
+    // Bán kính glow của vùng xanh ngoài.
+    "outer_radius": 10.0,
+    // Bán kính glow của vùng cyan.
+    "inner_radius": 5.0,
+    // Bán kính glow sát lõi trắng.
+    "core_radius": 2.0,
+    // Độ mạnh glow vùng ngoài.
+    "outer_strength": 0.24,
+    // Độ mạnh glow vùng cyan.
+    "inner_strength": 0.20,
+    // Độ mạnh glow vùng lõi.
+    "core_strength": 0.14,
+  },
+
+  "energy": {
+    // Mức năng lượng nền tối thiểu của thân slash.
+    "body_floor": 0.08,
+    // Hệ số khuếch đại năng lượng của thân slash.
+    "body_gain": 0.38,
+    // Ngưỡng năng lượng bắt đầu chuyển từ xanh sang cyan.
+    "cyan_threshold": 0.72,
+    // Ngưỡng năng lượng bắt đầu chuyển thành vùng trắng nóng.
+    "white_threshold": 0.90,
+    // Biên độ nhiễu năng lượng trên thân slash.
+    "turbulence": 0.070,
+    // Tần số nhiễu năng lượng; lớn hơn tạo biến thiên dày hơn.
+    "turbulence_frequency": 7.6,
+    // Hệ số khuếch đại năng lượng của lõi.
+    "core_gain": 1.12,
+    // Hệ số khuếch đại năng lượng của tia sét.
+    "lightning_gain": 1.04,
+    // Mức liên kết độ rộng gốc tia sét với độ rộng lõi tại điểm phát tia.
+    "root_width_coupling": 0.94,
+    // Số mũ điều khiển phân bố alpha theo trường năng lượng.
+    "alpha_power": 1.46,
+    // Hệ số khuếch đại alpha cuối cùng.
+    "alpha_gain": 0.98,
+    // Tỉ lệ trộn alpha nền để tránh thân bị mất hoàn toàn ở vùng năng lượng thấp.
+    "base_alpha_mix": 0.08,
+    // Bán kính glow bổ sung từ trường năng lượng.
+    "glow_radius": 13.0,
+    // Độ mạnh glow bổ sung từ trường năng lượng.
+    "glow_strength": 1.00,
+  },
+
+  "core": {
+    // Độ rộng nhỏ nhất của lõi năng lượng.
+    "width_min": 10.5,
+    // Độ rộng lớn nhất của lõi năng lượng.
+    "width_max": 29.0,
+    // Mức dao động ngẫu nhiên của độ rộng lõi.
+    "width_jitter": 0.58,
+    // Mức làm mượt thay đổi độ rộng dọc theo lõi.
+    "width_smoothness": 0.64,
+    // Biên độ lệch tâm của đường lõi so với xương chuyển động.
+    "center_jitter": 5.6,
+    // Tần số lệch tâm của đường lõi.
+    "center_frequency": 5.2,
+    // Số đường sáng tách biệt tạo thành lõi nóng.
+    "streak_count": 5,
+    // Tỉ lệ độ rộng của từng đường sáng so với lõi tổng thể.
+    "streak_width_ratio": 0.34,
+    // Xác suất một vùng lõi bị tách hoặc tạo khe cyan.
+    "split_probability": 0.20,
+    // Số hotspot sáng cục bộ dọc theo lõi.
+    "hotspot_count": 4,
+    // Hệ số cường độ của hotspot.
+    "hotspot_scale": 1.12,
+  },
+
+  "shape": {
+    // Hệ số độ dày của thân xanh chính.
+    "body_scale": 2.60,
+    // Hệ số độ dày của vùng cyan phía trong.
+    "inner_scale": 1.16,
+    // Hệ số độ dày của vùng lõi trắng.
+    "core_scale": 0.14,
+    // Dịch toàn bộ hình theo trục X, theo tỉ lệ canvas.
+    "offset_x": 0.20,
+    // Dịch toàn bộ hình theo trục Y, theo tỉ lệ canvas.
+    "offset_y": -0.02,
+    // Biên độ nhiễu hình khối lớn của slash.
+    "form_noise": 0.80,
+    // Tần số nhiễu hình khối lớn.
+    "form_noise_frequency": 2.65,
+    // Biên độ gồ ghề ở mép slash.
+    "edge_noise": 1.90,
+    // Tần số gồ ghề ở mép slash.
+    "edge_noise_frequency": 13.0,
+    // Biên độ nhiễu chi tiết nhỏ trên thân.
+    "detail_noise": 0.96,
+    // Tần số nhiễu chi tiết nhỏ trên thân.
+    "detail_noise_frequency": 24.0,
+    // Mức thu nhọn của hai đầu slash.
+    "taper_power": 0.46,
+    // Mức loe của thân slash quanh vùng giữa.
+    "flare": 0.52,
+    // Số luồng hoặc lưỡi năng lượng nhỏ cấu thành thân.
+    "tongue_count": 38,
+    // Độ dài tương đối của các luồng năng lượng nhỏ.
+    "tongue_length": 0.78,
+    // Mức uốn cong của các luồng năng lượng nhỏ.
+    "tongue_curve": 0.92,
+    // Độ rộng tương đối của các luồng năng lượng nhỏ.
+    "tongue_width": 0.56,
+  },
+
+  "lightning": {
+    // Số nhánh kiểu cũ; giữ bằng 0 vì renderer hiện dùng major/minor hierarchy.
+    "branch_count": 0,
+    // Số nhánh phụ kiểu cũ; giữ bằng 0 vì renderer hiện dùng major/minor hierarchy.
+    "secondary_branch_count": 0,
+    // Số crack ngắn bám trên bề mặt slash.
+    "surface_crack_count": 12,
+    // Mức ngoằn ngoèo của đường tia sét.
+    "jitter": 0.58,
+    // Hệ số chiều dài tổng thể của tia sét.
+    "length": 1.14,
+    // Mức mở rộng hướng phát tia ra hai phía.
+    "spread": 0.92,
+    // Độ rộng cơ sở của hệ tia sét kiểu cũ.
+    "width": 1.00,
+    // Độ rộng nhánh phụ kiểu cũ.
+    "secondary_width": 0.62,
+    // Độ rộng crack ngắn trên bề mặt.
+    "surface_width": 0.50,
+    // Mức ưu tiên sinh tia gần mép luồng năng lượng.
+    "edge_bias": 0.84,
+    // Mức gom các tia thành cụm thay vì phân bố đều.
+    "cluster_strength": 0.50,
+    // Số tia sét lớn chính.
+    "major_count": 2,
+    // Độ rộng nhỏ nhất ở gốc tia sét lớn.
+    "major_width_min": 6.2,
+    // Độ rộng lớn nhất ở gốc tia sét lớn.
+    "major_width_max": 11.0,
+    // Độ rộng ở đầu mút của tia sét.
+    "tip_width": 0.30,
+    // Mức dao động độ rộng dọc theo tia.
+    "width_jitter": 0.54,
+    // Mức làm mượt thay đổi độ rộng dọc theo tia.
+    "width_smoothness": 0.58,
+    // Số mũ điều khiển tốc độ thu nhỏ từ gốc tới đầu tia.
+    "taper_power": 1.40,
+    // Xác suất sinh nhánh con từ tia lớn.
+    "branch_probability": 0.62,
+    // Số cấp nhánh tối đa.
+    "branch_depth": 2,
+    // Tỉ lệ độ rộng nhánh con so với nhánh cha.
+    "minor_width_ratio": 0.40,
+    // Tỉ lệ chiều dài nhánh con so với nhánh cha.
+    "minor_length_ratio": 0.56,
+    // Số vi tia/crack rất nhỏ.
+    "micro_count": 18,
+    // Độ rộng của vi tia.
+    "micro_width": 0.50,
+    // Cường độ của vi tia.
+    "micro_intensity": 0.14,
+    // Bán kính glow quanh tia sét.
+    "glow_radius": 7.0,
+    // Độ mạnh glow quanh tia sét.
+    "glow_strength": 0.82,
+  },
+
+  "sparks": {
+    // Số hạt sáng rời sinh trong effect cơ sở.
+    "count": 26,
+    // Mức phân tán của các hạt sáng cơ sở.
+    "spread": 0.66,
+    // Kích thước tương đối của hạt sáng cơ sở.
+    "size": 0.034,
+  },
+
+  "fragments": {
+    // Số mảnh residual dùng bởi pha decay cơ sở.
+    "count": 72,
+    // Mức phân tán của mảnh residual cơ sở.
+    "spread": 0.94,
+    // Kích thước tương đối của mảnh residual cơ sở.
+    "size": 0.038,
+  },
+
+  "timing": {
+    // Thời điểm effect đạt cực đại trên timeline chuẩn hóa 0..1.
+    "peak": 0.57,
+    // Thời điểm bắt đầu pha decay cơ sở trên timeline chuẩn hóa 0..1.
+    "decay": 0.68,
+  },
+
+  "dissolve": {
+    // Mức tan rã tổng thể; tăng đủ để F7/F8 đọc thành breakup thật thay vì chỉ fade nhẹ.
+    "strength": 0.68,
+    // Thời điểm bắt đầu tan rã trên timeline chuẩn hóa 0..1; đặt sau peak để F1-F5 giữ nguyên.
+    "start": 0.60,
+    // Thời điểm tan rã đạt mức tối đa.
+    "end": 1.0,
+    // Kích thước tương đối của các mảng noise; nhỏ hơn tạo nhiều mảng vỡ nhỏ thay vì lỗ lớn.
+    "noise_scale": 0.075,
+    // Số tầng chi tiết của trường noise; lớn hơn tạo biên vỡ nhiều chi tiết hơn.
+    "noise_detail": 3.4,
+    // Độ mềm ở biên vùng bị dissolve; giữ mềm để breakup không thành các lỗ đen sắc cạnh.
+    "edge_softness": 0.16,
+    // Thân xanh tan mạnh hơn để F7/F8 tách mảng nhưng vẫn giữ lượng xanh đáng kể.
+    "body_amount": 0.92,
+    // Cyan tan vừa phải để F8 đứt kết nối rõ hơn nhưng vẫn giữ được ký ức chuyển động cong.
+    "inner_amount": 0.70,
+    // Lõi trắng tan ít hơn thân/cyan để tránh biến thành nhiều chấm trắng rời hoặc white-slab lỗi.
+    "core_amount": 0.34,
+    // Độ trễ để lõi trắng bắt đầu tan muộn hơn phần thân.
+    "core_delay": 0.16,
+    // Số mảnh tối đa có thể tách khỏi vùng vừa bị dissolve; tăng để breakup đọc thành nhiều mảnh rời.
+    "fragment_count": 30,
+    // Kích thước tương đối của mảnh tách rời.
+    "fragment_size": 0.040,
+    // Mức phân tán hướng bay của các mảnh tách rời.
+    "fragment_spread": 0.82,
+    // Khoảng trôi tương đối của mảnh ra khỏi thân gốc; đủ để thấy mảnh đã tách nhưng vẫn còn liên hệ với cung slash.
+    "fragment_drift": 0.085,
+    // Số tia/hạt sáng nhỏ tối đa sinh ở vùng đang tan rã.
+    "spark_count": 14,
+    // Chiều dài tương đối của tia sáng nhỏ khi tan rã.
+    "spark_length": 0.060,
+  },
+
+  // Bán kính hình học cơ sở của cung slash.
+  "radius": 1.90,
+  // Góc quét tổng thể của cung slash, tính bằng độ.
+  "arc_angle": 150.0,
+  // Độ dày hình học cơ sở trước các pass tạo luồng năng lượng.
+  "thickness": 0.12,
+  // Góc bắt đầu của cung slash, tính bằng độ.
+  "start_angle": 105.0,
+  // Góc xoay bổ sung của toàn effect, tính bằng độ.
+  "rotation": 0.0,
+  // Tỉ lệ timeline dành cho fade-in cơ sở.
+  "fade_in": 0.25,
+  // Tỉ lệ timeline dành cho fade-out cơ sở.
+  "fade_out": 0.45,
+}
