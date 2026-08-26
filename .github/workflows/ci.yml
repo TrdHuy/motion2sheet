@@ -110,6 +110,15 @@ jobs:
               python tests/motion/e2e/verify_generated_output.py "$ROOT/source" "$ROOT/chibi"
               python tests/motion/e2e/verify_mixamo_output.py "$ROOT/source" "$ROOT/chibi"
               ;;
+            output-mode)
+              motion2sheet build sample/walk_mixamo.fbx --action walk --profile chibi_v1 --frames 8 --directions down --canvas 320x320 --output-mode both --output "$ROOT/frames" --keep-raw
+              motion2sheet build sample/walk_mixamo.fbx --action walk --profile chibi_v1 --frames 8 --directions down --canvas 320x320 --output-mode frames --output "$ROOT/frames" --keep-raw
+              motion2sheet validate "$ROOT/frames"
+              motion2sheet build sample/walk_mixamo.fbx --action walk --profile chibi_v1 --frames 8 --directions down --canvas 320x320 --output-mode both --output "$ROOT/sheet" --keep-raw
+              motion2sheet build sample/walk_mixamo.fbx --action walk --profile chibi_v1 --frames 8 --directions down --canvas 320x320 --output-mode sheet --output "$ROOT/sheet" --keep-raw
+              motion2sheet validate "$ROOT/sheet"
+              python tests/motion/e2e/verify_output_mode.py "$ROOT/frames" "$ROOT/sheet"
+              ;;
             *) echo "Unknown motion E2E target: $TARGET" >&2; exit 2 ;;
           esac
       - name: Upload affected motion output

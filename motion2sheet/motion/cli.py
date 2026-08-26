@@ -8,7 +8,14 @@ from pathlib import Path
 
 from .common.io import read_json, write_json, write_pose_sequence
 from .normalize import normalize_projected_sequences
-from .output import assert_valid_output, validate_output_directory
+from .output import (
+    DEFAULT_OUTPUT_MODE,
+    OUTPUT_MODES,
+    assert_valid_output,
+    mode_emits_frames,
+    mode_emits_sheet,
+    validate_output_directory,
+)
 from .render import compose_sheet, render_sequence
 from .retarget import load_profile
 
@@ -80,13 +87,20 @@ def build(args) -> int:
     )
     for direction, sequence in normalized.items():
         direction_dir = output / direction
+        if direction_dir.exists():
+            shutil.rmtree(direction_dir)
         write_pose_sequence(direction_dir / "pose.json", sequence)
-        frame_paths = render_sequence(sequence, direction_dir / "frames")
-        compose_sheet(frame_paths, direction_dir / "pose_sheet.png", columns=args.sheet_columns)
+        frames_dir = direction_dir / "frames"
+        frame_paths = render_sequence(sequence, frames_dir)
+        if mode_emits_sheet(args.output_mode):
+            compose_sheet(frame_paths, direction_dir / "pose_sheet.png", columns=args.sheet_columns)
+        if not mode_emits_frames(args.output_mode):
+            shutil.rmtree(frames_dir)
     metadata = {
         "tool": "motion2sheet", "version": 1, "source": str(input_path), "action": action,
         "frames": args.frames, "directions": directions, "canvas": list(args.canvas),
-        "sheetColumns": args.sheet_columns, "cameraElevation": args.camera_elevation,
+        "sheetColumns": args.sheet_columns, "outputMode": args.output_mode,
+        "cameraElevation": args.camera_elevation,
         "proportionProfile": profile_name, "retarget": raw.get("retarget", {"profile": "source"}),
         "normalization": {
             "globalScaleAcrossDirections": True,
@@ -116,7 +130,7 @@ def validate(args) -> int:
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="motion2sheet")
     sub = root.add_subparsers(dest="command", required=True)
-    build_parser = sub.add_parser("build", help="Extract motion and build canonical pose sheets")
+    build_parser = sub.add_parser("build", help="Extract motion and build canonical pose outputs")
     build_parser.add_argument("input")
     build_parser.add_argument("--frames", type=int, default=8)
     build_parser.add_argument("--directions", default="down")
@@ -128,6 +142,12 @@ def parser() -> argparse.ArgumentParser:
     build_parser.add_argument("--sheet-columns", type=int, default=4)
     build_parser.add_argument("--padding", type=int, default=20)
     build_parser.add_argument("--profile", default="source", help="Body proportion profile: source (default), built-in name such as chibi_v1, or JSON path")
+    build_parser.add_argument(
+        "--output-mode",
+        choices=OUTPUT_MODES,
+        default=DEFAULT_OUTPUT_MODE,
+        help="Output type: both (default), frames, or sheet",
+    )
     build_parser.add_argument("--keep-raw", action="store_true")
     build_parser.set_defaults(func=build)
     validate_parser = sub.add_parser("validate", help="Validate an existing generated output directory")

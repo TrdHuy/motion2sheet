@@ -1,6 +1,8 @@
 # motion2sheet
 
-`motion2sheet` converts humanoid motion files into deterministic 2D skeleton pose sheets that can be used as pose-conditioning references for AI sprite generation.
+`motion2sheet` converts humanoid motion files into deterministic 2D skeleton pose outputs that can be used as pose-conditioning references for AI sprite generation.
+
+> Hướng dẫn sử dụng chi tiết bằng tiếng Việt: [`docs/huong-dan-su-dung.md`](docs/huong-dan-su-dung.md)
 
 ## MVP scope
 
@@ -9,10 +11,11 @@
 - Blender runs headless; no Blender UI is required
 - Canonical 2D joint JSON is the source of truth
 - PNG skeleton frames and pose sheets are derived artifacts
+- Output can be `both`, `frames`, or `sheet`
 - One global normalization scale is used across all directions in a build
 - Source coordinate orientation is canonicalized automatically from body landmarks
 - Optional proportion profiles can rebuild source motion onto canonical body proportions before projection
-- CI generates deterministic FBX/BVH fixtures, builds pose sheets, validates actual movement/projection, and uploads the generated output as a GitHub Actions artifact
+- Pull-request CI resolves affected component/test targets; pushes to `master` run the full regression graph
 
 ## Pipeline
 
@@ -39,9 +42,7 @@ global normalization
    ↓
 pose.json
    ↓
-frame PNGs
-   ↓
-pose_sheet.png
+frame PNGs and/or pose_sheet.png
 ```
 
 ## Install
@@ -55,7 +56,7 @@ Requirements:
 python -m pip install -e .
 ```
 
-## Build a walk pose sheet
+## Build a walk pose output
 
 ```bash
 motion2sheet build walk.fbx \
@@ -75,6 +76,38 @@ motion2sheet build walk.fbx \
   --output build/walk_down
 ```
 
+## Output modes
+
+The default is `--output-mode both`, preserving the existing behavior.
+
+```text
+both    pose.json + frames/*.png + pose_sheet.png
+frames  pose.json + frames/*.png
+sheet   pose.json + pose_sheet.png
+```
+
+Frames only:
+
+```bash
+motion2sheet build walk.fbx \
+  --frames 8 \
+  --directions down \
+  --output-mode frames \
+  --output build/walk_frames
+```
+
+Sheet only:
+
+```bash
+motion2sheet build walk.fbx \
+  --frames 8 \
+  --directions down \
+  --output-mode sheet \
+  --output build/walk_sheet
+```
+
+See the [Vietnamese usage guide](docs/huong-dan-su-dung.md) for detailed examples, Mixamo commands, parameter explanations, output structures, validation rules, and troubleshooting.
+
 ## Proportion profiles
 
 The default `source` profile preserves source-rig proportions. Use `chibi_v1` to keep source motion directions while rebuilding the canonical skeleton with compact storybook-RPG bone lengths before 2D projection:
@@ -90,6 +123,8 @@ motion2sheet build walk.fbx \
 `--profile` also accepts a JSON profile path. Profile values define canonical segment lengths; they are not pixel sizes. Root motion is scaled by target/source canonical stature so body translation remains proportional after retargeting.
 
 ## Output
+
+Default `both` mode:
 
 ```text
 build/walk/
@@ -113,7 +148,9 @@ For eight frames, each direction uses a `4 × 2` sheet by default. With a `320 �
 motion2sheet validate build/walk
 ```
 
-Validation checks include expected frame count, canonical joints, finite/in-bounds coordinates, adjacent-frame continuity, skeleton projection height, actual limb motion, PNG dimensions, and sheet layout. Multi-frame output that is visually static is rejected.
+Validation reads `metadata.json` and respects `outputMode`. It checks expected frame count, canonical joints, finite/in-bounds coordinates, adjacent-frame continuity, skeleton projection height, actual limb motion, PNG dimensions, and the required frame/sheet filesystem contract. Multi-frame output that is visually static is rejected.
+
+Older metadata without `outputMode` is treated as `both` for backward compatibility.
 
 ## Canonical skeleton
 
@@ -156,7 +193,7 @@ The generated pose is **not resized independently per frame**. `motion2sheet` pr
 
 ## CI
 
-`.github/workflows/ci.yml` runs on pull requests and `master` pushes. It runs unit tests, installs Blender 4.5 LTS, creates a deterministic synthetic humanoid walk, exports FBX/BVH, imports both formats again, builds source and `chibi_v1` four-direction pose sheets, verifies target segment lengths and real motion, rejects static/collapsed output, validates JSON/PNG structure, and uploads `motion2sheet-e2e-output` for visual inspection. Raw projected JSON and source fixtures are retained in the CI artifact for debugging.
+`.github/workflows/ci.yml` uses dependency-aware target selection on pull requests. Motion component changes run only their affected unit/E2E targets, while VFX-only changes do not run motion tests. Pushes to `master` and manual workflow dispatches run the complete graph. The output-mode E2E target exercises real Mixamo `chibi_v1` builds in `frames` and `sheet` modes, including mode switches from `both` to verify that stale artifacts are removed.
 
 ## AI sprite generation skills
 
@@ -179,7 +216,7 @@ Motion
   ↓
 motion2sheet
   ↓
-Pose Sheet
+Pose Sheet / Pose Frames
   ↓
 AI sprite generation skills
   ↓
