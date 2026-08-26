@@ -1,4 +1,6 @@
 {
+  // Effect package dùng để resolve renderer.
+  "effect": "splash",
   // Loại VFX tổng quát mà renderer sẽ tạo.
   "template": "slash",
   // Biến thể cụ thể của slash; biến thể này sử dụng năng lượng điện và tia sét.
@@ -13,6 +15,30 @@
   "sheetColumns": 4,
   // Seed cố định để cùng cấu hình luôn sinh ra cùng một output.
   "seed": 42891,
+
+  // Trajectory mặc định của preset. Khai báo đầy đủ tại đây để profile tự mô tả
+  // toàn bộ đường chuyển động mà không cần đọc LEGACY_POINTS trong code.
+  "trajectory": {
+    "type": "points",
+    "dimensions": 2,
+    "interpolation": "catmull-rom",
+    "closed": false,
+    "points": [
+      [1.15, 1.06],
+      [0.57, 1.03],
+      [0.06, 0.83],
+      [-0.25, 0.49],
+      [-0.23, 0.10],
+      [0.02, -0.29],
+      [0.47, -0.54],
+      [1.18, -0.61],
+    ],
+    // Scale dọc trajectory; 1.0 -> 1.0 giữ nguyên kích thước legacy/default.
+    "scale": {
+      "start": 1.0,
+      "end": 1.0,
+    },
+  },
 
   "colors": {
     // Màu xanh đậm ở vùng ngoài cùng của luồng năng lượng.
