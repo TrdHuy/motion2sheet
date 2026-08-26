@@ -2,8 +2,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from motion2sheet.model import PoseFrame, PoseSequence
-from motion2sheet.renderer import compose_sheet, render_sequence
+from motion2sheet.motion.common.model import PoseFrame, PoseSequence
+from motion2sheet.motion.render import compose_sheet, render_sequence
 
 
 def sample_frame():

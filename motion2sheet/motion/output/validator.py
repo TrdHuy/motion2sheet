@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from .model import PoseSequence, missing_joints
+from ..common.model import PoseSequence, missing_joints
 
 
 class ValidationError(RuntimeError):
@@ -58,7 +58,6 @@ def validate_sequence(sequence: PoseSequence, expected_frames: int | None = None
             if frame.joints["head"][1] >= frame.joints["pelvis"][1]:
                 errors.append(f"frame {index}: head is not visually above pelvis")
 
-    # Reject a pose that has collapsed because source axes/projector do not agree.
     if frame_heights and min(frame_heights) < height * 0.25:
         errors.append(
             f"projected skeleton is too short: minimum height {min(frame_heights):.2f}px "
@@ -76,8 +75,6 @@ def validate_sequence(sequence: PoseSequence, expected_frames: int | None = None
             if math.hypot(x2 - x1, y2 - y1) > max_jump:
                 errors.append(f"frame {index}->{index+1}: joint {joint} jumps too far")
 
-    # Multi-frame animation must contain actual motion. This prevents a static FBX
-    # take from passing simply because all PNGs and joints exist.
     if len(sequence.frames) > 1:
         moving = [joint for joint in DYNAMIC_JOINTS if _joint_motion_span(sequence, joint) >= 2.0]
         if len(moving) < 2:

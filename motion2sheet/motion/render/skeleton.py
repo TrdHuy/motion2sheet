@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from .model import BONES, PoseFrame, PoseSequence
+from ..common.model import BONES, PoseFrame, PoseSequence
 
 BONE_COLORS = (
     (255, 80, 80, 255),

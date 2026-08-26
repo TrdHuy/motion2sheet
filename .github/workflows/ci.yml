@@ -6,9 +6,50 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  test:
+  detect:
     runs-on: ubuntu-latest
+    outputs:
+      unit_matrix: ${{ steps.affected.outputs.unit_matrix }}
+      unit_count: ${{ steps.affected.outputs.unit_count }}
+      motion_e2e_matrix: ${{ steps.affected.outputs.motion_e2e_matrix }}
+      motion_e2e_count: ${{ steps.affected.outputs.motion_e2e_count }}
+      vfx_e2e_matrix: ${{ steps.affected.outputs.vfx_e2e_matrix }}
+      vfx_e2e_count: ${{ steps.affected.outputs.vfx_e2e_count }}
+      affected_components: ${{ steps.affected.outputs.affected_components }}
+      affected_targets: ${{ steps.affected.outputs.affected_targets }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: affected
+        name: Resolve affected CI targets
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            python ci/detect_affected.py --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            python ci/detect_affected.py --full >> "$GITHUB_OUTPUT"
+          fi
+      - name: Show affected graph
+        run: |
+          echo 'components=${{ steps.affected.outputs.affected_components }}'
+          echo 'targets=${{ steps.affected.outputs.affected_targets }}'
+
+  unit:
+    needs: detect
+    if: needs.detect.outputs.unit_count != '0'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.unit_matrix) }}
+    name: unit / ${{ matrix.name }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -17,8 +58,25 @@ jobs:
           cache: pip
       - name: Install Python package
         run: python -m pip install -e '.[dev]'
-      - name: Unit tests
-        run: pytest
+      - name: Run affected unit target
+        run: pytest "${{ matrix.path }}"
+
+  motion-e2e:
+    needs: detect
+    if: needs.detect.outputs.motion_e2e_count != '0'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.motion_e2e_matrix) }}
+    name: motion-e2e / ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Python package
+        run: python -m pip install -e '.[dev]'
       - name: Install Blender headless runtime libraries
         run: sudo apt-get update && sudo apt-get install -y libegl1
       - name: Setup Blender 4.5 LTS
@@ -27,170 +85,147 @@ jobs:
           version: "4.5.12"
       - name: Verify Blender
         run: blender --version
-      - name: Create deterministic motion fixtures
-        run: >-
-          blender --background --factory-startup
-          --python tests/fixtures/create_synthetic_motion.py
-          -- --output build/fixtures
-      - name: Build source FBX pose sheets
-        run: >-
-          motion2sheet build build/fixtures/synthetic_walk.fbx
-          --action walk --frames 8 --directions down,left,right,up
-          --canvas 320x320 --output build/fbx --keep-raw
-      - name: Build source BVH pose sheets
-        run: >-
-          motion2sheet build build/fixtures/synthetic_walk.bvh
-          --action walk --frames 8 --directions down,left,right,up
-          --canvas 320x320 --output build/bvh --keep-raw
-      - name: Build chibi FBX pose sheets
-        run: >-
-          motion2sheet build build/fixtures/synthetic_walk.fbx
-          --action walk --profile chibi_v1 --frames 8
-          --directions down,left,right,up --canvas 320x320
-          --output build/fbx_chibi --keep-raw
-      - name: Build chibi BVH pose sheets
-        run: >-
-          motion2sheet build build/fixtures/synthetic_walk.bvh
-          --action walk --profile chibi_v1 --frames 8
-          --directions down,left,right,up --canvas 320x320
-          --output build/bvh_chibi --keep-raw
-      - name: Validate all pose outputs
+      - name: Run affected motion E2E target
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
-          motion2sheet validate build/fbx
-          motion2sheet validate build/bvh
-          motion2sheet validate build/fbx_chibi
-          motion2sheet validate build/bvh_chibi
-      - name: Verify visual motion semantics
-        run: >-
-          python tests/e2e/verify_generated_output.py
-          build/fbx build/bvh build/fbx_chibi build/bvh_chibi
-      - name: Verify proportion retarget semantics
-        run: >-
-          python tests/e2e/verify_retarget_output.py
-          build/fbx_chibi build/bvh_chibi
+          set -euo pipefail
+          ROOT="build/motion/$TARGET"
+          case "$TARGET" in
+            synthetic-fbx|synthetic-bvh)
+              blender --background --factory-startup --python tests/motion/fixtures/create_synthetic_motion.py -- --output build/motion/fixtures
+              if [[ "$TARGET" == "synthetic-fbx" ]]; then INPUT="build/motion/fixtures/synthetic_walk.fbx"; else INPUT="build/motion/fixtures/synthetic_walk.bvh"; fi
+              motion2sheet build "$INPUT" --action walk --frames 8 --directions down,left,right,up --canvas 320x320 --output "$ROOT/source" --keep-raw
+              motion2sheet build "$INPUT" --action walk --profile chibi_v1 --frames 8 --directions down,left,right,up --canvas 320x320 --output "$ROOT/chibi" --keep-raw
+              motion2sheet validate "$ROOT/source"
+              motion2sheet validate "$ROOT/chibi"
+              python tests/motion/e2e/verify_generated_output.py "$ROOT/source" "$ROOT/chibi"
+              python tests/motion/e2e/verify_retarget_output.py "$ROOT/chibi"
+              ;;
+            mixamo-real)
+              motion2sheet build sample/walk_mixamo.fbx --action walk --frames 8 --directions down,left,right,up --canvas 320x320 --output "$ROOT/source" --keep-raw
+              motion2sheet build sample/walk_mixamo.fbx --action walk --profile chibi_v1 --frames 8 --directions down,left,right,up --canvas 320x320 --output "$ROOT/chibi" --keep-raw
+              motion2sheet validate "$ROOT/source"
+              motion2sheet validate "$ROOT/chibi"
+              python tests/motion/e2e/verify_generated_output.py "$ROOT/source" "$ROOT/chibi"
+              python tests/motion/e2e/verify_mixamo_output.py "$ROOT/source" "$ROOT/chibi"
+              ;;
+            *) echo "Unknown motion E2E target: $TARGET" >&2; exit 2 ;;
+          esac
+      - name: Upload affected motion output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion2sheet-${{ matrix.target }}-output
+          path: build/motion/${{ matrix.target }}/
+          if-no-files-found: warn
+          retention-days: 7
+
+  vfx-e2e:
+    needs: detect
+    if: needs.detect.outputs.vfx_e2e_count != '0'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.vfx_e2e_matrix) }}
+    name: vfx-e2e / ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Python package
+        run: python -m pip install -e '.[dev]'
+      - name: Install Blender headless runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1
+      - name: Setup Blender 4.5 LTS
+        uses: bradyajohnston/setup-blender@v5
+        with:
+          version: "4.5.12"
+      - name: Verify Blender
+        run: blender --version
+      - name: Reject unknown VFX target
+        if: matrix.target != 'splash'
+        run: echo "Unknown VFX E2E target: ${{ matrix.target }}" >&2; exit 2
       - name: Build legacy JSON Blender-native baseline
-        run: >-
-          vfx2sheet build
-          --profile tests/vfx2sheet/fixtures/splash/lightning_slash_legacy.json
-          --output build/vfx/baseline_legacy
+        run: vfx2sheet build --profile tests/vfx2sheet/fixtures/splash/lightning_slash_legacy.json --output build/vfx/baseline_legacy
       - name: Build JSON5 dissolve-off Blender-native baseline
-        run: >-
-          vfx2sheet build
-          --profile profiles/vfx2sheet/splash/lightning_slash.json5
-          --set dissolve.strength=0
-          --output build/vfx/baseline_off
+        run: vfx2sheet build --profile profiles/vfx2sheet/splash/lightning_slash.json5 --set dissolve.strength=0 --output build/vfx/baseline_off
       - name: Validate Blender-native compatibility outputs
         run: |
           vfx2sheet validate build/vfx/baseline_legacy
           vfx2sheet validate build/vfx/baseline_off
       - name: Verify legacy JSON equals JSON5 dissolve-off
-        run: >-
-          python tests/vfx2sheet/e2e/verify_vfx_legacy_baseline.py
-          build/vfx/baseline_legacy build/vfx/baseline_off
+        run: python tests/vfx2sheet/e2e/verify_vfx_legacy_baseline.py build/vfx/baseline_legacy build/vfx/baseline_off
       - name: Build active dissolve run A from JSON5 profile
-        run: >-
-          vfx2sheet build
-          --profile profiles/vfx2sheet/splash/lightning_slash.json5
-          --output build/vfx/run_a
+        run: vfx2sheet build --profile profiles/vfx2sheet/splash/lightning_slash.json5 --output build/vfx/run_a
       - name: Build active dissolve run B from JSON5 profile
-        run: >-
-          vfx2sheet build
-          --profile profiles/vfx2sheet/splash/lightning_slash.json5
-          --output build/vfx/run_b
+        run: vfx2sheet build --profile profiles/vfx2sheet/splash/lightning_slash.json5 --output build/vfx/run_b
       - name: Validate active Blender-native dissolve outputs
         run: |
           vfx2sheet validate build/vfx/run_a
           vfx2sheet validate build/vfx/run_b
       - name: Verify dissolve determinism and breakup semantics
-        run: >-
-          python tests/vfx2sheet/e2e/verify_vfx_dissolve_output.py
-          build/vfx/baseline_off build/vfx/run_a build/vfx/run_b
-          --qa-output build/vfx/dissolve_qa
+        run: python tests/vfx2sheet/e2e/verify_vfx_dissolve_output.py build/vfx/baseline_off build/vfx/run_a build/vfx/run_b --qa-output build/vfx/dissolve_qa
       - name: Build point trajectory run A through CLI config
-        run: >-
-          vfx2sheet build
-          --profile profiles/vfx2sheet/splash/lightning_slash.json5
-          --trajectory-config profiles/vfx2sheet/trajectories/points_example.json5
-          --output build/vfx/trajectory_a
+        run: vfx2sheet build --profile profiles/vfx2sheet/splash/lightning_slash.json5 --trajectory-config profiles/vfx2sheet/trajectories/points_example.json5 --output build/vfx/trajectory_a
       - name: Build point trajectory run B through CLI config
-        run: >-
-          vfx2sheet build
-          --profile profiles/vfx2sheet/splash/lightning_slash.json5
-          --trajectory-config profiles/vfx2sheet/trajectories/points_example.json5
-          --output build/vfx/trajectory_b
+        run: vfx2sheet build --profile profiles/vfx2sheet/splash/lightning_slash.json5 --trajectory-config profiles/vfx2sheet/trajectories/points_example.json5 --output build/vfx/trajectory_b
       - name: Validate point trajectory Blender outputs
         run: |
           vfx2sheet validate build/vfx/trajectory_a
           vfx2sheet validate build/vfx/trajectory_b
       - name: Verify point trajectory determinism and activation
-        run: >-
-          python tests/vfx2sheet/e2e/verify_vfx_trajectory_output.py
-          build/vfx/run_a build/vfx/trajectory_a build/vfx/trajectory_b
+        run: python tests/vfx2sheet/e2e/verify_vfx_trajectory_output.py build/vfx/run_a build/vfx/trajectory_a build/vfx/trajectory_b
       - name: Build 3D conical helix run A
-        run: >-
-          vfx2sheet build
-          --profile profiles/vfx2sheet/splash/lightning_slash.json5
-          --trajectory-config profiles/vfx2sheet/trajectories/conical_helix_tree.json5
-          --output build/vfx/helix_a
+        run: vfx2sheet build --profile profiles/vfx2sheet/splash/lightning_slash.json5 --trajectory-config profiles/vfx2sheet/trajectories/conical_helix_tree.json5 --output build/vfx/helix_a
       - name: Build 3D conical helix run B
-        run: >-
-          vfx2sheet build
-          --profile profiles/vfx2sheet/splash/lightning_slash.json5
-          --trajectory-config profiles/vfx2sheet/trajectories/conical_helix_tree.json5
-          --output build/vfx/helix_b
+        run: vfx2sheet build --profile profiles/vfx2sheet/splash/lightning_slash.json5 --trajectory-config profiles/vfx2sheet/trajectories/conical_helix_tree.json5 --output build/vfx/helix_b
       - name: Validate 3D conical helix outputs
         run: |
           vfx2sheet validate build/vfx/helix_a
           vfx2sheet validate build/vfx/helix_b
       - name: Verify 3D conical helix determinism
-        run: >-
-          python tests/vfx2sheet/e2e/verify_vfx_trajectory_3d_output.py
-          build/vfx/helix_a build/vfx/helix_b
+        run: python tests/vfx2sheet/e2e/verify_vfx_trajectory_3d_output.py build/vfx/helix_a build/vfx/helix_b
       - name: Re-render saved Blender source
-        run: >-
-          blender --background build/vfx/run_a/source.blend
-          --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py
-          -- --output build/vfx/reopened_frames
+        run: blender --background build/vfx/run_a/source.blend --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py -- --output build/vfx/reopened_frames
       - name: Verify saved Blender source is authoritative
-        run: >-
-          python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py
-          build/vfx/run_a build/vfx/reopened_frames
+        run: python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py build/vfx/run_a build/vfx/reopened_frames
       - name: Re-render saved point-trajectory Blender source
-        run: >-
-          blender --background build/vfx/trajectory_a/source.blend
-          --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py
-          -- --output build/vfx/trajectory_reopened_frames
+        run: blender --background build/vfx/trajectory_a/source.blend --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py -- --output build/vfx/trajectory_reopened_frames
       - name: Verify point-trajectory Blender source is authoritative
-        run: >-
-          python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py
-          build/vfx/trajectory_a build/vfx/trajectory_reopened_frames
+        run: python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py build/vfx/trajectory_a build/vfx/trajectory_reopened_frames
       - name: Re-render saved 3D helix Blender source
-        run: >-
-          blender --background build/vfx/helix_a/source.blend
-          --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py
-          -- --output build/vfx/helix_reopened_frames
+        run: blender --background build/vfx/helix_a/source.blend --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py -- --output build/vfx/helix_reopened_frames
       - name: Verify 3D helix Blender source is authoritative
-        run: >-
-          python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py
-          build/vfx/helix_a build/vfx/helix_reopened_frames
-      - name: Upload generated pose sheets
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: motion2sheet-e2e-output
-          path: |
-            build/fbx/
-            build/bvh/
-            build/fbx_chibi/
-            build/bvh_chibi/
-            build/fixtures/
-          if-no-files-found: error
-          retention-days: 7
+        run: python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py build/vfx/helix_a build/vfx/helix_reopened_frames
       - name: Upload generated VFX output
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: motion2sheet-vfx-e2e-output
+          name: motion2sheet-vfx-${{ matrix.target }}-e2e-output
           path: build/vfx/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
+
+  test:
+    needs: [detect, unit, motion-e2e, vfx-e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    name: test
+    steps:
+      - name: Verify selected CI jobs
+        env:
+          DETECT_RESULT: ${{ needs.detect.result }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          MOTION_RESULT: ${{ needs.motion-e2e.result }}
+          VFX_RESULT: ${{ needs.vfx-e2e.result }}
+        run: |
+          set -euo pipefail
+          for result in "$DETECT_RESULT" "$UNIT_RESULT" "$MOTION_RESULT" "$VFX_RESULT"; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "CI dependency failed with result: $result" >&2; exit 1 ;;
+            esac
+          done

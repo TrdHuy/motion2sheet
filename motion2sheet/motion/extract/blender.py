@@ -11,13 +11,13 @@ from pathlib import Path
 import bpy
 from mathutils import Vector
 
-# Blender uses its own Python environment. Add the repository/package root so the
-# deterministic retarget implementation is shared with normal unit tests.
-PACKAGE_ROOT = Path(__file__).resolve().parents[2]
+# Blender uses its own Python environment. Add the repository root so the
+# canonical motion package is importable from Blender's bundled Python.
+PACKAGE_ROOT = Path(__file__).resolve().parents[3]
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
-from motion2sheet.retarget import load_profile, retarget_frames
+from motion2sheet.motion.retarget import load_profile, retarget_frames
 
 CANONICAL_ALIASES = {
     "pelvis": ("hips", "pelvis", "root"),
@@ -37,7 +37,6 @@ CANONICAL_ALIASES = {
     "right_ankle": ("rightfoot", "rightankle", "rankle", "footr"),
 }
 
-# Canonical space uses +X = character right, +Y = character forward, +Z = character up.
 DIRECTION_YAW_DEGREES = {"down": 0.0, "left": 90.0, "right": -90.0, "up": 180.0}
 
 
@@ -103,11 +102,9 @@ def map_bones(armature: bpy.types.Object) -> dict[str, str]:
 
 
 def activate_animation(armature: bpy.types.Object):
-    """Ensure imported animation is actually active on the armature."""
     animation_data = armature.animation_data_create()
     if animation_data.action is not None:
         return animation_data.action
-
     for track in animation_data.nla_tracks:
         for strip in track.strips:
             if strip.action is not None:
@@ -116,7 +113,6 @@ def activate_animation(armature: bpy.types.Object):
                 animation_data.action = strip.action
                 bpy.context.view_layer.update()
                 return strip.action
-
     candidates = sorted(
         list(bpy.data.actions),
         key=lambda action: float(action.frame_range[1] - action.frame_range[0]),
@@ -160,12 +156,10 @@ def canonical_basis(scene, armature, bone_map, reference_frame: float):
     base = math.floor(reference_frame)
     scene.frame_set(int(base), subframe=reference_frame - base)
     bpy.context.view_layer.update()
-
     pelvis = evaluated_joint_world(armature, bone_map["pelvis"])
     head = evaluated_joint_world(armature, bone_map["head"])
     left_hip = evaluated_joint_world(armature, bone_map["left_hip"])
     right_hip = evaluated_joint_world(armature, bone_map["right_hip"])
-
     right = right_hip - left_hip
     if right.length < 1e-6:
         left_shoulder = evaluated_joint_world(armature, bone_map["left_shoulder"])
@@ -174,18 +168,15 @@ def canonical_basis(scene, armature, bone_map, reference_frame: float):
     if right.length < 1e-6:
         raise RuntimeError("Cannot infer character right axis from hips/shoulders")
     right.normalize()
-
     up_hint = head - pelvis
     up = up_hint - right * up_hint.dot(right)
     if up.length < 1e-6:
         raise RuntimeError("Cannot infer character up axis from head/pelvis")
     up.normalize()
-
     forward = right.cross(up)
     if forward.length < 1e-6:
         raise RuntimeError("Cannot infer character forward axis")
     forward.normalize()
-
     return {
         "origin": pelvis.copy(),
         "right": right.copy(),
@@ -196,11 +187,7 @@ def canonical_basis(scene, armature, bone_map, reference_frame: float):
 
 def to_canonical(point: Vector, basis) -> Vector:
     delta = point - basis["origin"]
-    return Vector((
-        delta.dot(basis["right"]),
-        delta.dot(basis["forward"]),
-        delta.dot(basis["up"]),
-    ))
+    return Vector((delta.dot(basis["right"]), delta.dot(basis["forward"]), delta.dot(basis["up"])))
 
 
 def rotate_z(point: Vector, degrees: float) -> Vector:
@@ -249,7 +236,6 @@ def main() -> None:
     unknown = [direction for direction in directions if direction not in DIRECTION_YAW_DEGREES]
     if unknown:
         raise RuntimeError(f"Unknown directions: {', '.join(unknown)}")
-
     clean_scene()
     import_motion(input_path)
     armature = find_armature()
@@ -258,18 +244,12 @@ def main() -> None:
     times = sample_times(start, end, args.frames)
     scene = bpy.context.scene
     basis = canonical_basis(scene, armature, bone_map, start)
-
-    canonical_frames = [
-        sample_canonical_frame(scene, armature, bone_map, basis, frame_value)
-        for frame_value in times
-    ]
-
+    canonical_frames = [sample_canonical_frame(scene, armature, bone_map, basis, frame_value) for frame_value in times]
     retarget_metadata = {"profile": "source"}
     if args.profile_file:
         profile = load_profile(Path(args.profile_file).resolve())
         canonical_frames, retarget_metadata = retarget_frames(canonical_frames, profile)
         retarget_metadata["segments"] = profile["segments"]
-
     raw = {
         "source": str(input_path),
         "action": args.action or input_path.stem,
@@ -288,11 +268,7 @@ def main() -> None:
     }
     for direction in directions:
         yaw = DIRECTION_YAW_DEGREES[direction]
-        raw["directions"][direction] = [
-            project_frame(frame, yaw, args.camera_elevation)
-            for frame in canonical_frames
-        ]
-
+        raw["directions"][direction] = [project_frame(frame, yaw, args.camera_elevation) for frame in canonical_frames]
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
     print(

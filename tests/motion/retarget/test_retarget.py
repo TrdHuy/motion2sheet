@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from motion2sheet.retarget import retarget_frames, validate_profile
+from motion2sheet.motion.retarget import retarget_frames, validate_profile
 
 
 PROFILE = {

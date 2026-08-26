@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Dict, Tuple
 
-from .model import PoseFrame, PoseSequence
+from ..common.model import PoseFrame, PoseSequence
 
 RawFrame = Dict[str, Tuple[float, float]]
 

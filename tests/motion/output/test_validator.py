@@ -1,5 +1,5 @@
-from motion2sheet.model import CANONICAL_JOINTS, PoseFrame, PoseSequence
-from motion2sheet.validator import validate_sequence
+from motion2sheet.motion.common.model import CANONICAL_JOINTS, PoseFrame, PoseSequence
+from motion2sheet.motion.output import validate_sequence
 
 
 def dynamic_frame(offset: float = 0.0):
@@ -18,10 +18,7 @@ def dynamic_frame(offset: float = 0.0):
 
 def test_validator_accepts_valid_sequence():
     sequence = PoseSequence(
-        "walk",
-        "down",
-        (100, 100),
-        (50, 84),
+        "walk", "down", (100, 100), (50, 84),
         [dynamic_frame(0.0), dynamic_frame(4.0), dynamic_frame(-4.0)],
     )
     assert validate_sequence(sequence, expected_frames=3) == []
