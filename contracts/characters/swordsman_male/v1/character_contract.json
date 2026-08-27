@@ -1,0 +1,87 @@
+{
+  "characterId": "swordsman_male",
+  "contractVersion": 1,
+  "status": "design_locked",
+  "class": "swordsman",
+  "gioiTinh": "nam",
+  "dinhHuongPhongCach": "fantasy hand-drawn storybook",
+  "mucTieuSuDung": [
+    "làm nguồn chuẩn nhận diện cho concept 2D",
+    "làm nguồn chuẩn khi tạo model 3D bằng AI",
+    "làm nguồn chuẩn khi tạo skin, trang phục, vũ khí và biến thể ngoại hình về sau"
+  ],
+  "thuocTinhBatBien": {
+    "nhanDangTongThe": [
+      "cùng một character identity xuyên suốt mọi skin",
+      "thân hình nam trẻ trưởng thành, gọn và athletic",
+      "không chuyển thành body type quá cơ bắp, quá gầy hoặc quá nặng",
+      "giữ canonical stature và tỷ lệ cơ thể đã khóa sau khi visual evidence được duyệt"
+    ],
+    "khuonMat": [
+      "giữ cùng cấu trúc khuôn mặt",
+      "giữ vị trí tương đối của mắt, mũi, miệng và tai",
+      "giữ cùng cấu trúc hàm và cằm",
+      "không làm character trẻ đi hoặc già đi rõ rệt giữa các skin"
+    ],
+    "dauVaTocNen": [
+      "giữ cùng kích thước và hình khối hộp sọ",
+      "giữ hairline cơ bản của character",
+      "màu tóc nền là nâu đậm ấm hoặc charcoal-brown, không dùng đen tuyệt đối"
+    ],
+    "coThe": [
+      "giữ cùng head-to-body ratio",
+      "giữ cùng chiều cao canonical",
+      "giữ cùng vị trí tương đối của vai, khuỷu tay, cổ tay, hông, đầu gối và cổ chân",
+      "giữ cùng chiều dài tương đối của tay và chân",
+      "giữ cùng overall body build"
+    ],
+    "mauDa": [
+      "giữ skin tone nhất quán giữa các skin"
+    ]
+  },
+  "thuocTinhDuocPhepThayDoi": {
+    "toc": [
+      "kiểu tóc",
+      "độ dài tóc trong giới hạn không làm thay đổi hình khối đầu",
+      "cách chia mái",
+      "ponytail hoặc hair arrangement nếu vẫn giữ character identity"
+    ],
+    "trangPhucVaTrangBi": [
+      "áo",
+      "armor",
+      "găng tay",
+      "bracer",
+      "quần",
+      "boots",
+      "belt",
+      "helmet",
+      "phụ kiện",
+      "skin theme"
+    ],
+    "vuKhi": [
+      "loại kiếm",
+      "hình dạng kiếm",
+      "màu sắc và material của kiếm",
+      "weapon skin"
+    ]
+  },
+  "quyTacDongBoNamNu": {
+    "yeuCau": "Nhân vật nam và nữ của game phải dùng cùng canonical game height và cùng overall proportion envelope để thuận lợi cho pipeline animation/render về sau.",
+    "ghiChu": "Contract nữ sẽ được định nghĩa riêng. Không suy diễn chi tiết nhân vật nữ từ contract này."
+  },
+  "quyTacSkin": [
+    "Skin mới phải bắt đầu từ canonical character reference của swordsman_male v1 sau khi reference đó được frozen.",
+    "Không được dùng text prompt độc lập để tái tạo character từ đầu khi làm skin mới.",
+    "Armor và trang phục được phép thay đổi silhouette bên ngoài nhưng không được tự ý thay đổi underlying body proportion.",
+    "Starter outfit và starter weapon không phải character identity bắt buộc.",
+    "Nếu một skin yêu cầu thay đổi thuộc tính bất biến thì phải tạo character contract version mới thay vì âm thầm sửa v1."
+  ],
+  "evidence": {
+    "trangThai": "pending",
+    "canonicalReference": null,
+    "faceIdentity": null,
+    "canonicalLandmarks": null,
+    "evidenceManifest": null,
+    "ghiChu": "Không tạo evidence giả. Chỉ điền các trường này sau khi concept thực tế được review và chấp nhận."
+  }
+}
