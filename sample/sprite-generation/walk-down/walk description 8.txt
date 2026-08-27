@@ -1,0 +1,30 @@
+ACTION: WALK
+DIRECTION: DOWN
+VIEW: TOP_DOWN_HIGH_3_4
+FRAME: 8
+
+MỤC TIÊU
+- Frame cuối của chu kỳ mẫu walk-down trước khi loop về frame 1.
+- Phải giữ exact pose hiện tại, không tự blend về frame 1.
+
+CAMERA / HƯỚNG
+- Top-down / high 3/4.
+- Nhân vật hướng down.
+
+DIỄN GIẢI POSE FRAME 8
+- Thân trên gần thẳng.
+- Tay screen-left gập và ngắn hơn trong projection.
+- Tay screen-right hạ xuống với elbow gập và wrist thấp hơn.
+- Chân screen-left duỗi dài xuống; ankle thấp.
+- Chân screen-right co lại rõ hơn; knee và ankle nằm gần pelvis hơn chân đối diện.
+- Giữ bất đối xứng rõ ràng để frame 8 không collapse thành frame 6 hoặc frame 7.
+
+TOPOLOGY BẮT BUỘC
+- Chân dài ở screen-left, chân co ở screen-right theo đúng pose.
+- Không mirror.
+- Không tự sửa thành contact pose chuẩn nếu skeleton không như vậy.
+
+FAIL NẾU
+- Frame bị blend về frame 1.
+- Hai chân bị đổi bên.
+- Chân co bị kéo dài để cân đối hình.

@@ -1,0 +1,126 @@
+Tạo đúng MỘT frame sprite nhân vật 2D từ ba input được cung cấp:
+
+1. CHARACTER REFERENCE
+2. POSE REFERENCE của đúng frame hiện tại
+3. ACTION DESCRIPTION của đúng frame hiện tại
+
+==================================================
+VAI TRÒ CỦA INPUT
+==================================================
+
+CHARACTER REFERENCE
+= nguồn chuẩn duy nhất cho ngoại hình nhân vật.
+
+POSE REFERENCE
+= nguồn chuẩn duy nhất cho hình học pose của frame hiện tại.
+
+ACTION DESCRIPTION
+= nguồn chuẩn cho action, direction, camera/view, ý nghĩa chuyển động và cách diễn giải pose của frame hiện tại.
+
+Không trộn vai trò của ba input.
+
+Nếu có xung đột:
+- ngoại hình -> theo CHARACTER REFERENCE
+- vị trí khớp / topology / pose -> theo POSE REFERENCE
+- action / direction / camera / motion intent -> theo ACTION DESCRIPTION
+
+==================================================
+CHỈ TẠO MỘT FRAME
+==================================================
+
+- Đây không phải yêu cầu tạo sprite sheet nhiều frame.
+- Chỉ render đúng một nhân vật trong đúng pose được cung cấp.
+- Không suy đoán pose từ frame trước hoặc frame sau.
+- Không tự tạo một walk pose phổ biến thay thế pose hiện tại.
+- Không average pose với bất kỳ frame nào khác.
+
+==================================================
+POSE REFERENCE LÀ DỮ LIỆU HÌNH HỌC BẮT BUỘC
+==================================================
+
+Coi Pose Reference như dữ liệu motion chính xác, không phải ảnh inspiration.
+
+Phải bám sát:
+- head
+- neck
+- shoulders
+- elbows
+- wrists
+- pelvis
+- hips
+- knees
+- ankles
+- torso lean
+- overall gesture
+
+Mỗi chân phải giữ đúng chain:
+hip -> knee -> ankle
+
+Mỗi tay phải giữ đúng chain:
+shoulder -> elbow -> wrist
+
+Không được:
+- swap tay trái / phải
+- swap chân trái / phải
+- mirror pose
+- đổi chân đang co thành chân đang thẳng
+- đổi chân đang nâng thành chân đang đặt đất
+- đổi support leg thành swing leg
+- sửa pose chỉ để silhouette đẹp hơn
+
+Nếu limb bị foreshortening, overlap hoặc che khuất một phần thì vẫn phải giữ nguyên hình học đó.
+Không kéo limb ra chỉ để dễ nhìn hơn.
+
+Phải phân biệt CHARACTER LEFT / RIGHT với SCREEN LEFT / RIGHT.
+Nếu nhân vật hướng về camera thì character-left có thể xuất hiện ở screen-right.
+
+==================================================
+CHARACTER APPEARANCE
+==================================================
+
+Render đúng cùng một nhân vật trong Character Reference.
+Giữ nhất quán:
+- khuôn mặt
+- kiểu tóc
+- tỷ lệ đầu / thân
+- body build
+- chiều dài tay chân
+- quần áo
+- giày
+- phụ kiện
+- màu sắc
+- vật liệu
+- phong cách hình ảnh
+
+Không redesign, không thêm hoặc bỏ chi tiết.
+
+==================================================
+CAMERA VÀ DIRECTION
+==================================================
+
+- Giữ đúng camera/view và direction ghi trong Action Description.
+- Không đổi direction.
+- Không xoay camera.
+- Không zoom ngẫu nhiên.
+- Không đổi projection.
+
+==================================================
+OUTPUT
+==================================================
+
+- Chỉ tạo một raw sprite frame.
+- Background trong suốt.
+- Không thêm text, label, frame number, skeleton, joint marker, border, grid, UI, scenery hoặc object không liên quan.
+- Chừa padding hợp lý quanh nhân vật.
+
+==================================================
+THỨ TỰ ƯU TIÊN
+==================================================
+
+1. Đúng direction và camera
+2. Đúng limb identity và topology
+3. Đúng exact pose của frame
+4. Đúng Character Reference
+5. Visual polish
+
+Một frame đẹp nhưng sai chân, sai knee, sai ankle, mirror pose hoặc swap limb là FRAME THẤT BẠI.

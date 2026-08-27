@@ -6,4 +6,4 @@ On pull requests, `detect_affected.py` maps changed paths to directly affected c
 
 On pushes to `master` and manual workflow dispatches, CI runs the complete graph.
 
-Motion production code has one canonical feature surface under `motion2sheet/motion/`; there are no legacy top-level motion facades. Motion output-mode behavior is owned by `motion/output` and exercised by its own unit/E2E targets. `vfx2sheet` keeps its existing feature/effect architecture and is only mapped into this dependency graph.
+Motion production code has one canonical feature surface under `motion2sheet/motion/`; there are no legacy top-level motion facades. Motion output-mode behavior is owned by `motion/output` and exercised by its own unit/E2E targets. Sprite-generation skills and samples are owned by the lightweight `sprite-workflow` component, so prompt/skill-only changes do not require Blender regression. `vfx2sheet` keeps its existing feature/effect architecture and is only mapped into this dependency graph.

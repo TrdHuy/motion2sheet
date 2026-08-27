@@ -1,0 +1,31 @@
+ACTION: WALK
+DIRECTION: DOWN
+VIEW: TOP_DOWN_HIGH_3_4
+FRAME: 2
+
+MỤC TIÊU
+- Đây là frame tiếp theo của walk cycle hướng xuống.
+- Vẫn là đi bộ, không phải chạy.
+
+CAMERA / HƯỚNG
+- Góc nhìn top-down / high 3/4.
+- Nhân vật hướng xuống, nhìn thấy mặt trước.
+- Camera không thay đổi.
+
+DIỄN GIẢI POSE FRAME 2
+- Thân trên gần thẳng, pelvis vẫn ở trung tâm.
+- Tay ở screen-left hạ xuống với elbow gập; wrist thấp hơn elbow.
+- Tay ở screen-right gập nhẹ và ngắn hơn trong projection.
+- Chân ở screen-left gần như duỗi thẳng xuống, knee nằm dưới hip và ankle tiếp tục xuống dưới.
+- Chân ở screen-right duỗi dài hơn frame 1 và tạo support/swing relationship khác frame 1.
+- Hai chân không được collapse thành cùng một kiểu bước.
+
+TOPOLOGY BẮT BUỘC
+- Theo đúng hip -> knee -> ankle của từng bên.
+- Không tráo chân giữa screen-left và screen-right.
+- Không tự nâng knee cao hơn ảnh pose.
+
+FAIL NẾU
+- Pose bị biến thành chạy với knee lift mạnh.
+- Một chân bị đổi sang chain của chân còn lại.
+- Hai chân bị average thành pose cân đối.

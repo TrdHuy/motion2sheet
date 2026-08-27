@@ -1,0 +1,31 @@
+ACTION: WALK
+DIRECTION: DOWN
+VIEW: TOP_DOWN_HIGH_3_4
+FRAME: 5
+
+MỤC TIÊU
+- Đây là phase đối ứng tiếp theo của walk cycle hướng xuống.
+- Vẫn là walk với stride vừa phải.
+
+CAMERA / HƯỚNG
+- Top-down / high 3/4.
+- Nhân vật hướng down.
+
+DIỄN GIẢI POSE FRAME 5
+- Thân tương đối cân bằng.
+- Tay screen-left gập mạnh hơn và wrist nằm gần elbow trong projection.
+- Tay screen-right hạ dài hơn, elbow và wrist tách rõ.
+- Chân screen-left duỗi dài xuống, ankle thấp.
+- Chân screen-right co rõ: hip -> knee ngắn, knee -> ankle ngắn hơn chân đối diện.
+- Đây là sự đổi vai trò hai chân so với phase trước; phải giữ đúng bên.
+
+TOPOLOGY BẮT BUỘC
+- Chân dài phải vẫn ở screen-left.
+- Chân co phải vẫn ở screen-right.
+- Không mirror pose.
+- Không làm hai tay giống nhau.
+
+FAIL NẾU
+- Chân co bị tự duỗi.
+- Chân dài bị chuyển sang screen-right.
+- Pose bị biến thành run với cả hai chân bật khỏi ground logic.

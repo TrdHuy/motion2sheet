@@ -1,0 +1,31 @@
+ACTION: WALK
+DIRECTION: DOWN
+VIEW: TOP_DOWN_HIGH_3_4
+FRAME: 7
+
+MỤC TIÊU
+- Đây là frame 7 của walk cycle hướng xuống.
+- Đây là frame dễ bị swap chân; ưu tiên tuyệt đối exact leg identity và topology.
+
+CAMERA / HƯỚNG
+- Top-down / high 3/4.
+- Nhân vật hướng down, thấy mặt trước.
+
+DIỄN GIẢI POSE FRAME 7
+- Thân trên gần thẳng, pelvis dịch nhẹ theo bước.
+- Tay screen-left hạ xuống, forearm ngắn trong projection.
+- Tay screen-right hạ xuống dài hơn, elbow và wrist tách rõ.
+- Chân screen-left là chain DÀI: hip -> knee đi xuống rõ; knee -> ankle tiếp tục kéo dài tới ankle thấp.
+- Chân screen-right là chain NGẮN: hip -> knee rất ngắn và knee nằm gần hip; knee -> ankle ngắn, cho cảm giác chân co/foreshortened.
+- Bắt buộc giữ đúng: screen-left dài, screen-right co ngắn.
+
+TOPOLOGY BẮT BUỘC
+- Không được vẽ chân screen-right dài hơn chân screen-left.
+- Không được đổi knee/ankle của hai chain cho nhau.
+- Không mirror pose.
+- Chân co nhìn ngắn là đúng perspective của pose, không phải lỗi.
+
+FAIL NẾU
+- Chân dài bị chuyển sang screen-right.
+- Chân screen-left bị co thay cho chân screen-right.
+- Output đúng “ý đi bộ” nhưng sai bên chân.

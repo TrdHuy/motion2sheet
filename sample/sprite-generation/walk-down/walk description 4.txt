@@ -1,0 +1,33 @@
+ACTION: WALK
+DIRECTION: DOWN
+VIEW: TOP_DOWN_HIGH_3_4
+FRAME: 4
+
+MỤC TIÊU
+- Đây là frame 4 của walk cycle hướng xuống.
+- Đây là frame dễ bị AI hiểu sai chân; ưu tiên tuyệt đối exact leg topology hơn vẻ đẹp.
+
+CAMERA / HƯỚNG
+- Top-down / high 3/4.
+- Nhân vật hướng down, thấy mặt trước.
+- Không đổi camera hoặc direction.
+
+DIỄN GIẢI POSE FRAME 4
+- Thân trên gần thẳng, pelvis hơi dịch theo bước.
+- Tay screen-left hạ xuống và gập rõ ở elbow.
+- Tay screen-right cũng hạ nhưng có góc khác; không làm hai tay đối xứng.
+- Chân screen-left là chain NGẮN trong projection: từ hip xuống knee rất ngắn, knee nằm ngay dưới hip; từ knee xuống ankle tiếp tục ngắn. Chân này đang co mạnh và bị foreshortening.
+- Chân screen-right là chain DÀI: hip -> knee đi xuống rõ, knee -> ankle tiếp tục kéo dài xuống thấp.
+- Bắt buộc giữ đúng một chân co ngắn và một chân duỗi dài như pose.
+
+TOPOLOGY BẮT BUỘC
+- Chân screen-left: KHÔNG được tự kéo ankle xuống để biến thành chân dài.
+- Chân screen-right: KHÔNG được đổi thành chân co.
+- Không swap hai chân chỉ vì silhouette của walk phổ biến thường ngược lại.
+- Foreshortening của chân co là dữ liệu pose, không phải lỗi cần sửa.
+
+FAIL NẾU
+- Chân screen-left bị duỗi dài.
+- Chân screen-right bị co ngắn.
+- Hai chân bị mirror hoặc swap.
+- Output trông hợp lý về walk nhưng sai skeleton.
