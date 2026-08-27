@@ -94,11 +94,19 @@
     "Nếu một skin yêu cầu thay đổi thuộc tính bất biến thì phải tạo character contract version mới thay vì âm thầm sửa v1."
   ],
   "evidence": {
-    "trangThai": "pending",
-    "canonicalReference": null,
+    "trangThai": "canonical_reference_locked",
+    "canonicalReference": {
+      "sha256": "60c7b693bd93e68aa599d7ad3a7b81ca36b22d1bda2f71c569dddd320655e82d",
+      "width": 1536,
+      "height": 1024,
+      "format": "JPEG",
+      "repoPath": null,
+      "nguon": "ảnh evidence được người dùng duyệt trong phiên làm việc hiện tại",
+      "ghiChu": "Hash này khóa chính xác artifact canonical reference đã duyệt. Khi binary được đưa vào repo, file phải có đúng SHA-256 này."
+    },
     "faceIdentity": null,
     "canonicalLandmarks": null,
     "evidenceManifest": null,
-    "ghiChu": "Không tạo evidence giả. Chỉ điền các trường này sau khi concept thực tế được review và chấp nhận."
+    "ghiChu": "Canonical reference đã được khóa bằng SHA-256. Contract vẫn giữ design_locked cho tới khi binary evidence, face identity, landmarks, manifest và CI enforcement hoàn tất."
   }
 }
