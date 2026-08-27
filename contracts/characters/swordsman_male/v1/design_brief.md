@@ -2,7 +2,7 @@
 
 ## 1. Mục tiêu
 
-Tạo concept 2D canonical cho nhân vật Swordsman nam đầu tiên của game mobile 2D phong cách fantasy hand-drawn storybook.
+Tạo concept 2D canonical cho nhân vật Swordsman nam đầu tiên của game mobile 2D phong cách fantasy chibi hand-drawn storybook.
 
 Concept này không phải splash art quảng bá. Đây là nguồn chuẩn để:
 
@@ -11,53 +11,65 @@ Concept này không phải splash art quảng bá. Đây là nguồn chuẩn đ�
 - làm nguồn chuẩn khi tạo skin, hairstyle, armor và weapon variant về sau;
 - giảm character drift giữa các lần generation.
 
-Ưu tiên cao nhất là form readability, identity consistency và khả năng chuyển thành model 3D ổn định.
+Ưu tiên cao nhất là form readability, identity consistency, tỷ lệ chibi ổn định và khả năng chuyển thành model 3D ổn định.
 
 ## 2. Fantasy và cảm giác nhân vật
 
 Nhân vật là một kiếm sĩ lang thang trẻ trưởng thành, có phong thái bình tĩnh, tự tin và hơi bụi bặm.
 
-Không đi theo hướng knight nặng giáp, barbarian cơ bắp hoặc protagonist anime quá trẻ.
+Nhân vật phải nhìn rõ là chibi storybook ngay từ silhouette, nhưng vẫn giữ cảm giác nam trẻ trưởng thành chứ không phải trẻ em.
+
+Không đi theo hướng knight nặng giáp, barbarian cơ bắp, nhân vật realistic hoặc protagonist anime quá trẻ.
 
 Cảm giác mục tiêu:
 
 ```text
 wandering swordsman
 + mature young adult
++ chibi heroic proportion
 + lean athletic
 + grounded fantasy
 + hand-drawn storybook
 ```
 
-## 3. Tỷ lệ cơ thể
+## 3. Tỷ lệ cơ thể canonical
 
-Target ban đầu:
+Target canonical:
 
-- khoảng 5.25–5.5 đầu chiều cao;
-- đầu hơi lớn hơn người realistic để đọc tốt ở kích thước sprite mobile;
-- thân hình gọn, athletic;
+- 4.5 đầu chiều cao;
+- đầu lớn rõ rệt so với người realistic;
+- torso compact và gọn;
+- tay và chân được rút ngắn có kiểm soát để giữ tỷ lệ chibi;
+- chân vẫn đủ dài để animation chạy, né và chém kiếm đọc rõ silhouette;
+- bàn tay và bàn chân hơi lớn hơn tỷ lệ realistic để động tác đọc tốt ở kích thước sprite mobile;
 - vai vừa phải, không quá rộng;
-- torso tương đối gọn;
-- chân đủ dài để animation chạy và chém kiếm rõ silhouette;
-- tay và bàn tay đủ lớn để đọc động tác cầm kiếm;
-- không chibi quá mức;
-- không realistic 7–8 đầu.
+- thân hình gọn, athletic theo ngôn ngữ chibi;
+- silhouette phải đọc rõ là chibi kể cả khi bỏ chi tiết trang phục.
 
-Các tỷ lệ số chính xác chỉ được freeze sau khi canonical reference đã được duyệt và đo lại từ artwork thực tế.
+Không được dùng:
+
+- tỷ lệ 5.25–5.5 đầu của bản draft cũ;
+- tỷ lệ semi-realistic;
+- tỷ lệ realistic 7–8 đầu;
+- super-deformed cực đoan khiến nhân vật trông như trẻ nhỏ.
+
+Các tỷ lệ landmark chi tiết chỉ được freeze sau khi canonical reference đã được duyệt và đo từ artwork thực tế.
 
 ## 4. Khuôn mặt
 
 Hướng khuôn mặt:
 
 - nam trẻ trưởng thành;
-- mặt hơi góc cạnh nhưng không quá sắc;
+- mặt hơi góc cạnh nhưng được đơn giản hóa để phù hợp đầu chibi;
 - hàm và cằm rõ vừa phải;
-- mắt kích thước trung bình, chỉ stylize nhẹ so với realistic;
+- mắt lớn hơn realistic vừa phải để đọc tốt trên đầu chibi;
 - eyebrow rõ;
 - mũi đơn giản, dễ chuyển sang 3D;
+- miệng nhỏ gọn, expression trung tính;
 - không beard ở bản canonical đầu tiên;
 - biểu cảm neutral/confident;
-- không làm nhân vật quá baby-face.
+- không baby-face;
+- không làm nhân vật trông như trẻ em.
 
 Khi tạo skin về sau, expression có thể đổi nhưng cấu trúc khuôn mặt không được đổi.
 
@@ -89,7 +101,8 @@ Hướng đề xuất:
 - leather bracers;
 - mid-height leather boots;
 - có thể có một shoulder strap nhẹ;
-- vật liệu đơn giản, dễ đọc ở kích thước sprite nhỏ.
+- vật liệu đơn giản, dễ đọc ở kích thước sprite nhỏ;
+- form trang phục phải tôn được tỷ lệ chibi 4.5 đầu, không kéo silhouette về tỷ lệ người realistic.
 
 Không dùng ở starter set:
 
@@ -120,6 +133,7 @@ Phong cách mục tiêu:
 
 ```text
 fantasy
+chibi
 hand-drawn
 storybook illustration
 watercolor-like fill
@@ -130,6 +144,7 @@ clean readable silhouette
 
 Yêu cầu quan trọng:
 
+- chibi proportion phải rõ trước khi xét texture hoặc trang phục;
 - form phải rõ hơn brush texture;
 - không dùng painterly noise quá mạnh;
 - không tạo lighting dramatic làm mất shape;
@@ -137,7 +152,8 @@ Yêu cầu quan trọng:
 - không thêm motion blur;
 - không thêm environment phức tạp;
 - không biến style thành anime cel-shading thuần túy;
-- không biến style thành realistic PBR concept art.
+- không biến style thành realistic PBR concept art;
+- không để anatomy drift về semi-realistic chỉ vì armor hoặc pose.
 
 Concept phải đủ sạch để AI tạo model 3D hiểu được geometry của character.
 
@@ -156,6 +172,7 @@ Reference mong muốn có:
 Tất cả view:
 
 - cùng scale;
+- cùng canonical 4.5-head proportion;
 - neutral pose;
 - neutral expression;
 - nền đơn giản/off-white;
@@ -173,8 +190,8 @@ Skin mới không được tự ý thay đổi:
 - cấu trúc khuôn mặt;
 - skull/head geometry;
 - canonical height;
-- head-to-body ratio;
-- underlying body build;
+- canonical 4.5-head ratio;
+- underlying chibi body build;
 - chiều dài tương đối của tay và chân;
 - vị trí tương đối của các joint chính;
 - skin tone;
@@ -197,7 +214,7 @@ Có thể thay đổi:
 - palette của trang phục;
 - skin theme.
 
-Trang phục có thể thay đổi silhouette mạnh ở bên ngoài nhưng không được làm underlying body proportion bị drift.
+Trang phục có thể thay đổi silhouette mạnh ở bên ngoài nhưng không được làm underlying chibi body proportion bị drift.
 
 ## 12. Quy tắc generation skin về sau
 
@@ -213,7 +230,7 @@ Skin Requirement
 Skin Concept mới
 ```
 
-Canonical reference quyết định character identity.
+Canonical reference quyết định character identity và chibi proportion.
 
 Skin requirement chỉ quyết định các phần được phép thay đổi.
 
@@ -223,7 +240,7 @@ Contract v1 chỉ được chuyển từ `design_locked` sang `frozen` sau khi:
 
 1. canonical concept thực tế đã được generate;
 2. artwork được review trực quan;
-3. character identity và proportion được chấp nhận;
+3. character identity và canonical 4.5-head proportion được chấp nhận;
 4. các view không mâu thuẫn nghiêm trọng;
 5. ảnh đủ rõ để dùng làm input tạo model 3D;
 6. evidence thật được commit vào repo;
