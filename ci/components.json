@@ -40,6 +40,10 @@
       "paths": ["motion2sheet/motion/cli.py"],
       "depends_on": ["motion-extract", "motion-normalize", "motion-retarget", "motion-render", "motion-output"]
     },
+    "sprite-workflow": {
+      "paths": ["skills/**", "sample/sprite-generation/**"],
+      "depends_on": []
+    },
     "vfx-output": {
       "paths": ["motion2sheet/vfx2sheet/common/output/**"],
       "depends_on": []
@@ -67,6 +71,7 @@
     "motion-synthetic-bvh": {"kind": "motion-e2e", "target": "synthetic-bvh", "paths": ["tests/motion/fixtures/**", "tests/motion/e2e/verify_generated_output.py", "tests/motion/e2e/verify_retarget_output.py"], "depends_on": ["motion-cli"]},
     "motion-mixamo-real": {"kind": "motion-e2e", "target": "mixamo-real", "paths": ["tests/motion/e2e/verify_mixamo_output.py", "sample/walk_mixamo.fbx"], "depends_on": ["motion-cli"]},
     "motion-output-mode-e2e": {"kind": "motion-e2e", "target": "output-mode", "paths": ["tests/motion/e2e/verify_output_mode.py"], "depends_on": ["motion-cli"]},
+    "sprite-workflow-contract": {"kind": "unit", "path": "tests/sprite_workflow/test_single_frame_contract.py", "paths": ["tests/sprite_workflow/**"], "depends_on": ["sprite-workflow"]},
     "vfx-unit": {"kind": "unit", "path": "tests/vfx2sheet/unit", "paths": ["tests/vfx2sheet/unit/**"], "depends_on": ["vfx-splash"]},
     "vfx-splash-e2e": {"kind": "vfx-e2e", "target": "splash", "paths": ["tests/vfx2sheet/e2e/**", "tests/vfx2sheet/fixtures/splash/**", "tests/vfx2sheet/golden/splash/**"], "depends_on": ["vfx-splash"]},
     "ci-affected-unit": {"kind": "unit", "path": "tests/ci/test_detect_affected.py", "paths": ["tests/ci/**"], "depends_on": []}

@@ -17,6 +17,7 @@ def test_component_change_runs_only_dependent_targets():
     assert "motion-retarget-unit" not in targets
     assert "vfx-unit" not in targets
     assert "vfx-splash-e2e" not in targets
+    assert "sprite-workflow-contract" not in targets
 
 
 def test_output_contract_change_runs_only_motion_dependents():
@@ -31,14 +32,28 @@ def test_output_contract_change_runs_only_motion_dependents():
     assert "motion-mixamo-real" in targets
     assert "vfx-unit" not in targets
     assert "vfx-splash-e2e" not in targets
+    assert "sprite-workflow-contract" not in targets
 
 
-def test_vfx_effect_change_does_not_run_motion():
+def test_sprite_skill_change_runs_only_sprite_workflow_contract():
+    components, targets = resolve("skills/pose-frame-to-sprite-frame/SKILL.md")
+    assert components == {"sprite-workflow"}
+    assert targets == {"sprite-workflow-contract"}
+
+
+def test_sprite_sample_change_runs_only_sprite_workflow_contract():
+    components, targets = resolve("sample/sprite-generation/walk-down/walk pose 4.png")
+    assert components == {"sprite-workflow"}
+    assert targets == {"sprite-workflow-contract"}
+
+
+def test_vfx_effect_change_does_not_run_motion_or_sprite_workflow():
     components, targets = resolve("motion2sheet/vfx2sheet/effects/splash/config.py")
     assert "vfx-splash" in components
     assert "vfx-unit" in targets
     assert "vfx-splash-e2e" in targets
     assert not any(name.startswith("motion-") for name in targets)
+    assert "sprite-workflow-contract" not in targets
 
 
 def test_direct_mixamo_test_change_runs_only_mixamo_target():
@@ -54,6 +69,11 @@ def test_direct_output_mode_unit_change_runs_only_output_mode_unit():
 def test_direct_output_mode_e2e_change_runs_only_output_mode_e2e():
     _, targets = resolve("tests/motion/e2e/verify_output_mode.py")
     assert targets == {"motion-output-mode-e2e"}
+
+
+def test_direct_sprite_workflow_contract_change_runs_only_itself():
+    _, targets = resolve("tests/sprite_workflow/test_single_frame_contract.py")
+    assert targets == {"sprite-workflow-contract"}
 
 
 def test_global_ci_change_runs_every_target():

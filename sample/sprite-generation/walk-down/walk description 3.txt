@@ -1,0 +1,30 @@
+ACTION: WALK
+DIRECTION: DOWN
+VIEW: TOP_DOWN_HIGH_3_4
+FRAME: 3
+
+MỤC TIÊU
+- Đây là một phase riêng biệt của walk cycle hướng xuống.
+- Phải khác rõ frame 2 và frame 4 theo đúng skeleton.
+
+CAMERA / HƯỚNG
+- Top-down / high 3/4.
+- Hướng down, thấy mặt trước.
+
+DIỄN GIẢI POSE FRAME 3
+- Thân vẫn tương đối thẳng nhưng có dịch chuyển nhẹ theo bước chân.
+- Tay screen-left gập xuống với wrist thấp hơn elbow.
+- Tay screen-right hạ ngắn hơn và không duỗi thẳng hoàn toàn.
+- Chân screen-left có knee gập nhẹ, ankle ở dưới knee và gần trục dọc của thân hơn.
+- Chân screen-right duỗi dài xuống rõ rệt; ankle thấp hơn hẳn chân còn lại.
+- Sự bất đối xứng giữa hai chân là bắt buộc.
+
+TOPOLOGY BẮT BUỘC
+- Không đổi chân screen-right đang dài thành chân screen-left.
+- Không duỗi chân screen-left thành chiều dài bằng chân screen-right.
+- Không mirror pose.
+
+FAIL NẾU
+- Frame 3 nhìn gần như giống frame 2.
+- Hai ankle ở cùng độ cao khi pose không yêu cầu.
+- Chân dài / chân ngắn bị tráo bên.

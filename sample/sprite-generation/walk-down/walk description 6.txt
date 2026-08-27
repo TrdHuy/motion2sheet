@@ -1,0 +1,29 @@
+ACTION: WALK
+DIRECTION: DOWN
+VIEW: TOP_DOWN_HIGH_3_4
+FRAME: 6
+
+MỤC TIÊU
+- Frame 6 của walk cycle hướng xuống.
+- Phải giữ khác rõ frame 5 và frame 7.
+
+CAMERA / HƯỚNG
+- Top-down / high 3/4.
+- Hướng down, thấy mặt trước.
+
+DIỄN GIẢI POSE FRAME 6
+- Thân vẫn ổn định.
+- Tay screen-left hạ xuống với elbow gập vừa.
+- Tay screen-right hạ xuống với chain dài hơn.
+- Chân screen-left duỗi xuống khá thẳng, knee ở giữa hip và ankle.
+- Chân screen-right cũng duỗi hơn frame 5 nhưng vẫn có hình học riêng; knee và ankle không trùng với chân screen-left.
+- Hai chân có thể gần trạng thái trung gian nhưng không được average thành pose đối xứng hoàn toàn.
+
+TOPOLOGY BẮT BUỘC
+- Giữ nguyên vị trí knee và ankle của từng bên.
+- Không swap chain hai chân.
+- Không nâng knee cao theo kiểu chạy.
+
+FAIL NẾU
+- Hai chân thành một pose đứng thẳng giống nhau.
+- Frame 6 bị render như bản copy của frame 5 hoặc frame 7.

@@ -1,0 +1,35 @@
+ACTION: WALK
+DIRECTION: DOWN
+VIEW: TOP_DOWN_HIGH_3_4
+FRAME: 1
+
+MỤC TIÊU
+- Đây là một frame trong walk cycle hướng xuống.
+- Nhân vật đi bộ, không chạy, không nhảy.
+- Giữ cảm giác chuyển trọng lượng tự nhiên và bước chân vừa phải.
+
+CAMERA / HƯỚNG
+- Góc nhìn top-down / high 3/4.
+- Nhân vật hướng xuống phía cạnh dưới màn hình, nhìn thấy mặt trước.
+- Camera cố định.
+
+DIỄN GIẢI POSE FRAME 1
+- Thân trên gần thẳng và cân bằng.
+- Hai vai gần ngang.
+- Pelvis gần giữa thân.
+- Hai tay cùng hạ xuống hai bên nhưng có độ gập khác nhau.
+- Chân ở screen-left duỗi dài xuống, knee hơi gập nhẹ.
+- Chân ở screen-right ngắn hơn trong projection, knee nằm cao hơn và ankle ở gần pelvis hơn.
+- Giữ đúng sự chênh lệch chiều dài nhìn thấy giữa hai chân; không làm hai chân đối xứng.
+
+TOPOLOGY BẮT BUỘC
+- Giữ nguyên từng chain hip -> knee -> ankle như ảnh pose.
+- Không đổi chân dài thành chân ngắn hoặc ngược lại.
+- Không mirror pose.
+- Không đổi bên của tay hoặc chân.
+
+FAIL NẾU
+- Hai chân bị làm giống nhau.
+- Chân ngắn bị tự duỗi xuống.
+- Chân dài bị đổi sang phía còn lại.
+- Nhân vật bị biến thành run pose.

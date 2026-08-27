@@ -193,7 +193,7 @@ The generated pose is **not resized independently per frame**. `motion2sheet` pr
 
 ## CI
 
-`.github/workflows/ci.yml` uses dependency-aware target selection on pull requests. Motion component changes run only their affected unit/E2E targets, while VFX-only changes do not run motion tests. Pushes to `master` and manual workflow dispatches run the complete graph. The output-mode E2E target exercises real Mixamo `chibi_v1` builds in `frames` and `sheet` modes, including mode switches from `both` to verify that stale artifacts are removed.
+`.github/workflows/ci.yml` uses dependency-aware target selection on pull requests. Motion component changes run only their affected unit/E2E targets, while VFX-only changes do not run motion tests. Sprite-workflow-only changes run a lightweight deterministic contract test and do not install Blender. Pushes to `master` and manual workflow dispatches run the complete graph.
 
 ## AI sprite generation skills
 
@@ -201,26 +201,34 @@ The generated pose is **not resized independently per frame**. `motion2sheet` pr
 skills/
 ├── storybook-rpg-sprite-pipeline/
 │   └── SKILL.md
+├── pose-frame-to-sprite-frame/
+│   └── SKILL.md
 └── pose-sheet-to-sprite-sheet/
     └── SKILL.md
 ```
 
-- `storybook-rpg-sprite-pipeline`: orchestrates the full flow from an existing Pose Sheet to a normalized production sprite asset.
-- `pose-sheet-to-sprite-sheet`: converts an existing Pose Sheet plus Character Reference into a raw AI-generated character sprite sheet.
-- The skill layer treats Pose Sheets as existing inputs and does not define how they are created.
+- `storybook-rpg-sprite-pipeline`: orchestrates the production flow from pose references to a normalized production sprite asset.
+- `pose-frame-to-sprite-frame`: default pose-lock workflow; converts exactly one Pose Reference plus its matching Action Description and Character Reference into one raw sprite frame.
+- `pose-sheet-to-sprite-sheet`: legacy/experimental whole-sheet generation workflow retained for A/B comparison.
 
-High-level architecture:
+Recommended high-level architecture:
 
 ```text
 Motion
   ↓
-motion2sheet
+motion2sheet --output-mode frames
   ↓
-Pose Sheet / Pose Frames
+Pose Frame N + Action Description N + Character Reference
   ↓
-AI sprite generation skills
+pose-frame-to-sprite-frame
   ↓
-Sprite Sheet
+Raw Sprite Frame N
+  ↓
+QA each frame
+  ↓
+common scale + common anchor + compose
+  ↓
+Production Sprite Sheet
 ```
 
 ## Current limitations
