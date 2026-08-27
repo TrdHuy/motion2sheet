@@ -4,7 +4,7 @@
   "status": "design_locked",
   "class": "swordsman",
   "gioiTinh": "nam",
-  "dinhHuongPhongCach": "fantasy hand-drawn storybook",
+  "dinhHuongPhongCach": "fantasy chibi hand-drawn storybook",
   "mucTieuSuDung": [
     "làm nguồn chuẩn nhận diện cho concept 2D",
     "làm nguồn chuẩn khi tạo model 3D bằng AI",
@@ -13,26 +13,41 @@
   "thuocTinhBatBien": {
     "nhanDangTongThe": [
       "cùng một character identity xuyên suốt mọi skin",
-      "thân hình nam trẻ trưởng thành, gọn và athletic",
-      "không chuyển thành body type quá cơ bắp, quá gầy hoặc quá nặng",
-      "giữ canonical stature và tỷ lệ cơ thể đã khóa sau khi visual evidence được duyệt"
+      "nhân vật nam trẻ trưởng thành nhưng được thể hiện bằng tỷ lệ chibi storybook",
+      "thân hình gọn, athletic theo ngôn ngữ chibi; không chuyển thành body type quá cơ bắp, quá gầy hoặc quá nặng",
+      "silhouette phải đọc rõ là chibi ngay cả khi bỏ chi tiết trang phục",
+      "không được drift về tỷ lệ người semi-realistic hoặc realistic"
     ],
+    "tyLeChibi": {
+      "canonicalHeightInHeads": 4.5,
+      "headScale": "đầu lớn rõ rệt so với tỷ lệ người realistic",
+      "torso": "compact, gọn và ngắn vừa phải",
+      "limbs": "tay và chân được rút ngắn có kiểm soát để giữ tỷ lệ chibi nhưng vẫn đủ rõ cho animation chiến đấu",
+      "handsAndFeet": "hơi lớn hơn tỷ lệ realistic để silhouette và động tác đọc tốt ở kích thước sprite mobile",
+      "camKet": [
+        "không dùng tỷ lệ 5.25–5.5 đầu của bản draft cũ",
+        "không dùng tỷ lệ realistic 7–8 đầu",
+        "không dùng super-deformed cực đoan làm nhân vật trông như trẻ nhỏ"
+      ]
+    },
     "khuonMat": [
       "giữ cùng cấu trúc khuôn mặt",
       "giữ vị trí tương đối của mắt, mũi, miệng và tai",
       "giữ cùng cấu trúc hàm và cằm",
+      "mắt được stylize lớn hơn realistic vừa phải để phù hợp đầu chibi nhưng không thành baby-face",
+      "giữ cảm giác nam trẻ trưởng thành, bình tĩnh và tự tin",
       "không làm character trẻ đi hoặc già đi rõ rệt giữa các skin"
     ],
     "dauVaTocNen": [
-      "giữ cùng kích thước và hình khối hộp sọ",
+      "giữ cùng kích thước và hình khối hộp sọ canonical",
       "giữ hairline cơ bản của character",
       "màu tóc nền là nâu đậm ấm hoặc charcoal-brown, không dùng đen tuyệt đối"
     ],
     "coThe": [
-      "giữ cùng head-to-body ratio",
-      "giữ cùng chiều cao canonical",
+      "giữ canonical head-to-body ratio 4.5 đầu",
+      "giữ cùng chiều cao canonical trong game",
       "giữ cùng vị trí tương đối của vai, khuỷu tay, cổ tay, hông, đầu gối và cổ chân",
-      "giữ cùng chiều dài tương đối của tay và chân",
+      "giữ cùng chiều dài tương đối của tay và chân theo canonical chibi body",
       "giữ cùng overall body build"
     ],
     "mauDa": [
@@ -42,7 +57,7 @@
   "thuocTinhDuocPhepThayDoi": {
     "toc": [
       "kiểu tóc",
-      "độ dài tóc trong giới hạn không làm thay đổi hình khối đầu",
+      "độ dài tóc trong giới hạn không làm thay đổi hình khối đầu canonical",
       "cách chia mái",
       "ponytail hoặc hair arrangement nếu vẫn giữ character identity"
     ],
@@ -66,14 +81,16 @@
     ]
   },
   "quyTacDongBoNamNu": {
-    "yeuCau": "Nhân vật nam và nữ của game phải dùng cùng canonical game height và cùng overall proportion envelope để thuận lợi cho pipeline animation/render về sau.",
-    "ghiChu": "Contract nữ sẽ được định nghĩa riêng. Không suy diễn chi tiết nhân vật nữ từ contract này."
+    "yeuCau": "Nhân vật nam và nữ của game phải dùng cùng canonical game height và cùng overall chibi proportion envelope để thuận lợi cho pipeline animation/render về sau.",
+    "canonicalHeightInHeads": 4.5,
+    "ghiChu": "Contract nữ sẽ được định nghĩa riêng. Không suy diễn chi tiết nhân vật nữ từ contract này ngoài yêu cầu dùng cùng canonical game height và proportion envelope."
   },
   "quyTacSkin": [
     "Skin mới phải bắt đầu từ canonical character reference của swordsman_male v1 sau khi reference đó được frozen.",
     "Không được dùng text prompt độc lập để tái tạo character từ đầu khi làm skin mới.",
-    "Armor và trang phục được phép thay đổi silhouette bên ngoài nhưng không được tự ý thay đổi underlying body proportion.",
+    "Armor và trang phục được phép thay đổi silhouette bên ngoài nhưng không được tự ý thay đổi underlying chibi body proportion.",
     "Starter outfit và starter weapon không phải character identity bắt buộc.",
+    "Hairstyle được phép thay đổi nhưng không được làm thay đổi skull/head geometry canonical.",
     "Nếu một skin yêu cầu thay đổi thuộc tính bất biến thì phải tạo character contract version mới thay vì âm thầm sửa v1."
   ],
   "evidence": {
