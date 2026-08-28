@@ -5,6 +5,48 @@ from pathlib import Path
 from PIL import Image, ImageChops, ImageStat
 
 
+def _validate_frame_set(root: Path, folder: str, frames: int, canvas: tuple[int, int], *, require_alpha_content: bool) -> tuple[list[str], list[Path]]:
+    errors: list[str] = []
+    frame_paths = sorted((root / folder).glob("*.png"))
+    if len(frame_paths) != frames:
+        return [f"expected {frames} {folder} PNGs, got {len(frame_paths)}"], frame_paths
+    changed = 0
+    previous = None
+    for path in frame_paths:
+        with Image.open(path) as image:
+            rgba = image.convert("RGBA")
+            if rgba.size != canvas:
+                errors.append(f"{folder}/{path.name} has size {rgba.size}, expected {canvas}")
+            if require_alpha_content:
+                alpha = rgba.getchannel("A")
+                bbox = alpha.getbbox()
+                if bbox is None:
+                    errors.append(f"{folder}/{path.name} is fully transparent")
+                elif bbox[0] <= 1 or bbox[1] <= 1 or bbox[2] >= canvas[0] - 1 or bbox[3] >= canvas[1] - 1:
+                    errors.append(f"{folder}/{path.name} touches canvas edge")
+            if previous is not None:
+                diff = ImageChops.difference(previous, rgba)
+                if max(ImageStat.Stat(diff).sum) > 1.0:
+                    changed += 1
+            previous = rgba.copy()
+    if frames > 1 and changed < frames - 3:
+        errors.append(f"{folder} animation is too static")
+    return errors, frame_paths
+
+
+def _validate_sheet(path: Path, canvas: tuple[int, int], frames: int, columns: int, label: str) -> list[str]:
+    if not path.exists():
+        return [f"{label} is missing"]
+    rows = (frames + columns - 1) // columns
+    with Image.open(path) as image:
+        errors = []
+        if image.size != (canvas[0] * columns, canvas[1] * rows):
+            errors.append(f"{label} dimensions do not match source contract")
+        if image.mode != "RGBA":
+            errors.append(f"{label} must be RGBA")
+        return errors
+
+
 def validate_output(root: Path) -> list[str]:
     errors: list[str] = []
     required = ["source.json", "metadata.json", "source.blend", "motion_debug.json"]
@@ -14,52 +56,31 @@ def validate_output(root: Path) -> list[str]:
             errors.append(f"{name} is missing")
     if errors:
         return errors
+
     source = json.loads((root / "source.json").read_text(encoding="utf-8"))
     metadata = json.loads((root / "metadata.json").read_text(encoding="utf-8"))
     debug = json.loads((root / "motion_debug.json").read_text(encoding="utf-8"))
     frames = int(source["frames"])
     canvas = tuple(source["canvas"])
     columns = int(source["sheetColumns"])
-    frame_paths = sorted((root / "frames").glob("*.png"))
-    if len(frame_paths) != frames:
-        return errors + [f"expected {frames} frame PNGs, got {len(frame_paths)}"]
-    changed = 0
-    previous = None
-    for path in frame_paths:
-        with Image.open(path) as image:
-            rgba = image.convert("RGBA")
-            if rgba.size != canvas:
-                errors.append(f"{path.name} has size {rgba.size}, expected {canvas}")
-            alpha = rgba.getchannel("A")
-            bbox = alpha.getbbox()
-            if bbox is None:
-                errors.append(f"{path.name} is fully transparent")
-            else:
-                if bbox[0] <= 1 or bbox[1] <= 1 or bbox[2] >= canvas[0] - 1 or bbox[3] >= canvas[1] - 1:
-                    errors.append(f"{path.name} touches canvas edge")
-            if previous is not None:
-                diff = ImageChops.difference(previous, rgba)
-                if max(ImageStat.Stat(diff).sum) > 1.0:
-                    changed += 1
-            previous = rgba.copy()
-    if frames > 1 and changed < frames - 3:
-        errors.append("animation is too static")
-    sheet = root / "sprite_sheet.png"
-    if not sheet.exists():
-        errors.append("sprite_sheet.png is missing")
-    else:
-        rows = (frames + columns - 1) // columns
-        with Image.open(sheet) as image:
-            if image.size != (canvas[0] * columns, canvas[1] * rows):
-                errors.append("sprite sheet dimensions do not match source contract")
-            if image.mode != "RGBA":
-                errors.append("sprite sheet must be RGBA")
+
+    object_errors, _ = _validate_frame_set(root, "frames", frames, canvas, require_alpha_content=True)
+    skeleton_errors, _ = _validate_frame_set(root, "skeleton_frames", frames, canvas, require_alpha_content=False)
+    errors.extend(object_errors)
+    errors.extend(skeleton_errors)
+
+    errors.extend(_validate_sheet(root / "sprite_sheet.png", canvas, frames, columns, "sprite_sheet.png"))
+    errors.extend(_validate_sheet(root / "object_sheet.png", canvas, frames, columns, "object_sheet.png"))
+    errors.extend(_validate_sheet(root / "skeleton_sheet.png", canvas, frames, columns, "skeleton_sheet.png"))
+
     if not (root / "preview.gif").exists():
         errors.append("preview.gif is missing")
     if metadata.get("visualPipeline") != "blender-native":
         errors.append("metadata visualPipeline must be blender-native")
     if metadata.get("blendSource") != "source.blend":
         errors.append("metadata blendSource must reference source.blend")
+    if metadata.get("skeletonRenderer") != "blender-viewport-actual-armature":
+        errors.append("metadata skeletonRenderer must be blender-viewport-actual-armature")
     if metadata.get("postRenderVisualProcessing") is not False:
         errors.append("post-render visual processing must be disabled")
     samples = debug.get("samples", [])
