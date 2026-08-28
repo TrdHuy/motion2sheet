@@ -99,8 +99,6 @@ def build_rig():
     rfa = add_bone(eb, "RightForeArm", (0.47, 0, 1.42), (0.69, 0, 1.25), rua)
     add_bone(eb, "RightHand", (0.69, 0, 1.25), (0.78, 0, 1.18), rfa)
 
-    # Wider combat stance than the first POC. Legs are still a simple game rig,
-    # but the lower leg bones are animated separately to create planted silhouettes.
     lt = add_bone(eb, "LeftUpLeg", (-0.16, 0, 0.98), (-0.18, 0, 0.56), hips)
     ll = add_bone(eb, "LeftLeg", (-0.18, 0, 0.56), (-0.18, 0, 0.15), lt)
     add_bone(eb, "LeftFoot", (-0.18, 0, 0.15), (-0.18, -0.22, 0.08), ll)
@@ -120,7 +118,6 @@ def build_character(arm):
     skin = material("Skin", (0.72, 0.48, 0.32))
     boots = material("Boots", (0.055, 0.04, 0.035))
     bones = arm.data.bones
-
     for name, radius, mat in [
         ("Spine", 0.18, cloth),
         ("LeftUpperArm", 0.075, cloth), ("LeftForeArm", 0.065, skin),
@@ -131,7 +128,6 @@ def build_character(arm):
     ]:
         b = bones[name]
         weighted_cylinder(arm, f"Body_{name}", name, b.head_local, b.tail_local, radius, mat)
-
     weighted_sphere(arm, "HeadMesh", "Head", (0, 0, 1.82), 0.15, skin)
     weighted_sphere(arm, "PelvisMesh", "Hips", (0, 0, 1.07), 0.19, cloth)
     weighted_sphere(arm, "LeftHandMesh", "LeftHand", (-0.735, 0, 1.215), 0.075, skin)
@@ -141,12 +137,9 @@ def build_character(arm):
 def build_sword_and_ik(arm):
     steel = material("Steel", (0.55, 0.62, 0.70), 0.75)
     grip_mat = material("Grip", (0.12, 0.055, 0.025), 0.10)
-
     ctrl = bpy.data.objects.new("SwordController", None)
     bpy.context.collection.objects.link(ctrl)
     ctrl.rotation_mode = "XYZ"
-
-    # The controller origin is the lower hand grip. Sword points along local +Z.
     controller_cylinder(ctrl, "SwordGrip", -0.05, 0.23, 0.045, grip_mat)
     controller_cylinder(ctrl, "SwordBlade", 0.22, 1.18, 0.035, steel)
 
@@ -159,8 +152,6 @@ def build_sword_and_ik(arm):
     right_grip.location = (0, 0, 0.01)
     left_grip.location = (0, 0, 0.16)
 
-    # Pole targets stay relative to the character root so elbow bend remains stable
-    # while the character advances across the canvas.
     pole_r = bpy.data.objects.new("RightElbowPole", None)
     pole_l = bpy.data.objects.new("LeftElbowPole", None)
     bpy.context.collection.objects.link(pole_r)
@@ -176,14 +167,12 @@ def build_sword_and_ik(arm):
     rik.pole_target = pole_r
     rik.chain_count = 2
     rik.iterations = 64
-
     lik = arm.pose.bones["LeftForeArm"].constraints.new("IK")
     lik.name = "TwoHandSwordIK.L"
     lik.target = left_grip
     lik.pole_target = pole_l
     lik.chain_count = 2
     lik.iterations = 64
-
     return ctrl
 
 
@@ -199,13 +188,9 @@ def key_body(arm, frame, root_x, root_z, hips, spine, head, left_thigh, left_shi
     arm.location.z = root_z
     arm.keyframe_insert(data_path="location", frame=frame)
     for name, degrees in {
-        "Hips": hips,
-        "Spine": spine,
-        "Head": head,
-        "LeftUpLeg": left_thigh,
-        "LeftLeg": left_shin,
-        "RightUpLeg": right_thigh,
-        "RightLeg": right_shin,
+        "Hips": hips, "Spine": spine, "Head": head,
+        "LeftUpLeg": left_thigh, "LeftLeg": left_shin,
+        "RightUpLeg": right_thigh, "RightLeg": right_shin,
     }.items():
         key_bone_y(arm, name, degrees, frame)
 
@@ -222,19 +207,13 @@ def animate(arm, sword, frames):
     scene = bpy.context.scene
     scene.frame_start = 1
     scene.frame_end = frames
-
-    # BODY MECHANICS
-    # 1-4: lower the center of gravity and coil away from the attack.
-    # 5-7: front leg drives forward while hips start before the sword.
-    # 8-10: fast strike window; weight transfers onto the front leg.
-    # 11-13: follow-through continues past impact.
-    # 14-16: controlled recovery, not a snap back to T-pose.
     body_keys = [
         (1,  0.00,  0.00,   0,   0,   0,  -8,  10,   8, -10),
         (3,  0.00, -0.035,  -6, -10,   5, -12,  18,  12, -14),
         (4,  0.00, -0.080, -13, -18,   8, -18,  27,  17, -21),
         (6,  0.07, -0.065,  -4, -10,   5, -28,  35,  13, -18),
         (7,  0.13, -0.045,   7,   3,  -2, -34,  39,  10, -15),
+        (8,  0.21, -0.030,  15,  15,  -7, -36,  40,   8, -13),
         (9,  0.28, -0.020,  22,  26, -10, -37,  41,   7, -11),
         (10, 0.34, -0.010,  29,  34, -13, -35,  38,   5,  -8),
         (12, 0.40, -0.030,  33,  39, -15, -29,  31,   8, -11),
@@ -244,32 +223,24 @@ def animate(arm, sword, frames):
     for row in body_keys:
         key_body(arm, *row)
 
-    # TWO-HAND SWORD TRAJECTORY
-    # Angle is the blade direction in the sprite plane: positive points right,
-    # negative points left. Frames 7->10 deliberately cover a large arc in only
-    # three frames to create a readable impact rather than uniform waving.
     sword_keys = [
         (1,  0.10, 1.27,  46),
         (3,  0.21, 1.27,  58),
-        (4,  0.31, 1.30,  72),      # deepest wind-up / chamber
+        (4,  0.31, 1.30,  72),
         (6,  0.32, 1.28,  78),
-        (7,  0.28, 1.25,  70),      # release starts after hips have opened
+        (7,  0.28, 1.25,  70),
         (8,  0.18, 1.23,  30),
-        (9,  0.02, 1.20, -38),      # impact/readability frame
+        (9,  0.02, 1.20, -38),
         (10, -0.10, 1.16, -78),
-        (12, -0.10, 1.10, -108),    # follow-through overshoot
+        (12, -0.10, 1.10, -108),
         (13, -0.03, 1.12, -92),
-        (16,  0.20, 1.24,  38),     # guarded recovery, not original idle
+        (16,  0.20, 1.24,  38),
     ]
+    by_frame = {row[0]: row for row in body_keys}
     for frame, x, z, angle in sword_keys:
-        # Sword target travels with the root advance; offsets above are relative
-        # to the character's initial origin, so add interpolated root motion at
-        # authored keyframes to keep both hands in reach.
-        root_x = next(row[1] for row in body_keys if row[0] == frame)
-        key_sword(sword, frame, x + root_x, z + next(row[2] for row in body_keys if row[0] == frame), angle)
+        body = by_frame[frame]
+        key_sword(sword, frame, x + body[1], z + body[2], angle)
 
-    # Auto-clamped bezier avoids overshoot on planted feet. Make the actual strike
-    # window linear so it crosses the attack arc decisively instead of easing it.
     for owner in (arm, sword):
         action = owner.animation_data.action
         action.name = "GaleSlashBody" if owner is arm else "GaleSlashSword"
@@ -295,13 +266,11 @@ def setup_scene(canvas):
     scene.view_settings.look = "AgX - Medium High Contrast"
     if getattr(scene, "eevee", None) is not None:
         scene.eevee.taa_render_samples = 8
-
     bpy.ops.object.light_add(type="AREA", location=(0, -4, 5))
     light = bpy.context.object
     light.data.energy = 700
     light.data.shape = "DISK"
     light.data.size = 5
-
     bpy.ops.object.camera_add(location=(0.18, -7.5, 2.30))
     cam = bpy.context.object
     cam.data.type = "ORTHO"
@@ -313,8 +282,7 @@ def setup_scene(canvas):
 
 
 def bone_tail_world(arm, name):
-    bone = arm.pose.bones[name]
-    return arm.matrix_world @ bone.tail
+    return arm.matrix_world @ arm.pose.bones[name].tail
 
 
 def sample_debug(arm, sword, frames):
@@ -344,7 +312,6 @@ def main():
     source = json.loads(Path(args.spec).read_text(encoding="utf-8"))
     output = Path(args.output)
     frames = int(source["frames"])
-
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
     arm = build_rig()
@@ -352,10 +319,8 @@ def main():
     sword = build_sword_and_ik(arm)
     animate(arm, sword, frames)
     setup_scene(source["canvas"])
-
     debug = {"action": source["action"], "samples": sample_debug(arm, sword, frames)}
     (output / "motion_debug.json").write_text(json.dumps(debug, indent=2) + "\n", encoding="utf-8")
-
     bpy.context.scene.frame_set(1)
     bpy.ops.wm.save_as_mainfile(filepath=str((output / "source.blend").resolve()))
     frame_dir = output / "frames"
