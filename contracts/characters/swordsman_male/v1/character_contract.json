@@ -96,9 +96,10 @@
   "evidence": {
     "trangThai": "canonical_reference_available",
     "canonicalReference": "evidence/canonical_reference.png",
+    "generation3DReference": "evidence/3d_generation/turnaround_reference.png",
     "faceIdentity": null,
     "canonicalLandmarks": null,
     "evidenceManifest": null,
-    "ghiChu": "Canonical reference đã được commit trong repo và là visual authority để Agent đối chiếu character identity. Các evidence còn lại sẽ bổ sung sau."
+    "ghiChu": "Canonical reference là visual authority để Agent đối chiếu character identity. 3D generation reference là artifact dẫn xuất đã được duyệt để làm input tạo model 3D bằng AI. Các evidence còn lại sẽ bổ sung sau."
   }
 }
