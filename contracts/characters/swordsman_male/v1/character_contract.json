@@ -94,11 +94,11 @@
     "Nếu một skin yêu cầu thay đổi thuộc tính bất biến thì phải tạo character contract version mới thay vì âm thầm sửa v1."
   ],
   "evidence": {
-    "trangThai": "pending",
-    "canonicalReference": null,
+    "trangThai": "canonical_reference_available",
+    "canonicalReference": "evidence/canonical_reference.png",
     "faceIdentity": null,
     "canonicalLandmarks": null,
     "evidenceManifest": null,
-    "ghiChu": "Không tạo evidence giả. Chỉ điền các trường này sau khi concept thực tế được review và chấp nhận."
+    "ghiChu": "Canonical reference đã được commit trong repo và là visual authority để Agent đối chiếu character identity. Các evidence còn lại sẽ bổ sung sau."
   }
 }
