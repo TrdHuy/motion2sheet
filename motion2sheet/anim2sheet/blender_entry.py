@@ -127,7 +127,7 @@ def setup_scene(canvas):
     scene.render.engine = "BLENDER_EEVEE_NEXT"; scene.render.film_transparent = True
     scene.render.resolution_x = int(canvas[0]); scene.render.resolution_y = int(canvas[1]); scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"; scene.render.image_settings.color_mode = "RGBA"
-    scene.render.image_settings.color_depth = "8"; scene.view_settings.look = "Medium High Contrast"
+    scene.render.image_settings.color_depth = "8"; scene.view_settings.look = "AgX - Medium High Contrast"
     bpy.ops.object.light_add(type="AREA", location=(0,-4,5)); light=bpy.context.object; light.data.energy=700; light.data.shape="DISK"; light.data.size=5
     bpy.ops.object.camera_add(location=(0,-7.5,2.35)); cam=bpy.context.object; cam.data.type="ORTHO"; cam.data.ortho_scale=2.75; cam.rotation_euler=(math.radians(78),0,0)
     # Point camera to chest.
