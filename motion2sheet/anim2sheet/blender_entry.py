@@ -1,4 +1,4 @@
-"""Blender-native Gale Slash POC: stable one-hand sword controller with full-body mechanics."""
+"""Blender-native Gale Slash POC using physically correct horizontal sword yaw."""
 from __future__ import annotations
 
 import argparse, json, math, sys
@@ -56,47 +56,48 @@ def build_sword_and_right_ik(arm):
     return ctrl
 
 
-def key_y(arm,name,deg,frame):
-    b=arm.pose.bones[name]; b.rotation_euler.y=math.radians(deg); b.keyframe_insert(data_path="rotation_euler",frame=frame)
-def key_body(arm,frame,x,z,hips,spine,head,lt,ls,rt,rs,lua,lfa):
+def key_rotation(arm,name,frame,y_deg=0.0,z_deg=0.0):
+    b=arm.pose.bones[name]; b.rotation_euler.y=math.radians(y_deg); b.rotation_euler.z=math.radians(z_deg); b.keyframe_insert(data_path="rotation_euler",frame=frame)
+def key_body(arm,frame,x,z,hip_twist,spine_twist,head_twist,lt,ls,rt,rs,lua,lfa):
     bpy.context.scene.frame_set(frame); arm.location=(x,0,z); arm.keyframe_insert(data_path="location",frame=frame)
-    for name,deg in {"Hips":hips,"Spine":spine,"Head":head,"LeftUpLeg":lt,"LeftLeg":ls,"RightUpLeg":rt,"RightLeg":rs,"LeftUpperArm":lua,"LeftForeArm":lfa}.items(): key_y(arm,name,deg,frame)
-def key_sword(ctrl,frame,x,z,angle):
-    bpy.context.scene.frame_set(frame); ctrl.location=(x,-0.04,z); ctrl.rotation_euler=(0,math.radians(angle),0); ctrl.keyframe_insert(data_path="location",frame=frame); ctrl.keyframe_insert(data_path="rotation_euler",frame=frame)
+    key_rotation(arm,"Hips",frame,z_deg=hip_twist); key_rotation(arm,"Spine",frame,z_deg=spine_twist); key_rotation(arm,"Head",frame,z_deg=head_twist)
+    for name,deg in {"LeftUpLeg":lt,"LeftLeg":ls,"RightUpLeg":rt,"RightLeg":rs,"LeftUpperArm":lua,"LeftForeArm":lfa}.items(): key_rotation(arm,name,frame,y_deg=deg)
+def key_sword(ctrl,frame,x,z,yaw_deg):
+    # Local blade starts on +Z. Y=90 lays it horizontally; Z yaw then performs a true chest-level horizontal sweep in X-Y.
+    bpy.context.scene.frame_set(frame); ctrl.location=(x,-0.04,z); ctrl.rotation_euler=(0,math.radians(90),math.radians(yaw_deg)); ctrl.keyframe_insert(data_path="location",frame=frame); ctrl.keyframe_insert(data_path="rotation_euler",frame=frame)
 
 
 def animate(arm,sword,frames):
     bpy.context.scene.frame_start=1; bpy.context.scene.frame_end=frames
-    # Conservative free-arm motion: it stays low and supports balance instead of competing with the weapon silhouette.
+    # Hips lead, chest follows, head counter-rotates to keep the target in view. Legs provide a visible crouch/weight transfer.
     body=[
-        (1,0.00,0.00,0,0,0,-7,10,7,-10,16,-22),
-        (3,0.00,-0.04,-6,-11,5,-12,20,12,-16,10,-16),
-        (4,0.00,-0.09,-14,-20,8,-18,30,18,-24,4,-8),
-        (6,0.08,-0.07,-5,-11,4,-29,38,14,-20,-4,2),
-        (7,0.15,-0.05,7,4,-2,-34,42,10,-16,-8,7),
-        (8,0.23,-0.03,16,17,-7,-38,44,8,-13,-12,10),
-        (9,0.31,-0.02,25,29,-11,-39,44,6,-10,-16,10),
-        (10,0.37,-0.01,31,36,-14,-37,41,5,-8,-20,8),
-        (12,0.43,-0.03,34,40,-15,-31,34,8,-11,-16,4),
-        (13,0.45,-0.05,28,34,-12,-25,29,10,-14,-10,-2),
-        (16,0.40,-0.02,5,7,-2,-12,18,9,-13,12,-18),
+        (1,0.00,0.00,0,0,0,-7,10,7,-10,10,-16),
+        (3,0.00,-0.04,-8,-14,6,-12,20,12,-16,8,-12),
+        (4,0.00,-0.09,-18,-28,12,-18,30,18,-24,5,-8),
+        (6,0.08,-0.07,-8,-16,8,-29,38,14,-20,0,-4),
+        (7,0.15,-0.05,5,7,-4,-34,42,10,-16,-3,0),
+        (8,0.23,-0.03,16,22,-9,-38,44,8,-13,-5,2),
+        (9,0.31,-0.02,29,38,-15,-39,44,6,-10,-7,2),
+        (10,0.37,-0.01,38,48,-18,-37,41,5,-8,-8,0),
+        (12,0.43,-0.03,45,55,-20,-31,34,8,-11,-6,-3),
+        (13,0.45,-0.05,38,46,-17,-25,29,10,-14,-3,-6),
+        (16,0.40,-0.02,6,9,-4,-12,18,9,-13,8,-14),
     ]
     for row in body: key_body(arm,*row)
     by={r[0]:r for r in body}
-    # The grip now performs the large right-to-left sweep. During frames 7-10 the blade remains close to horizontal,
-    # so the strike reads as a horizontal cut instead of a 180-degree overhead windmill.
+    # Wind-up holds the sword visibly to screen-right. Frames 8->10 cross the camera plane quickly: the blade foreshortens then reappears on screen-left without ever arcing overhead.
     sword_keys=[
-        (1,0.18,1.27,66),
-        (3,0.31,1.28,82),
-        (4,0.43,1.27,104),
-        (6,0.44,1.24,102),
-        (7,0.38,1.21,98),
-        (8,0.15,1.18,94),
-        (9,-0.15,1.16,90),
-        (10,-0.32,1.14,84),
-        (12,-0.30,1.10,67),
-        (13,-0.19,1.12,58),
-        (16,0.20,1.23,72),
+        (1,0.20,1.27,-20),
+        (3,0.32,1.29,-10),
+        (4,0.43,1.30,0),
+        (6,0.43,1.26,12),
+        (7,0.36,1.22,25),
+        (8,0.15,1.19,55),
+        (9,-0.05,1.16,140),
+        (10,-0.20,1.14,175),
+        (12,-0.18,1.10,205),
+        (13,-0.10,1.12,225),
+        (16,0.20,1.23,380),
     ]
     for f,x,z,a in sword_keys:
         r=by[f]; key_sword(sword,f,x+r[1],z+r[2],a)
