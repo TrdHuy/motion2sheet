@@ -21,6 +21,7 @@ dev = [
 [project.scripts]
 motion2sheet = "motion2sheet.motion.cli:main"
 vfx2sheet = "motion2sheet.vfx2sheet.cli:main"
+anim2sheet = "motion2sheet.anim2sheet.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["motion2sheet*"]
