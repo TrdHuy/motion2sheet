@@ -27,7 +27,7 @@ jobs:
       - name: Unit tests
         run: pytest tests/anim2sheet/unit
       - name: Install Blender runtime libraries
-        run: sudo apt-get update && sudo apt-get install -y libegl1
+        run: sudo apt-get update && sudo apt-get install -y libegl1 xvfb libx11-6 libxext6 libxrender1 libxi6 libxkbcommon0 libgl1-mesa-dri
       - name: Setup Blender 4.5.12
         uses: bradyajohnston/setup-blender@v5
         with:
@@ -44,8 +44,10 @@ jobs:
           anim2sheet validate build/anim/run_b
       - name: Verify motion semantics
         run: python tests/anim2sheet/e2e/verify_motion_semantics.py build/anim/run_a
-      - name: Verify A/B decoded pixel determinism
+      - name: Verify object A/B decoded pixel determinism
         run: python tests/anim2sheet/e2e/verify_pixels.py build/anim/run_a/frames build/anim/run_b/frames
+      - name: Verify skeleton A/B decoded pixel determinism
+        run: python tests/anim2sheet/e2e/verify_pixels.py build/anim/run_a/skeleton_frames build/anim/run_b/skeleton_frames
       - name: Re-render saved Blender source
         run: blender --background build/anim/run_a/source.blend --python tests/anim2sheet/e2e/render_saved_anim_blend.py -- --output build/anim/reopened_frames
       - name: Verify source.blend authority
