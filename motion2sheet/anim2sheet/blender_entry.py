@@ -107,14 +107,15 @@ def key(arm, frame, root_x, hips_y, spine_y, rua_y, rfa_y, lua_y, lfa_y, left_le
 
 def animate(arm, frames):
     scene = bpy.context.scene; scene.frame_start = 1; scene.frame_end = frames
-    # anticipation -> step/acceleration -> right-to-left slash -> follow-through -> recovery
+    # Keep torso rotation restrained so the silhouette reads as an arm-driven
+    # horizontal sword sweep instead of the whole character turning sideways.
     poses = [
-        (1,0.00,0,0,-18,28,20,-25,0,0),
-        (4,0.00,-10,-18,-72,42,-48,22,8,-4),
-        (7,0.08,8,12,-15,12,10,-8,-10,8),
-        (10,0.20,24,34,68,-28,52,-20,-15,12),
-        (13,0.27,34,48,92,-38,68,-28,-8,6),
-        (16,0.30,4,6,-12,24,18,-20,0,0),
+        (1,0.00,0,0,-20,20,18,-20,0,0),
+        (4,0.00,-5,-8,-95,20,-60,18,8,-4),
+        (7,0.08,5,8,-30,10,5,-8,-10,8),
+        (10,0.20,10,15,100,-10,60,-20,-15,12),
+        (13,0.27,12,18,165,-5,95,-25,-8,6),
+        (16,0.30,0,0,-15,20,18,-20,0,0),
     ]
     for pose in poses: key(arm, *pose)
     action = arm.animation_data.action; action.name = "GaleSlash"
@@ -128,8 +129,10 @@ def setup_scene(canvas):
     scene.render.resolution_x = int(canvas[0]); scene.render.resolution_y = int(canvas[1]); scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"; scene.render.image_settings.color_mode = "RGBA"
     scene.render.image_settings.color_depth = "8"; scene.view_settings.look = "AgX - Medium High Contrast"
+    if getattr(scene, "eevee", None) is not None:
+        scene.eevee.taa_render_samples = 8
     bpy.ops.object.light_add(type="AREA", location=(0,-4,5)); light=bpy.context.object; light.data.energy=700; light.data.shape="DISK"; light.data.size=5
-    bpy.ops.object.camera_add(location=(0,-7.5,2.35)); cam=bpy.context.object; cam.data.type="ORTHO"; cam.data.ortho_scale=2.75; cam.rotation_euler=(math.radians(78),0,0)
+    bpy.ops.object.camera_add(location=(0,-7.5,2.35)); cam=bpy.context.object; cam.data.type="ORTHO"; cam.data.ortho_scale=3.55; cam.rotation_euler=(math.radians(78),0,0)
     # Point camera to chest.
     direction = Vector((0,0,1.12)) - cam.location; cam.rotation_euler = direction.to_track_quat("-Z","Y").to_euler(); scene.camera = cam
     scene.world.color = (0.035,0.035,0.035)
