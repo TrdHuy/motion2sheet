@@ -45,16 +45,33 @@ def load_pose_reference(profile_path: Path, reference_value: str, expected_frame
     return reference_path, data
 
 
-def run_blender(source: Path, output: Path, blender_name: str) -> None:
+def blender_executable(blender_name: str) -> str:
     blender = shutil.which(blender_name) if Path(blender_name).name == blender_name else blender_name
     if not blender:
         raise RuntimeError(f"Blender executable not found: {blender_name}")
+    return str(blender)
+
+
+def run_blender(source: Path, output: Path, blender_name: str) -> None:
+    blender = blender_executable(blender_name)
     script = Path(__file__).resolve().with_name("blender_entry.py")
     subprocess.run(
-        [str(blender), "--background", "--factory-startup", "--python", str(script), "--",
+        [blender, "--background", "--factory-startup", "--python", str(script), "--",
          "--spec", str(source.resolve()), "--output", str(output.resolve())],
         check=True,
     )
+
+
+def run_blender_skeleton_viewport(output: Path, blender_name: str) -> None:
+    blender = blender_executable(blender_name)
+    script = Path(__file__).resolve().with_name("blender_skeleton_viewport.py")
+    blend = (output / "source.blend").resolve()
+    skeleton_dir = (output / "skeleton_frames").resolve()
+    command = [blender, str(blend), "--python", str(script), "--", "--output", str(skeleton_dir)]
+    xvfb = shutil.which("xvfb-run")
+    if xvfb:
+        command = [xvfb, "-a", *command]
+    subprocess.run(command, check=True)
 
 
 def build(args) -> int:
@@ -68,23 +85,33 @@ def build(args) -> int:
         shutil.rmtree(output)
     output.mkdir(parents=True)
     source = dict(profile)
-    source["generator"] = "reference-driven-humanoid-poc-v2"
+    source["generator"] = "reference-driven-humanoid-poc-v3"
     source["poseReferenceSource"] = str(reference_path)
     source["poseReferenceData"] = reference
     source_path = output / "source.json"
     write_json(source_path, source)
     write_json(output / "pose_reference.json", reference)
+
     run_blender(source_path, output, args.blender)
-    frames = sorted((output / "frames").glob("*.png"))
-    compose_sheet(frames, output / "sprite_sheet.png", columns=int(source["sheetColumns"]))
-    write_preview(frames, output / "preview.gif", fps=int(source["fps"]))
+    object_frames = sorted((output / "frames").glob("*.png"))
+    compose_sheet(object_frames, output / "object_sheet.png", columns=int(source["sheetColumns"]))
+    compose_sheet(object_frames, output / "sprite_sheet.png", columns=int(source["sheetColumns"]))
+    write_preview(object_frames, output / "preview.gif", fps=int(source["fps"]))
+
+    run_blender_skeleton_viewport(output, args.blender)
+    skeleton_frames = sorted((output / "skeleton_frames").glob("*.png"))
+    compose_sheet(skeleton_frames, output / "skeleton_sheet.png", columns=int(source["sheetColumns"]))
+
     write_json(output / "metadata.json", {
-        "tool": "anim2sheet", "version": 2, "action": source["action"],
+        "tool": "anim2sheet", "version": 3, "action": source["action"],
         "frames": source["frames"], "fps": source["fps"], "canvas": source["canvas"],
         "sheetColumns": source["sheetColumns"], "background": "transparent",
-        "renderer": "blender-native-reference-driven-humanoid-poc-v2",
+        "renderer": "blender-native-reference-driven-humanoid-poc-v3",
         "visualPipeline": "blender-native", "blendSource": "source.blend",
         "poseReference": "pose_reference.json", "poseReferenceAuthority": "pose-motion-only",
+        "objectSheet": "object_sheet.png",
+        "skeletonSheet": "skeleton_sheet.png",
+        "skeletonRenderer": "blender-viewport-actual-armature",
         "postRenderVisualProcessing": False, "profile": str(args.profile),
     })
     errors = validate_output(output)
@@ -107,7 +134,7 @@ def validate(args) -> int:
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="anim2sheet")
     sub = root.add_subparsers(dest="command", required=True)
-    b = sub.add_parser("build", help="Build Blender-native reference-driven character animation sheet")
+    b = sub.add_parser("build", help="Build Blender-native object and actual-armature skeleton sheets")
     b.add_argument("--profile", required=True)
     b.add_argument("--blender", default="blender")
     b.add_argument("--output", required=True)
