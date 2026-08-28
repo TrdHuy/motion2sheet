@@ -138,11 +138,16 @@ def empty(name, parent=None, location=(0,0,0)):
 
 
 def build_pose_targets(root, arm):
-    targets = {"leftWrist":empty("LeftWristTarget",root),"rightWrist":empty("RightWristTarget",root),"leftAnkle":empty("LeftAnkleTarget",root),"rightAnkle":empty("RightAnkleTarget",root)}
+    targets = {
+        "leftWrist": empty("LeftWristTarget", root),
+        "rightWrist": empty("RightWristTarget", root),
+        "leftAnkle": empty("LeftAnkleTarget"),
+        "rightAnkle": empty("RightAnkleTarget"),
+    }
     left_elbow_pole = empty("LeftElbowPole", root, (-0.55,-0.90,1.30))
     right_elbow_pole = empty("RightElbowPole", root, (0.55,-0.90,1.30))
-    left_knee_pole = empty("LeftKneePole", root, (-0.25,-0.90,0.55))
-    right_knee_pole = empty("RightKneePole", root, (0.25,-0.90,0.55))
+    left_knee_pole = empty("LeftKneePole", None, (-0.25,-0.90,0.55))
+    right_knee_pole = empty("RightKneePole", None, (0.25,-0.90,0.55))
     for bone_name, target_name, pole in [("LeftForeArm","leftWrist",left_elbow_pole),("RightForeArm","rightWrist",right_elbow_pole),("LeftLeg","leftAnkle",left_knee_pole),("RightLeg","rightAnkle",right_knee_pole)]:
         ik = arm.pose.bones[bone_name].constraints.new("IK")
         ik.name = "ReferenceIK_" + bone_name
@@ -175,7 +180,7 @@ def key_pose(root, arm, targets, sword, row):
         bone.rotation_euler.y = math.radians(float(body[key]))
         bone.keyframe_insert(data_path="rotation_euler", frame=frame)
     row_targets = row["targets"]
-    for name in ("leftWrist","rightWrist","leftAnkle","rightAnkle"):
+    for name in ("leftAnkle","rightAnkle"):
         targets[name].location = Vector(row_targets[name])
         targets[name].keyframe_insert(data_path="location", frame=frame)
     grip = Vector(row_targets["swordGrip"])
@@ -183,8 +188,13 @@ def key_pose(root, arm, targets, sword, row):
     direction = tip_guide - grip
     if direction.length < 1e-6:
         raise RuntimeError(f"frame {frame}: sword grip/tip guide are coincident")
+    axis = direction.normalized()
+    targets["rightWrist"].location = grip - axis * 0.025
+    targets["leftWrist"].location = grip + axis * 0.145
+    targets["rightWrist"].keyframe_insert(data_path="location", frame=frame)
+    targets["leftWrist"].keyframe_insert(data_path="location", frame=frame)
     sword.location = grip
-    sword.rotation_quaternion = Vector((0,0,1)).rotation_difference(direction.normalized())
+    sword.rotation_quaternion = Vector((0,0,1)).rotation_difference(axis)
     sword.keyframe_insert(data_path="location", frame=frame)
     sword.keyframe_insert(data_path="rotation_quaternion", frame=frame)
 
