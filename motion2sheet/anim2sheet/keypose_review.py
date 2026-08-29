@@ -16,7 +16,6 @@ import json5
 
 from .common.output.packer import compose_sheet
 
-
 REVIEW_FRAMES = [1, 6, 7, 8]
 
 
@@ -74,6 +73,7 @@ def run(args) -> int:
             str(output),
         ],
         check=True,
+        timeout=240,
     )
 
     skeleton_entry = Path(__file__).resolve().with_name("blender_skeleton_viewport.py")
@@ -89,16 +89,18 @@ def run(args) -> int:
         str(output),
         "--frames",
         ",".join(str(v) for v in REVIEW_FRAMES),
+        "--skip-rig-docs",
     ]
     xvfb = shutil.which("xvfb-run")
     if xvfb:
         command = [xvfb, "-a", *command]
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, timeout=120)
 
     object_frames = [output / "frames" / f"{frame:02d}.png" for frame in REVIEW_FRAMES]
-    skeleton_frames = [
-        output / "skeleton_frames" / f"{frame:02d}.png" for frame in REVIEW_FRAMES
-    ]
+    skeleton_frames = [output / "skeleton_frames" / f"{frame:02d}.png" for frame in REVIEW_FRAMES]
+    for path in [*object_frames, *skeleton_frames]:
+        if not path.is_file():
+            raise RuntimeError(f"key-pose review output missing: {path}")
     compose_sheet(object_frames, output / "object_keyposes.png", columns=4)
     compose_sheet(skeleton_frames, output / "skeleton_keyposes.png", columns=4)
 
@@ -110,6 +112,7 @@ def run(args) -> int:
         "legControl": "ik_with_explicit_knee_poles",
         "torsoControl": "fk",
         "weaponBinding": "two_hand_joint_grip",
+        "objectRenderer": "blender-workbench-fast-review",
         "objectPreview": "object_keyposes.png",
         "skeletonPreview": "skeleton_keyposes.png",
         "debug": "motion_debug.json",
@@ -118,7 +121,7 @@ def run(args) -> int:
     (output / "metadata.json").write_text(
         json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
     )
-    print(f"anim2sheet fast key-pose review OK -> {output}")
+    print(f"anim2sheet fast key-pose review OK -> {output}", flush=True)
     return 0
 
 
@@ -131,8 +134,14 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         return run(args)
-    except (RuntimeError, subprocess.CalledProcessError, OSError, ValueError) as exc:
-        print(f"anim2sheet keypose review: {exc}")
+    except (
+        RuntimeError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        OSError,
+        ValueError,
+    ) as exc:
+        print(f"anim2sheet keypose review: {exc}", flush=True)
         return 2
 
 
