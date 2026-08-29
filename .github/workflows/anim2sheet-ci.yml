@@ -46,6 +46,8 @@ jobs:
           --profile profiles/anim2sheet/swordsman/gale_slash.json5
           --joint-contract profiles/anim2sheet/swordsman/gale_slash_arm_joint_keyposes.json
           --output build/anim/keypose_review
+      - name: Verify saved-blend and proxy authority
+        run: python tests/anim2sheet/e2e/verify_keypose_authority.py build/anim/keypose_review
       - name: Verify key-pose architecture semantics
         run: python tests/anim2sheet/e2e/verify_keypose_architecture.py build/anim/keypose_review
       - name: Upload fast key-pose artifact
