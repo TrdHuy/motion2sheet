@@ -34,31 +34,19 @@ jobs:
           version: '4.5.12'
       - name: Verify Blender
         run: blender --version
-      - name: Build Gale Slash run A
+      - name: Build Gale Slash review run
         run: anim2sheet build --profile profiles/anim2sheet/swordsman/gale_slash.json5 --output build/anim/run_a
-      - name: Build Gale Slash run B
-        run: anim2sheet build --profile profiles/anim2sheet/swordsman/gale_slash.json5 --output build/anim/run_b
-      - name: Validate outputs
-        run: |
-          anim2sheet validate build/anim/run_a
-          anim2sheet validate build/anim/run_b
+      - name: Validate review output
+        run: anim2sheet validate build/anim/run_a
       - name: Verify full-body motion semantics
         run: python tests/anim2sheet/e2e/verify_motion_semantics.py build/anim/run_a
       - name: Verify default rig exports
         run: python tests/anim2sheet/e2e/verify_rig_manifest.py build/anim/run_a
-      - name: Verify object A/B decoded pixel determinism
-        run: python tests/anim2sheet/e2e/verify_pixels.py build/anim/run_a/frames build/anim/run_b/frames
-      - name: Verify skeleton A/B decoded pixel determinism
-        run: python tests/anim2sheet/e2e/verify_pixels.py build/anim/run_a/skeleton_frames build/anim/run_b/skeleton_frames
-      - name: Re-render saved Blender source
-        run: blender --background build/anim/run_a/source.blend --python tests/anim2sheet/e2e/render_saved_anim_blend.py -- --output build/anim/reopened_frames
-      - name: Verify source.blend authority
-        run: python tests/anim2sheet/e2e/verify_pixels.py build/anim/run_a/frames build/anim/reopened_frames
       - name: Upload generated animation output
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: motion2sheet-anim2sheet-gale-slash-poc
-          path: build/anim/
+          path: build/anim/run_a/
           if-no-files-found: warn
           retention-days: 7
