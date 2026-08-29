@@ -8,12 +8,18 @@ from the two authored wrist/grip points so hand/weapon topology cannot drift.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import bpy
 from mathutils import Matrix, Vector
 
-from motion2sheet.anim2sheet import blender_entry as legacy
+# Blender's bundled Python does not inherit the editable package environment
+# used by the outer CLI process. Import sibling Blender modules explicitly.
+MODULE_DIR = Path(__file__).resolve().parent
+if str(MODULE_DIR) not in sys.path:
+    sys.path.insert(0, str(MODULE_DIR))
+import blender_entry as legacy
 
 
 ARM_IK_BONES = ("LeftForeArm", "RightForeArm")
