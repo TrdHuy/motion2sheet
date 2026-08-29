@@ -13,6 +13,7 @@ import subprocess
 from pathlib import Path
 
 import json5
+from PIL import Image, ImageDraw
 
 from .common.output.packer import compose_sheet
 
@@ -33,6 +34,34 @@ def load_profile(path: Path) -> tuple[dict, Path, dict]:
         ref_path = path.parent / ref_path
     reference = json.loads(ref_path.read_text(encoding="utf-8"))
     return profile, ref_path.resolve(), reference
+
+
+def write_authority_overlays(output: Path) -> None:
+    diagnostic = json.loads((output / "reopen_debug.json").read_text(encoding="utf-8"))
+    by_frame = {int(row["frame"]): row for row in diagnostic["framesData"]}
+    overlay_dir = output / "overlay_frames"
+    overlay_dir.mkdir(parents=True, exist_ok=True)
+    overlay_paths = []
+    for frame in REVIEW_FRAMES:
+        source_path = output / "frames" / f"{frame:02d}.png"
+        image = Image.open(source_path).convert("RGBA")
+        draw = ImageDraw.Draw(image, "RGBA")
+        for segment in by_frame[frame]["bonePixelSegments"]:
+            head = tuple(segment["headPx"])
+            tail = tuple(segment["tailPx"])
+            draw.line([head, tail], fill=(255, 40, 40, 235), width=4)
+            radius = 4
+            for point in (head, tail):
+                x, y = point
+                draw.ellipse(
+                    [x - radius, y - radius, x + radius, y + radius],
+                    fill=(255, 230, 40, 245),
+                )
+        path = overlay_dir / f"{frame:02d}.png"
+        image.save(path)
+        image.close()
+        overlay_paths.append(path)
+    compose_sheet(overlay_paths, output / "object_skeleton_overlay.png", columns=4)
 
 
 def run(args) -> int:
@@ -75,9 +104,6 @@ def run(args) -> int:
         timeout=240,
     )
 
-    # Never enter viewport/skeleton rendering unless the deterministic pose
-    # stage completed and produced the authoritative Blender scene. This avoids
-    # masking the real solver/import failure with a later Xvfb timeout.
     blend_path = output / "source.blend"
     debug_path = output / "motion_debug.json"
     if not blend_path.is_file():
@@ -89,6 +115,33 @@ def run(args) -> int:
     for path in object_frames:
         if not path.is_file():
             raise RuntimeError(f"key-pose object output missing: {path}")
+
+    # Reopen the saved blend in a fresh Blender process before any later
+    # diagnostic renderer touches it. This proves keyframe/save persistence and
+    # samples proxy deformation from the authoritative saved file.
+    reopen_entry = Path(__file__).resolve().with_name("blender_reopen_verify.py")
+    subprocess.run(
+        [
+            blender,
+            "--background",
+            str(blend_path.resolve()),
+            "--python",
+            str(reopen_entry),
+            "--",
+            "--output",
+            str(output),
+            "--contract",
+            str((output / "arm_joint_contract.json").resolve()),
+            "--pre-debug",
+            str(debug_path.resolve()),
+        ],
+        check=True,
+        timeout=120,
+    )
+    reopen_path = output / "reopen_debug.json"
+    if not reopen_path.is_file():
+        raise RuntimeError("saved-blend authority stage did not produce reopen_debug.json")
+    write_authority_overlays(output)
 
     skeleton_entry = Path(__file__).resolve().with_name("blender_skeleton_viewport.py")
     command = [
@@ -128,7 +181,10 @@ def run(args) -> int:
         "objectRenderer": "blender-workbench-fast-review",
         "objectPreview": "object_keyposes.png",
         "skeletonPreview": "skeleton_keyposes.png",
+        "authorityOverlay": "object_skeleton_overlay.png",
+        "authorityOverlayFrames": "overlay_frames/",
         "debug": "motion_debug.json",
+        "reopenDebug": "reopen_debug.json",
         "sourceBlend": "source.blend",
     }
     (output / "metadata.json").write_text(
