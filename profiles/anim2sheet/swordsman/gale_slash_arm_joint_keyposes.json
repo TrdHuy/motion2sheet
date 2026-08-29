@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "gale_slash_arm_joint_keyposes_v1",
+  "name": "gale_slash_arm_joint_keyposes_v2",
   "reviewFrames": [1, 6, 7, 8],
   "coordinateSystem": {
     "space": "world",
@@ -14,32 +14,32 @@
   "poses": {
     "1": {
       "rootOverride": [0.0, -0.06],
-      "leftElbow": [-0.259577, -0.223168, 1.255609],
-      "leftWrist": [0.04, -0.22, 1.24],
-      "rightElbow": [0.229237, -0.221097, 1.24463],
-      "rightWrist": [-0.06, -0.22, 1.165],
-      "intent": "low grounded ready; elbows stay on their anatomical sides; compact two-hand low guard"
+      "leftElbow": [-0.309371, -0.221414, 1.279372],
+      "leftWrist": [-0.01, -0.22, 1.26],
+      "rightElbow": [0.188501, -0.228053, 1.24635],
+      "rightWrist": [-0.10375, -0.2325, 1.17875],
+      "intent": "low grounded ready; left forearm stays on/left of centerline, elbows remain anatomical, compact two-hand low guard"
     },
     "6": {
-      "leftElbow": [0.079952, -0.287397, 1.28748],
-      "leftWrist": [0.36, -0.32, 1.39],
-      "rightElbow": [0.609317, -0.190388, 1.149696],
-      "rightWrist": [0.485, -0.32, 1.39],
-      "intent": "strike entry; blade points screen-right; left arm drives while right arm supports the two-hand grip"
+      "leftElbow": [0.034748, -0.276919, 1.282938],
+      "leftWrist": [0.31, -0.3, 1.4],
+      "rightElbow": [0.681264, -0.209581, 1.254472],
+      "rightWrist": [0.435, -0.3, 1.4],
+      "intent": "strike entry; clean two-hand extension with both elbows separated from torso while blade enters screen-right"
     },
     "7": {
-      "leftElbow": [0.165029, -0.245233, 1.302922],
-      "leftWrist": [0.45, -0.28, 1.39],
-      "rightElbow": [0.65148, -0.253214, 1.187936],
-      "rightWrist": [0.469588, -0.402426, 1.374085],
-      "intent": "impact; same physical grip, sword axis drives into camera depth with readable foreshortening"
+      "leftElbow": [0.138377, -0.254062, 1.324554],
+      "leftWrist": [0.43, -0.28, 1.39],
+      "rightElbow": [0.688046, -0.272974, 1.246067],
+      "rightWrist": [0.4496, -0.4024, 1.3741],
+      "intent": "impact; same physical grip drives into camera depth with both elbows readable and no solver-selected topology"
     },
     "8": {
-      "leftElbow": [0.141099, -0.151347, 1.314006],
-      "leftWrist": [0.42, -0.24, 1.38],
-      "rightElbow": [0.53206, -0.266171, 1.203377],
-      "rightWrist": [0.295266, -0.245091, 1.386364],
-      "intent": "strike exit; same grip rotates to screen-left without elbow topology flip"
+      "leftElbow": [0.069385, -0.127433, 1.315998],
+      "leftWrist": [0.34, -0.24, 1.38],
+      "rightElbow": [0.474661, -0.326542, 1.259797],
+      "rightWrist": [0.215, -0.245, 1.386],
+      "intent": "strike exit; wrists shift screen-left while both arms remain extended enough to avoid a collapsed right-arm silhouette"
     }
   }
 }
