@@ -25,8 +25,6 @@ if debug.get("armControl") != "deterministic_joint_fk":
 by_frame = {int(row["frame"]): row for row in samples}
 checks = {}
 
-# Representation fidelity: Blender must reproduce the exact authored elbow and
-# wrist joints, rather than choosing another IK solution.
 max_joint_error = max(float(row["maxArmJointContractError"]) for row in samples)
 checks["maxArmJointContractError"] = max_joint_error
 if max_joint_error > 0.008:
@@ -49,9 +47,6 @@ if max_primary_grip_error > 0.008 or max_secondary_axis_error > 0.008:
 if not all(0.10 <= value <= 0.15 for value in grip_spans):
     raise SystemExit(f"two-hand grip span is unstable: {grip_spans}")
 
-# F1 quality proof: elbows must stay on their anatomical sides and below the
-# shoulders. The left/pommel wrist must not sweep across the body centerline;
-# the second wrist may sit just left of center because both hands share one hilt.
 f1 = by_frame[1]["joints"]
 left_shoulder, left_elbow = f1["leftShoulder"], f1["leftElbow"]
 right_shoulder, right_elbow = f1["rightShoulder"], f1["rightElbow"]
@@ -73,11 +68,11 @@ if not all(55.0 <= value <= 125.0 for value in f1_angles):
 if float(by_frame[1]["root"][1]) > -0.05:
     raise SystemExit("F1 ready stance is not low enough for this key-pose proof")
 
-# F6/F7/F8 weapon path: right, depth, left. F7 should be strongly
-# foreshortened without disappearing entirely.
+
 def sword_dx(frame: int) -> float:
     row = by_frame[frame]
     return float(row["swordTip"][0]) - float(row["swordGrip"][0])
+
 
 f6_dx, f8_dx = sword_dx(6), sword_dx(8)
 f6_len = float(by_frame[6]["projectedSwordLengthXZ"])
@@ -97,11 +92,9 @@ if not (0.12 <= f7_len <= 0.35):
 if not (f7_len < f6_len * 0.35 and f7_len < f8_len * 0.35):
     raise SystemExit("F7 does not create a clear foreshortened impact transition")
 
-# Strike poses must not collapse into short arm-only shapes. Check both the
-# average chain extension and each individual arm so one arm cannot hide a
-# collapsed partner behind a good average.
 strike_extensions = {}
 individual_extensions = {}
+strike_elbows = {}
 for frame in (6, 7, 8):
     left = float(by_frame[frame]["leftArmExtension"])
     right = float(by_frame[frame]["rightArmExtension"])
@@ -114,18 +107,25 @@ for frame in (6, 7, 8):
         raise SystemExit(
             f"F{frame} one arm collapsed despite average extension: left={left:.3f}, right={right:.3f}"
         )
+
+    left_angle = float(by_frame[frame]["leftElbowAngleDeg"])
+    right_angle = float(by_frame[frame]["rightElbowAngleDeg"])
+    strike_elbows[str(frame)] = {"left": left_angle, "right": right_angle}
+    if max(left_angle, right_angle) > 145.0:
+        raise SystemExit(
+            f"F{frame} elbow is too close to lock-out for a forceful two-hand slash: "
+            f"left={left_angle:.1f}, right={right_angle:.1f}"
+        )
+
 checks["strikeArmExtension"] = strike_extensions
 checks["individualArmExtension"] = individual_extensions
+checks["strikeElbowAngles"] = strike_elbows
 
-# F8 specifically is the topology-stability proof after depth impact; the
-# supporting/right arm must remain visibly extended rather than folding into
-# the torso as the blade exits screen-left.
 if float(by_frame[8]["rightArmExtension"]) < 0.30:
     raise SystemExit(
         f"F8 right arm collapses during strike exit: {by_frame[8]['rightArmExtension']:.3f}"
     )
 
-# Legs remain the existing explicit-pole IK solution and must stay grounded.
 stance = {str(frame): float(by_frame[frame]["stanceWidth"]) for frame in (1, 6, 7, 8)}
 checks["stanceWidth"] = stance
 if min(stance.values()) < 0.25:
