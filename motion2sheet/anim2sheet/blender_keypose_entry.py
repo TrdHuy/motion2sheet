@@ -53,22 +53,26 @@ def configure_fast_render(scene) -> None:
 
 
 def add_fast_review_connectors(arm) -> None:
-    """Fill only proxy gaps that are stable under deterministic review poses.
+    """Complete the review proxy and keep every proxy in MotionRoot space.
 
-    The legacy proxy omits neck/hand/foot cylinders. Adding those connectors
-    improves readability, but clavicle cylinders are intentionally excluded:
-    the proxy's single-bone deformation can visually drift under large parent
-    rotations even while the evaluated armature is correct. Fast review should
-    never introduce geometry that contradicts the skeleton being inspected.
+    The evaluated armature is parented to MotionRoot. Legacy proxy meshes were
+    created in world space and therefore did not inherit MotionRoot translation,
+    producing a frame-dependent offset while preserving the correct local bone
+    axis. For the authority proof, all proxy meshes share the same MotionRoot
+    parent as the armature. Clavicle/hand/foot connectors are included so CI can
+    verify the requested segments directly.
     """
+    cloth = bpy.data.materials.get("Cloth")
     skin = bpy.data.materials.get("Skin")
     boots = bpy.data.materials.get("Boots")
-    if skin is None or boots is None:
+    if cloth is None or skin is None or boots is None:
         raise RuntimeError("legacy proxy materials missing before fast-review connectors")
 
     bones = arm.data.bones
     segments = [
         ("Neck", 0.065, skin),
+        ("LeftClavicle", 0.055, cloth),
+        ("RightClavicle", 0.055, cloth),
         ("LeftHand", 0.055, skin),
         ("RightHand", 0.055, skin),
         ("LeftFoot", 0.075, boots),
@@ -85,6 +89,13 @@ def add_fast_review_connectors(arm) -> None:
             radius,
             mat,
         )
+
+    motion_root = arm.parent
+    if motion_root is None:
+        raise RuntimeError("review armature must be parented to MotionRoot")
+    for obj in bpy.context.scene.objects:
+        if obj.type == "MESH":
+            obj.parent = motion_root
 
 
 def sample_frame(motion_root, arm, sword, frame: int, joint_pose: dict) -> dict:
