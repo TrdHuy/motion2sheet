@@ -1,22 +1,24 @@
 """Render the actual Blender armature for animation and default-rig inspection.
 
-Animated skeleton frames use Blender Viewport Render (``bpy.ops.render.opengl``).
-Blender intentionally omits some text overlays, including bone names, from
-Viewport Render. The labeled default-rig diagnostic therefore uses Blender's
-own editor screenshot operator (``bpy.ops.screen.screenshot_area``) so the
-image contains the exact bone-name labels visible in the 3D Viewport.
+Animated skeleton frames and both default-rig diagnostics use Blender Viewport
+Render (``bpy.ops.render.opengl``). Blender does not reliably include bone-name
+text overlays in Viewport Render, so the labeled diagnostic creates temporary
+Blender FONT objects from the armature's real bone names and places them beside
+the corresponding rest bones before rendering.
 
 No bones or labels are re-drawn with Pillow, ImageDraw, proxy meshes, or an
-external renderer.
+external renderer. The temporary FONT objects are never saved to source.blend.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
 import bpy
+from mathutils import Vector
 
 
 SWORD_OBJECTS = {"SwordGrip", "SwordBlade"}
@@ -84,16 +86,6 @@ def configure_view(space):
     overlay.show_relationship_lines = False
     overlay.show_extras = False
     overlay.show_outline_selected = True
-    if hasattr(overlay, "show_text"):
-        overlay.show_text = True
-
-    # Keep the diagnostic editor screenshot focused on the rig.
-    if hasattr(space, "show_region_toolbar"):
-        space.show_region_toolbar = False
-    if hasattr(space, "show_region_ui"):
-        space.show_region_ui = False
-    if hasattr(space, "show_region_tool_header"):
-        space.show_region_tool_header = False
 
 
 def set_sword_visible(visible: bool):
@@ -152,34 +144,66 @@ def write_rig_manifest(arm, root: Path):
     (root / "rig_bones.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def redraw_view(window, area, region):
-    """Force Blender to refresh text/overlay state before a capture."""
-    area.tag_redraw()
-    with bpy.context.temp_override(window=window, area=area, region=region):
-        try:
-            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=2)
-        except RuntimeError:
-            # Xvfb can occasionally report no timer context. area.tag_redraw()
-            # still marks the editor dirty for the following capture operator.
-            pass
-
-
 def render_viewport(path: Path, *, window, area, region):
     bpy.context.scene.render.filepath = str(path.resolve())
-    redraw_view(window, area, region)
+    area.tag_redraw()
     with bpy.context.temp_override(window=window, area=area, region=region):
         bpy.ops.render.opengl(write_still=True, view_context=True)
 
 
-def screenshot_view3d(path: Path, *, window, area, region):
-    """Capture the real 3D editor, including text overlays such as bone names."""
-    redraw_view(window, area, region)
-    with bpy.context.temp_override(window=window, area=area, region=region):
-        bpy.ops.screen.screenshot_area(
-            filepath=str(path.resolve()),
-            check_existing=False,
-            hide_props_region=True,
-        )
+def create_bone_labels(arm):
+    """Create temporary Blender text objects beside every rest bone.
+
+    Labels are generated directly from ``arm.data.bones`` so the diagnostic can
+    never drift from the actual rig naming. The camera views the character from
+    negative Y, therefore a +90 degree X rotation makes text face the camera
+    while keeping its local Y axis upright in world Z.
+    """
+    material = bpy.data.materials.new("_Anim2SheetRigLabelMaterial")
+    material.diffuse_color = (0.95, 0.95, 0.95, 1.0)
+
+    labels = []
+    for bone in arm.data.bones:
+        curve = bpy.data.curves.new(f"_RigLabelCurve_{bone.name}", type="FONT")
+        curve.body = bone.name
+        curve.size = 0.055
+        curve.space_character = 1.0
+        curve.align_y = "CENTER"
+        curve.materials.append(material)
+
+        obj = bpy.data.objects.new(f"_RigLabel_{bone.name}", curve)
+        bpy.context.collection.objects.link(obj)
+        obj.rotation_euler = (math.radians(90.0), 0.0, 0.0)
+        obj.show_in_front = True
+
+        midpoint_local = (Vector(bone.head_local) + Vector(bone.tail_local)) * 0.5
+        midpoint_world = arm.matrix_world @ midpoint_local
+
+        if bone.name.startswith("Left"):
+            curve.align_x = "RIGHT"
+            offset_x = -0.075
+        elif bone.name.startswith("Right"):
+            curve.align_x = "LEFT"
+            offset_x = 0.075
+        else:
+            curve.align_x = "LEFT"
+            offset_x = 0.075
+
+        # Pull text slightly toward the camera so it stays readable over bones.
+        obj.location = midpoint_world + Vector((offset_x, -0.08, 0.0))
+        labels.append(obj)
+
+    return labels, material
+
+
+def hide_and_remove_labels(labels, material):
+    for obj in labels:
+        data = obj.data
+        bpy.data.objects.remove(obj, do_unlink=True)
+        if data.users == 0:
+            bpy.data.curves.remove(data)
+    if material.users == 0:
+        bpy.data.materials.remove(material)
 
 
 def render_default_rig(arm, root, window, area, region):
@@ -200,21 +224,23 @@ def render_default_rig(arm, root, window, area, region):
     set_sword_visible(False)
     bpy.context.view_layer.update()
 
-    arm.data.show_names = False
     render_viewport(
         root / "rig_default_overview.png",
-        window=window, area=area, region=region,
+        window=window,
+        area=area,
+        region=region,
     )
 
-    # Current Blender Viewport Render omits bone-name text even when Names is
-    # enabled. Capture Blender's real editor instead so labels remain genuine.
-    arm.data.show_names = True
-    screenshot_view3d(
+    labels, label_material = create_bone_labels(arm)
+    bpy.context.view_layer.update()
+    render_viewport(
         root / "rig_default_labeled.png",
-        window=window, area=area, region=region,
+        window=window,
+        area=area,
+        region=region,
     )
+    hide_and_remove_labels(labels, label_material)
 
-    arm.data.show_names = False
     arm.data.pose_position = old_pose_position
     set_sword_visible(True)
     scene.render.resolution_x = old_resolution[0]
@@ -234,7 +260,9 @@ def render_animation(arm, output, window, area, region):
         bpy.context.view_layer.update()
         render_viewport(
             output / f"{frame:02d}.png",
-            window=window, area=area, region=region,
+            window=window,
+            area=area,
+            region=region,
         )
 
 
