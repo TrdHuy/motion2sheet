@@ -1,8 +1,13 @@
 """Render the actual Blender armature for animation and default-rig inspection.
 
-This script never redraws bones with Pillow or proxy meshes. It opens the saved
-source.blend in a real Blender UI session and captures Blender's own armature
-viewport using bpy.ops.render.opengl(view_context=True).
+Animated skeleton frames use Blender Viewport Render (``bpy.ops.render.opengl``).
+Blender intentionally omits some text overlays, including bone names, from
+Viewport Render. The labeled default-rig diagnostic therefore uses Blender's
+own editor screenshot operator (``bpy.ops.screen.screenshot_area``) so the
+image contains the exact bone-name labels visible in the 3D Viewport.
+
+No bones or labels are re-drawn with Pillow, ImageDraw, proxy meshes, or an
+external renderer.
 """
 from __future__ import annotations
 
@@ -82,6 +87,14 @@ def configure_view(space):
     if hasattr(overlay, "show_text"):
         overlay.show_text = True
 
+    # Keep the diagnostic editor screenshot focused on the rig.
+    if hasattr(space, "show_region_toolbar"):
+        space.show_region_toolbar = False
+    if hasattr(space, "show_region_ui"):
+        space.show_region_ui = False
+    if hasattr(space, "show_region_tool_header"):
+        space.show_region_tool_header = False
+
 
 def set_sword_visible(visible: bool):
     for name in SWORD_OBJECTS:
@@ -139,10 +152,34 @@ def write_rig_manifest(arm, root: Path):
     (root / "rig_bones.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def redraw_view(window, area, region):
+    """Force Blender to refresh text/overlay state before a capture."""
+    area.tag_redraw()
+    with bpy.context.temp_override(window=window, area=area, region=region):
+        try:
+            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=2)
+        except RuntimeError:
+            # Xvfb can occasionally report no timer context. area.tag_redraw()
+            # still marks the editor dirty for the following capture operator.
+            pass
+
+
 def render_viewport(path: Path, *, window, area, region):
     bpy.context.scene.render.filepath = str(path.resolve())
+    redraw_view(window, area, region)
     with bpy.context.temp_override(window=window, area=area, region=region):
         bpy.ops.render.opengl(write_still=True, view_context=True)
+
+
+def screenshot_view3d(path: Path, *, window, area, region):
+    """Capture the real 3D editor, including text overlays such as bone names."""
+    redraw_view(window, area, region)
+    with bpy.context.temp_override(window=window, area=area, region=region):
+        bpy.ops.screen.screenshot_area(
+            filepath=str(path.resolve()),
+            check_existing=False,
+            hide_props_region=True,
+        )
 
 
 def render_default_rig(arm, root, window, area, region):
@@ -169,8 +206,10 @@ def render_default_rig(arm, root, window, area, region):
         window=window, area=area, region=region,
     )
 
+    # Current Blender Viewport Render omits bone-name text even when Names is
+    # enabled. Capture Blender's real editor instead so labels remain genuine.
     arm.data.show_names = True
-    render_viewport(
+    screenshot_view3d(
         root / "rig_default_labeled.png",
         window=window, area=area, region=region,
     )
