@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "gale_slash_arm_joint_keyposes_v4",
+  "name": "gale_slash_arm_joint_keyposes_v5",
   "reviewFrames": [1, 6, 7, 8],
   "coordinateSystem": {
     "space": "world",
@@ -21,25 +21,25 @@
       "intent": "low grounded ready; elbows bend down and outward while both forearms converge naturally into the two-hand low guard"
     },
     "6": {
-      "leftElbow": [0.253686, -0.272038, 1.338621],
-      "leftWrist": [0.55, -0.25, 1.38],
-      "rightElbow": [0.39906, -0.313607, 1.280948],
-      "rightWrist": [0.675, -0.25, 1.38],
-      "intent": "strike entry; move the complete two-hand grip outside the right shoulder so both arm chains extend into the blade instead of folding beside the torso"
+      "leftElbow": [0.303154, -0.203384, 1.283175],
+      "leftWrist": [0.54, -0.36, 1.38],
+      "rightElbow": [0.630057, -0.170723, 1.149885],
+      "rightWrist": [0.665, -0.36, 1.38],
+      "intent": "strike entry; the full grip stays on the right but moves toward camera depth so both arms extend into the blade rather than one arm folding beside the torso"
     },
     "7": {
-      "leftElbow": [0.097158, -0.229749, 1.286411],
+      "leftElbow": [0.195163, -0.164417, 1.201117],
       "leftWrist": [0.36, -0.34, 1.38],
-      "rightElbow": [0.56628, -0.300854, 1.193681],
-      "rightWrist": [0.38, -0.463, 1.364],
-      "intent": "impact; both hands drive forward from the shoulders while the same physical grip rotates into camera depth with readable foreshortening"
+      "rightElbow": [0.514823, -0.28273, 1.164376],
+      "rightWrist": [0.39, -0.462, 1.37],
+      "intent": "impact; preserve the same physical grip while both elbow planes stay below the hand line and the sword remains visibly foreshortened into camera depth"
     },
     "8": {
-      "leftElbow": [0.152571, -0.076894, 1.187654],
-      "leftWrist": [0.05, -0.3, 1.36],
-      "rightElbow": [0.213965, -0.224622, 1.359769],
-      "rightWrist": [-0.075, -0.305, 1.366],
-      "intent": "strike exit; carry the full two-hand grip left of the torso while maintaining forward drive so the right arm cannot collapse during follow-through"
+      "leftElbow": [0.143289, -0.101653, 1.218435],
+      "leftWrist": [0.2, -0.36, 1.36],
+      "rightElbow": [0.31097, -0.235339, 1.233689],
+      "rightWrist": [0.075, -0.365, 1.366],
+      "intent": "strike exit; keep the weapon pointing screen-left while both hands stay forward of the torso, preventing the supporting arm from locking straight across the chest"
     }
   }
 }
