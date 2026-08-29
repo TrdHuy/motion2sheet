@@ -2,7 +2,8 @@
 
 Only F1/F6/F7/F8 are rendered. The original 16-frame pose reference still
 provides torso FK and leg IK values, while arm joints come from the dedicated
-joint-FK key-pose contract.
+joint-FK key-pose contract. Fast review intentionally uses Workbench rendering:
+this phase judges pose topology and silhouette, not final lighting quality.
 """
 from __future__ import annotations
 
@@ -32,6 +33,16 @@ def bend_angle(a: Vector, b: Vector, c: Vector) -> float:
     v = (c - b).normalized()
     dot = max(-1.0, min(1.0, float(u.dot(v))))
     return round(math.degrees(math.acos(dot)), 6)
+
+
+def configure_fast_render(scene) -> None:
+    scene.render.engine = "BLENDER_WORKBENCH"
+    scene.render.film_transparent = True
+    scene.display.shading.light = "STUDIO"
+    scene.display.shading.color_type = "MATERIAL"
+    scene.display.shading.show_shadows = False
+    scene.display.shading.show_cavity = True
+    scene.display.shading.background_type = "WORLD"
 
 
 def sample_frame(motion_root, arm, sword, frame: int, joint_pose: dict) -> dict:
@@ -123,14 +134,15 @@ def main() -> int:
     sword = legacy.build_sword()
     legacy.setup_scene(source["canvas"])
     scene = bpy.context.scene
+    configure_fast_render(scene)
     scene.frame_start = min(review_frames)
     scene.frame_end = max(review_frames)
 
-    # Arm IK is disabled globally for this architecture proof. Leg IK remains.
     for name in ("LeftForeArm", "RightForeArm"):
         arm.pose.bones[name].constraints[f"ReferenceIK_{name}"].influence = 0.0
 
     for frame in review_frames:
+        print(f"KEYPOSE_SOLVE_START F{frame}", flush=True)
         base = ref_by_frame[frame]
         legacy.key_pose(motion_root, arm, targets, sword, base)
         joint_pose = joint_contract["poses"][str(frame)]
@@ -140,6 +152,7 @@ def main() -> int:
             motion_root.keyframe_insert(data_path="location", frame=frame)
         bpy.context.view_layer.update()
         apply_arm_pose(arm, sword, joint_pose, frame=frame)
+        print(f"KEYPOSE_SOLVE_OK F{frame}", flush=True)
 
     for owner in [motion_root, arm, sword, *targets.values()]:
         legacy.configure_interpolation(owner, set(review_frames))
@@ -177,12 +190,14 @@ def main() -> int:
     frame_dir = output / "frames"
     frame_dir.mkdir(parents=True, exist_ok=True)
     for frame in review_frames:
+        print(f"KEYPOSE_RENDER_START F{frame}", flush=True)
         scene.frame_set(frame)
         bpy.context.view_layer.update()
         scene.render.filepath = str((frame_dir / f"{frame:02d}.png").resolve())
         bpy.ops.render.render(write_still=True)
+        print(f"KEYPOSE_RENDER_OK F{frame}", flush=True)
 
-    print(f"anim2sheet key-pose Blender render OK: {review_frames}")
+    print(f"anim2sheet key-pose Blender render OK: {review_frames}", flush=True)
     return 0
 
 
