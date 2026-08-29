@@ -69,6 +69,7 @@ def set_segment(
     head_world: Vector,
     tail_world: Vector,
     *,
+    frame: int | None = None,
     length_tolerance: float = 0.002,
     result_tolerance: float = 0.006,
 ) -> None:
@@ -88,9 +89,11 @@ def set_segment(
     error = max((actual_head - head_world).length, (actual_tail - tail_world).length)
     if error > result_tolerance:
         raise RuntimeError(f"{bone_name} deterministic solve error {error:.6f}")
+    if frame is not None:
+        bone.keyframe_insert(data_path="rotation_quaternion", frame=frame)
 
 
-def apply_arm_pose(arm, sword, joint_pose: dict) -> None:
+def apply_arm_pose(arm, sword, joint_pose: dict, *, frame: int | None = None) -> None:
     disable_arm_ik(arm)
     bpy.context.view_layer.update()
 
@@ -102,14 +105,13 @@ def apply_arm_pose(arm, sword, joint_pose: dict) -> None:
     }
 
     for side in ("left", "right"):
-        upper_name, fore_name, hand_name = ARM_SEGMENTS[side]
+        upper_name, fore_name, _hand_name = ARM_SEGMENTS[side]
         shoulder = legacy.bone_head_world(arm, upper_name)
         elbow = joints[f"{side}Elbow"]
         wrist = joints[f"{side}Wrist"]
-        set_segment(arm, upper_name, shoulder, elbow)
-        set_segment(arm, fore_name, elbow, wrist)
+        set_segment(arm, upper_name, shoulder, elbow, frame=frame)
+        set_segment(arm, fore_name, elbow, wrist, frame=frame)
 
-    # Sword +Z points from the left/pommel hand through the right/blade hand.
     pommel = joints["leftWrist"]
     blade_hand = joints["rightWrist"]
     grip_axis = blade_hand - pommel
@@ -119,13 +121,21 @@ def apply_arm_pose(arm, sword, joint_pose: dict) -> None:
     sword.location = pommel
     sword.rotation_mode = "QUATERNION"
     sword.rotation_quaternion = Vector((0, 0, 1)).rotation_difference(grip_axis)
+    if frame is not None:
+        sword.keyframe_insert(data_path="location", frame=frame)
+        sword.keyframe_insert(data_path="rotation_quaternion", frame=frame)
 
-    # Hand bones follow the same physical hilt axis; no hidden IK/twist choice.
     for side in ("left", "right"):
         hand_name = ARM_SEGMENTS[side][2]
         wrist = joints[f"{side}Wrist"]
         length = float(arm.pose.bones[hand_name].bone.length)
-        set_segment(arm, hand_name, wrist, wrist + grip_axis * length)
+        set_segment(
+            arm,
+            hand_name,
+            wrist,
+            wrist + grip_axis * length,
+            frame=frame,
+        )
 
     bpy.context.view_layer.update()
 
