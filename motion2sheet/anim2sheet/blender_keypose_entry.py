@@ -53,26 +53,22 @@ def configure_fast_render(scene) -> None:
 
 
 def add_fast_review_connectors(arm) -> None:
-    """Fill proxy gaps that make valid joint topology look disconnected.
+    """Fill only proxy gaps that are stable under deterministic review poses.
 
-    The legacy proxy intentionally omitted neck/clavicle/hand/foot cylinders.
-    That is acceptable for a rough full-body render but misleading for the
-    four-pose architecture proof: large clavicle rotation can make an upper arm
-    appear detached and spherical palms do not reveal deterministic hand axes.
-    Add lightweight single-bone-weighted connectors only for fast review. This
-    does not change the rig, solver, authored joints, or motion semantics.
+    The legacy proxy omits neck/hand/foot cylinders. Adding those connectors
+    improves readability, but clavicle cylinders are intentionally excluded:
+    the proxy's single-bone deformation can visually drift under large parent
+    rotations even while the evaluated armature is correct. Fast review should
+    never introduce geometry that contradicts the skeleton being inspected.
     """
-    cloth = bpy.data.materials.get("Cloth")
     skin = bpy.data.materials.get("Skin")
     boots = bpy.data.materials.get("Boots")
-    if cloth is None or skin is None or boots is None:
+    if skin is None or boots is None:
         raise RuntimeError("legacy proxy materials missing before fast-review connectors")
 
     bones = arm.data.bones
     segments = [
         ("Neck", 0.065, skin),
-        ("LeftClavicle", 0.055, cloth),
-        ("RightClavicle", 0.055, cloth),
         ("LeftHand", 0.055, skin),
         ("RightHand", 0.055, skin),
         ("LeftFoot", 0.075, boots),
