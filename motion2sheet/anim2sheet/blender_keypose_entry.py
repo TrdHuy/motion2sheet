@@ -52,6 +52,45 @@ def configure_fast_render(scene) -> None:
     scene.display.shading.background_type = "WORLD"
 
 
+def add_fast_review_connectors(arm) -> None:
+    """Fill proxy gaps that make valid joint topology look disconnected.
+
+    The legacy proxy intentionally omitted neck/clavicle/hand/foot cylinders.
+    That is acceptable for a rough full-body render but misleading for the
+    four-pose architecture proof: large clavicle rotation can make an upper arm
+    appear detached and spherical palms do not reveal deterministic hand axes.
+    Add lightweight single-bone-weighted connectors only for fast review. This
+    does not change the rig, solver, authored joints, or motion semantics.
+    """
+    cloth = bpy.data.materials.get("Cloth")
+    skin = bpy.data.materials.get("Skin")
+    boots = bpy.data.materials.get("Boots")
+    if cloth is None or skin is None or boots is None:
+        raise RuntimeError("legacy proxy materials missing before fast-review connectors")
+
+    bones = arm.data.bones
+    segments = [
+        ("Neck", 0.065, skin),
+        ("LeftClavicle", 0.055, cloth),
+        ("RightClavicle", 0.055, cloth),
+        ("LeftHand", 0.055, skin),
+        ("RightHand", 0.055, skin),
+        ("LeftFoot", 0.075, boots),
+        ("RightFoot", 0.075, boots),
+    ]
+    for name, radius, mat in segments:
+        bone = bones[name]
+        legacy.weighted_cylinder(
+            arm,
+            "Review_" + name,
+            name,
+            bone.head_local,
+            bone.tail_local,
+            radius,
+            mat,
+        )
+
+
 def sample_frame(motion_root, arm, sword, frame: int, joint_pose: dict) -> dict:
     bpy.context.scene.frame_set(frame)
     bpy.context.view_layer.update()
@@ -137,6 +176,7 @@ def main() -> int:
     bpy.ops.object.delete(use_global=False)
     motion_root, arm = legacy.build_root_and_rig()
     legacy.build_character(arm)
+    add_fast_review_connectors(arm)
     targets = legacy.build_pose_targets(arm)
     sword = legacy.build_sword()
     legacy.setup_scene(source["canvas"])
