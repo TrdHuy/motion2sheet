@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "gale_slash_arm_joint_keyposes_v7",
+  "name": "gale_slash_arm_joint_keyposes_v8",
   "reviewFrames": [1, 6, 7, 8],
   "coordinateSystem": {
     "space": "world",
@@ -21,18 +21,18 @@
       "intent": "low grounded ready; elbows bend down and outward while both forearms converge naturally into the two-hand low guard"
     },
     "6": {
-      "leftElbow": [0.156873, -0.221862, 1.208829],
-      "leftWrist": [0.34, -0.42, 1.34],
-      "rightElbow": [0.536023, -0.214916, 1.132886],
-      "rightWrist": [0.465, -0.42, 1.34],
-      "intent": "strike entry; grip stays rightward but deeper and lower, with both elbow planes under the hand line so the two arm chains feed one horizontal slash"
+      "leftElbow": [0.197865, -0.242538, 1.244275],
+      "leftWrist": [0.42, -0.42, 1.34],
+      "rightElbow": [0.535607, -0.208585, 1.127361],
+      "rightWrist": [0.545, -0.42, 1.34],
+      "intent": "strike entry; shift the complete two-hand grip farther screen-right while preserving depth and bend so the entry reads as committed extension instead of a compact arm-only pose"
     },
     "7": {
-      "leftElbow": [0.130404, -0.188642, 1.223142],
-      "leftWrist": [0.32, -0.4, 1.32],
-      "rightElbow": [0.522472, -0.310961, 1.196633],
-      "rightWrist": [0.34, -0.523, 1.305],
-      "intent": "impact; lower both hands to chest level, keep both elbows under the grip, and preserve a readable but strongly foreshortened sword axis into camera depth"
+      "leftElbow": [0.135293, -0.192703, 1.226912],
+      "leftWrist": [0.32, -0.41, 1.32],
+      "rightElbow": [0.516312, -0.315979, 1.202649],
+      "rightWrist": [0.345, -0.5325, 1.32],
+      "intent": "impact; keep both hands at chest level and rotate the grip almost straight into camera depth while retaining a small horizontal blade projection so impact stays visually readable"
     },
     "8": {
       "leftElbow": [0.00615, -0.02046, 1.222393],
