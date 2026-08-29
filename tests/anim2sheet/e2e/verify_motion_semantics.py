@@ -209,7 +209,7 @@ if dx8 > -0.45 or dx9 > -0.45:
     raise SystemExit(
         f"frames 8/9 sword must read screen-left: dx8={dx8:.4f}, dx9={dx9:.4f}"
     )
-if not (0.12 <= len7 <= 0.26):
+if not (0.18 <= len7 <= 0.26):
     raise SystemExit(
         f"impact projected blade length must remain readable: F7={len7:.4f}m"
     )
