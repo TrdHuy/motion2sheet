@@ -13,6 +13,13 @@ import math
 import sys
 from pathlib import Path
 
+# Blender's bundled Python does not inherit the editable package installed into
+# the GitHub runner's CPython. Add the checkout root explicitly before importing
+# motion2sheet so this script behaves the same locally and in CI.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 import bpy
 from mathutils import Vector
 
