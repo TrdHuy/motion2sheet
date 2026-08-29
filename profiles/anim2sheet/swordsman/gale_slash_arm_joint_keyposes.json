@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "name": "gale_slash_arm_joint_keyposes_v1",
+  "reviewFrames": [1, 6, 7, 8],
+  "coordinateSystem": {
+    "space": "world",
+    "x": "screen-right",
+    "y": "depth; negative is toward camera",
+    "z": "up",
+    "units": "Blender meters"
+  },
+  "armControl": "deterministic_joint_fk",
+  "weaponBinding": "leftWrist(pommel) -> rightWrist(blade-hand) defines sword +Z axis",
+  "poses": {
+    "1": {
+      "rootOverride": [0.0, -0.06],
+      "leftElbow": [-0.259577, -0.223168, 1.255609],
+      "leftWrist": [0.04, -0.22, 1.24],
+      "rightElbow": [0.229237, -0.221097, 1.24463],
+      "rightWrist": [-0.06, -0.22, 1.165],
+      "intent": "low grounded ready; elbows stay on their anatomical sides; compact two-hand low guard"
+    },
+    "6": {
+      "leftElbow": [0.079952, -0.287397, 1.28748],
+      "leftWrist": [0.36, -0.32, 1.39],
+      "rightElbow": [0.609317, -0.190388, 1.149696],
+      "rightWrist": [0.485, -0.32, 1.39],
+      "intent": "strike entry; blade points screen-right; left arm drives while right arm supports the two-hand grip"
+    },
+    "7": {
+      "leftElbow": [0.165029, -0.245233, 1.302922],
+      "leftWrist": [0.45, -0.28, 1.39],
+      "rightElbow": [0.65148, -0.253214, 1.187936],
+      "rightWrist": [0.469588, -0.402426, 1.374085],
+      "intent": "impact; same physical grip, sword axis drives into camera depth with readable foreshortening"
+    },
+    "8": {
+      "leftElbow": [0.141099, -0.151347, 1.314006],
+      "leftWrist": [0.42, -0.24, 1.38],
+      "rightElbow": [0.53206, -0.266171, 1.203377],
+      "rightWrist": [0.295266, -0.245091, 1.386364],
+      "intent": "strike exit; same grip rotates to screen-left without elbow topology flip"
+    }
+  }
+}
