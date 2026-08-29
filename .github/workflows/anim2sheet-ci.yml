@@ -42,8 +42,10 @@ jobs:
         run: |
           anim2sheet validate build/anim/run_a
           anim2sheet validate build/anim/run_b
-      - name: Verify motion semantics
+      - name: Verify full-body motion semantics
         run: python tests/anim2sheet/e2e/verify_motion_semantics.py build/anim/run_a
+      - name: Verify default rig exports
+        run: python tests/anim2sheet/e2e/verify_rig_manifest.py build/anim/run_a
       - name: Verify object A/B decoded pixel determinism
         run: python tests/anim2sheet/e2e/verify_pixels.py build/anim/run_a/frames build/anim/run_b/frames
       - name: Verify skeleton A/B decoded pixel determinism
