@@ -3,9 +3,9 @@ from __future__ import annotations
 """Fail-fast checks for the 4-frame deterministic arm architecture proof.
 
 These gates do not judge the full animation. They verify that authored arm
-joints survive evaluation exactly, F1 has sane elbow anatomy, both hands remain
-bound to one weapon axis, and the strike key poses preserve the intended
-right->depth->left weapon transition while the legs stay grounded.
+joints survive evaluation exactly, F1 has sane elbow/forearm anatomy, both
+hands remain bound to one weapon axis, and the strike key poses preserve the
+intended right->depth->left weapon transition while the legs stay grounded.
 """
 
 import json
@@ -50,19 +50,24 @@ if not all(0.10 <= value <= 0.15 for value in grip_spans):
     raise SystemExit(f"two-hand grip span is unstable: {grip_spans}")
 
 # F1 quality proof: elbows must stay on their anatomical sides and below the
-# shoulders. Hands may meet around centerline because they are holding one hilt.
+# shoulders. The left/pommel wrist must not sweep across the body centerline;
+# the second wrist may sit just left of center because both hands share one hilt.
 f1 = by_frame[1]["joints"]
 left_shoulder, left_elbow = f1["leftShoulder"], f1["leftElbow"]
 right_shoulder, right_elbow = f1["rightShoulder"], f1["rightElbow"]
+left_wrist = f1["leftWrist"]
 if not (left_elbow[0] < left_shoulder[0] and right_elbow[0] > right_shoulder[0]):
     raise SystemExit("F1 elbow topology crosses the torso instead of staying anatomical")
 if left_elbow[2] >= left_shoulder[2] or right_elbow[2] >= right_shoulder[2]:
     raise SystemExit("F1 elbows form a chicken-wing/high-guard topology")
+if float(left_wrist[0]) > 0.02:
+    raise SystemExit(f"F1 left forearm crosses too far through body centerline: wrist x={left_wrist[0]:.3f}")
 f1_angles = [
     float(by_frame[1]["leftElbowAngleDeg"]),
     float(by_frame[1]["rightElbowAngleDeg"]),
 ]
 checks["f1ElbowAngles"] = f1_angles
+checks["f1LeftWristX"] = float(left_wrist[0])
 if not all(55.0 <= value <= 125.0 for value in f1_angles):
     raise SystemExit(f"F1 elbow bend is anatomically implausible: {f1_angles}")
 if float(by_frame[1]["root"][1]) > -0.05:
@@ -92,17 +97,33 @@ if not (0.12 <= f7_len <= 0.35):
 if not (f7_len < f6_len * 0.35 and f7_len < f8_len * 0.35):
     raise SystemExit("F7 does not create a clear foreshortened impact transition")
 
-# The key strike poses must not collapse into short arm-only shapes.
+# Strike poses must not collapse into short arm-only shapes. Check both the
+# average chain extension and each individual arm so one arm cannot hide a
+# collapsed partner behind a good average.
 strike_extensions = {}
+individual_extensions = {}
 for frame in (6, 7, 8):
-    avg = (
-        float(by_frame[frame]["leftArmExtension"])
-        + float(by_frame[frame]["rightArmExtension"])
-    ) * 0.5
+    left = float(by_frame[frame]["leftArmExtension"])
+    right = float(by_frame[frame]["rightArmExtension"])
+    avg = (left + right) * 0.5
     strike_extensions[str(frame)] = avg
+    individual_extensions[str(frame)] = {"left": left, "right": right}
     if avg < 0.30:
         raise SystemExit(f"F{frame} arm posture collapsed: avg extension={avg:.3f}")
+    if min(left, right) < 0.28:
+        raise SystemExit(
+            f"F{frame} one arm collapsed despite average extension: left={left:.3f}, right={right:.3f}"
+        )
 checks["strikeArmExtension"] = strike_extensions
+checks["individualArmExtension"] = individual_extensions
+
+# F8 specifically is the topology-stability proof after depth impact; the
+# supporting/right arm must remain visibly extended rather than folding into
+# the torso as the blade exits screen-left.
+if float(by_frame[8]["rightArmExtension"]) < 0.30:
+    raise SystemExit(
+        f"F8 right arm collapses during strike exit: {by_frame[8]['rightArmExtension']:.3f}"
+    )
 
 # Legs remain the existing explicit-pole IK solution and must stay grounded.
 stance = {str(frame): float(by_frame[frame]["stanceWidth"]) for frame in (1, 6, 7, 8)}
