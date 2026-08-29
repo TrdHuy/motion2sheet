@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "gale_slash_arm_joint_keyposes_v2",
+  "name": "gale_slash_arm_joint_keyposes_v3",
   "reviewFrames": [1, 6, 7, 8],
   "coordinateSystem": {
     "space": "world",
@@ -14,32 +14,32 @@
   "poses": {
     "1": {
       "rootOverride": [0.0, -0.06],
-      "leftElbow": [-0.309371, -0.221414, 1.279372],
+      "leftElbow": [-0.278118, -0.107812, 1.18566],
       "leftWrist": [-0.01, -0.22, 1.26],
-      "rightElbow": [0.188501, -0.228053, 1.24635],
+      "rightElbow": [0.186533, -0.157995, 1.19234],
       "rightWrist": [-0.10375, -0.2325, 1.17875],
-      "intent": "low grounded ready; left forearm stays on/left of centerline, elbows remain anatomical, compact two-hand low guard"
+      "intent": "low grounded ready; elbows bend down and outward while both forearms converge naturally into the two-hand low guard"
     },
     "6": {
-      "leftElbow": [0.034748, -0.276919, 1.282938],
+      "leftElbow": [0.20083, -0.144381, 1.167913],
       "leftWrist": [0.31, -0.3, 1.4],
-      "rightElbow": [0.681264, -0.209581, 1.254472],
+      "rightElbow": [0.442033, -0.207814, 1.114601],
       "rightWrist": [0.435, -0.3, 1.4],
-      "intent": "strike entry; clean two-hand extension with both elbows separated from torso while blade enters screen-right"
+      "intent": "strike entry; elbow planes bend under the grip so both arms visibly feed force into one chest-level weapon line"
     },
     "7": {
-      "leftElbow": [0.138377, -0.254062, 1.324554],
+      "leftElbow": [0.28586, -0.108482, 1.190487],
       "leftWrist": [0.43, -0.28, 1.39],
-      "rightElbow": [0.688046, -0.272974, 1.246067],
+      "rightElbow": [0.474641, -0.234698, 1.126615],
       "rightWrist": [0.4496, -0.4024, 1.3741],
-      "intent": "impact; same physical grip drives into camera depth with both elbows readable and no solver-selected topology"
+      "intent": "impact; preserve the same grip and foreshortened weapon axis while both elbows stay below the hand line instead of flaring sideways"
     },
     "8": {
-      "leftElbow": [0.069385, -0.127433, 1.315998],
+      "leftElbow": [0.270991, -0.044486, 1.163177],
       "leftWrist": [0.34, -0.24, 1.38],
-      "rightElbow": [0.474661, -0.326542, 1.259797],
+      "rightElbow": [0.374436, -0.138648, 1.155199],
       "rightWrist": [0.215, -0.245, 1.386],
-      "intent": "strike exit; wrists shift screen-left while both arms remain extended enough to avoid a collapsed right-arm silhouette"
+      "intent": "strike exit; retain screen-left weapon exit while both arms follow through beneath the grip without outward elbow splay"
     }
   }
 }
