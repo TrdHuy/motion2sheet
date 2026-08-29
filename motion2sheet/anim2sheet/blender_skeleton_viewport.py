@@ -32,6 +32,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--output", required=True)
     parser.add_argument("--rig-output", required=True)
+    parser.add_argument(
+        "--frames",
+        default=None,
+        help="Optional comma-separated source frame numbers, e.g. 1,6,7,8",
+    )
     return parser.parse_args(argv())
 
 
@@ -152,13 +157,6 @@ def render_viewport(path: Path, *, window, area, region):
 
 
 def create_bone_labels(arm):
-    """Create temporary Blender text objects beside every rest bone.
-
-    Labels are generated directly from ``arm.data.bones`` so the diagnostic can
-    never drift from the actual rig naming. The camera views the character from
-    negative Y, therefore a +90 degree X rotation makes text face the camera
-    while keeping its local Y axis upright in world Z.
-    """
     material = bpy.data.materials.new("_Anim2SheetRigLabelMaterial")
     material.diffuse_color = (0.95, 0.95, 0.95, 1.0)
 
@@ -182,14 +180,10 @@ def create_bone_labels(arm):
         if bone.name.startswith("Left"):
             curve.align_x = "RIGHT"
             offset_x = -0.075
-        elif bone.name.startswith("Right"):
-            curve.align_x = "LEFT"
-            offset_x = 0.075
         else:
             curve.align_x = "LEFT"
             offset_x = 0.075
 
-        # Pull text slightly toward the camera so it stays readable over bones.
         obj.location = midpoint_world + Vector((offset_x, -0.08, 0.0))
         labels.append(obj)
 
@@ -250,12 +244,13 @@ def render_default_rig(arm, root, window, area, region):
     bpy.context.view_layer.update()
 
 
-def render_animation(arm, output, window, area, region):
+def render_animation(arm, output, window, area, region, frames=None):
     scene = bpy.context.scene
     arm.data.pose_position = "POSE"
     arm.data.show_names = False
     set_sword_visible(True)
-    for frame in range(scene.frame_start, scene.frame_end + 1):
+    values = frames or list(range(scene.frame_start, scene.frame_end + 1))
+    for frame in values:
         scene.frame_set(frame)
         bpy.context.view_layer.update()
         render_viewport(
@@ -272,6 +267,11 @@ def main() -> int:
     root = Path(args.rig_output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     root.mkdir(parents=True, exist_ok=True)
+    frames = None
+    if args.frames:
+        frames = [int(value.strip()) for value in args.frames.split(",") if value.strip()]
+        if not frames:
+            raise RuntimeError("--frames did not contain any frame numbers")
 
     arm = find_armature()
     prepare_armature(arm)
@@ -283,11 +283,11 @@ def main() -> int:
 
     write_rig_manifest(arm, root)
     render_default_rig(arm, root, window, area, region)
-    render_animation(arm, output, window, area, region)
+    render_animation(arm, output, window, area, region, frames=frames)
 
     print(
         f"anim2sheet: actual Blender armature render OK -> {output}; "
-        f"default rig docs -> {root}"
+        f"frames={frames or 'all'}; default rig docs -> {root}"
     )
     bpy.ops.wm.quit_blender()
     return 0
