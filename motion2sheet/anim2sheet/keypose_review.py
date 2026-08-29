@@ -51,9 +51,8 @@ def run(args) -> int:
     source["poseReferenceSource"] = str(ref_path)
     source["poseReferenceData"] = reference
     source["armJointContractSource"] = str(joint_path)
-    (output / "source.json").write_text(
-        json.dumps(source, indent=2) + "\n", encoding="utf-8"
-    )
+    source_path = output / "source.json"
+    source_path.write_text(json.dumps(source, indent=2) + "\n", encoding="utf-8")
 
     blender = blender_executable(args.blender)
     entry = Path(__file__).resolve().with_name("blender_keypose_entry.py")
@@ -66,7 +65,7 @@ def run(args) -> int:
             str(entry),
             "--",
             "--spec",
-            str((output / "source.json").resolve()),
+            str(source_path.resolve()),
             "--joint-contract",
             str(joint_path),
             "--output",
@@ -76,10 +75,25 @@ def run(args) -> int:
         timeout=240,
     )
 
+    # Never enter viewport/skeleton rendering unless the deterministic pose
+    # stage completed and produced the authoritative Blender scene. This avoids
+    # masking the real solver/import failure with a later Xvfb timeout.
+    blend_path = output / "source.blend"
+    debug_path = output / "motion_debug.json"
+    if not blend_path.is_file():
+        raise RuntimeError("key-pose Blender stage did not produce source.blend")
+    if not debug_path.is_file():
+        raise RuntimeError("key-pose Blender stage did not produce motion_debug.json")
+
+    object_frames = [output / "frames" / f"{frame:02d}.png" for frame in REVIEW_FRAMES]
+    for path in object_frames:
+        if not path.is_file():
+            raise RuntimeError(f"key-pose object output missing: {path}")
+
     skeleton_entry = Path(__file__).resolve().with_name("blender_skeleton_viewport.py")
     command = [
         blender,
-        str((output / "source.blend").resolve()),
+        str(blend_path.resolve()),
         "--python",
         str(skeleton_entry),
         "--",
@@ -96,11 +110,10 @@ def run(args) -> int:
         command = [xvfb, "-a", *command]
     subprocess.run(command, check=True, timeout=120)
 
-    object_frames = [output / "frames" / f"{frame:02d}.png" for frame in REVIEW_FRAMES]
     skeleton_frames = [output / "skeleton_frames" / f"{frame:02d}.png" for frame in REVIEW_FRAMES]
-    for path in [*object_frames, *skeleton_frames]:
+    for path in skeleton_frames:
         if not path.is_file():
-            raise RuntimeError(f"key-pose review output missing: {path}")
+            raise RuntimeError(f"key-pose skeleton output missing: {path}")
     compose_sheet(object_frames, output / "object_keyposes.png", columns=4)
     compose_sheet(skeleton_frames, output / "skeleton_keyposes.png", columns=4)
 
