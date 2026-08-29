@@ -104,7 +104,7 @@ Targets are authored in world space. This lets one foot stay planted while `Moti
 
 ## `blender_skeleton_viewport.py`
 
-Blender armature bones are viewport display elements rather than ordinary Eevee/Cycles render geometry. This script therefore opens the saved `source.blend` in a regular Blender UI process (CI runs it under Xvfb), hides the proxy character meshes, selects the real armature, sets it to `OCTAHEDRAL + In Front`, and keeps the Blender 3D Viewport as the rendering authority.
+Blender armature bones are viewport display elements rather than ordinary Eevee/Cycles render geometry. This script therefore opens the saved `source.blend` in a regular Blender UI process (CI runs it under Xvfb), hides the proxy character meshes, selects the real armature, sets it to `OCTAHEDRAL + In Front`, and keeps Blender's 3D Viewport as the rendering authority.
 
 ### Animated skeleton frames
 
@@ -121,25 +121,15 @@ So `skeleton_frames/*.png` and `skeleton_sheet.png` show the **actual evaluated 
 The script temporarily switches the armature to Blender `REST` pose and exports:
 
 - `rig_default_overview.png` — full default/rest rig without names,
-- `rig_default_labeled.png` — the same actual Blender rig with Blender bone-name overlays,
+- `rig_default_labeled.png` — same rest rig with labels generated from the actual Blender bone names,
 - `rig_bones.json` — exact names, parent hierarchy, connect/deform flags and rest head/tail coordinates,
 - `rig_bones.txt` — human-readable hierarchy.
 
-`rig_default_overview.png` uses the same Viewport Render operator as the animation.
+Both PNG diagnostics use Blender Viewport Render at the same inspection resolution.
 
-Blender Viewport Render does not reliably include editor text overlays such as bone names. Therefore the **labeled** diagnostic intentionally captures the actual Blender 3D View editor instead:
+Blender Viewport Render does not reliably include editor text overlays such as bone names under CI/Xvfb. For the labeled diagnostic, the script therefore creates temporary Blender `FONT` objects directly from `arm.data.bones`, positions each beside its corresponding rest bone, renders the viewport, and immediately deletes those temporary text objects.
 
-```python
-bpy.ops.screen.screenshot_area(
-    filepath=...,
-    check_existing=False,
-    hide_props_region=True,
-)
-```
-
-Before that screenshot, the script enables `arm.data.show_names`, keeps viewport overlays/text enabled, hides toolbar/sidebar clutter where supported, and forces a Blender redraw. The resulting labels are Blender's own bone-name overlay; they are **not** rendered or composited by Python/Pillow.
-
-These temporary rest/viewport settings are never saved back into `source.blend`.
+This is still Blender-native: labels are generated from the real armature names and rendered by Blender. Pillow/ImageDraw is not used to draw or composite bone names. The temporary label objects are never saved back into `source.blend`.
 
 ## Pose reference v2
 
@@ -147,11 +137,23 @@ Every frame authors root X/Z, torso and clavicle FK controls, wrist and ankle en
 
 ## Quality gates
 
-CI deliberately checks more than IK error: maximum IK end-effector error, anticipation crouch, attack/root drive, actual left-foot step, rear/right-foot planting through impact, strike stance width, evaluated pelvis yaw range, evaluated shoulder yaw range, elbow trajectory, impact arm extension, sword right -> depth -> left trajectory, impact foreshortening, and recovery orientation.
+The default PR CI is optimized for fast animation-quality iteration. It performs:
 
-The rig-export gate also checks that the manifest is `GameHumanoidV2`, the canonical hierarchy is intact, both default rig images exist at inspection resolution, and the labeled capture is pixel-different from the unlabeled overview.
+1. one Blender build (`run_a`),
+2. normal output validation,
+3. full-body motion semantic validation,
+4. default rig export/hierarchy validation,
+5. artifact upload for visual review.
+
+Semantic checks cover maximum IK end-effector error, anticipation crouch, attack/root drive, actual left-foot step, rear/right-foot planting through impact, strike stance width, evaluated pelvis yaw range, evaluated shoulder yaw range, elbow trajectory, impact arm extension, sword right -> depth -> left trajectory, impact foreshortening, and recovery orientation.
+
+The rig-export gate checks that the manifest is `GameHumanoidV2`, the canonical hierarchy is intact, both default rig images exist at inspection resolution, and the labeled image differs from the unlabeled overview.
 
 A low IK error only means the end effector reached its target. It does **not** mean the animation is visually good. The actual Blender skeleton artifact remains the primary manual motion-quality review surface.
+
+### Determinism / full validation
+
+A/B full-render pixel determinism and saved-`source.blend` re-render authority checks are intentionally **not** part of the default PR CI while animation quality is being iterated frequently. They can be run later as a separate manual/full-validation workflow when determinism needs to be re-certified.
 
 ## Generated run layout
 
@@ -175,5 +177,3 @@ run_a/
 ├── rig_bones.json
 `-- rig_bones.txt
 ```
-
-CI performs deterministic A/B builds, compares object and skeleton pixels, re-opens `source.blend`, re-renders the object animation, and compares decoded RGBA pixels with the original render.
