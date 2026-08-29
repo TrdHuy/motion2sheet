@@ -1,14 +1,4 @@
-"""Render the actual Blender armature for animation and default-rig inspection.
-
-Animated skeleton frames and both default-rig diagnostics use Blender Viewport
-Render (``bpy.ops.render.opengl``). Blender does not reliably include bone-name
-text overlays in Viewport Render, so the labeled diagnostic creates temporary
-Blender FONT objects from the armature's real bone names and places them beside
-the corresponding rest bones before rendering.
-
-No bones or labels are re-drawn with Pillow, ImageDraw, proxy meshes, or an
-external renderer. The temporary FONT objects are never saved to source.blend.
-"""
+"""Render the actual Blender armature for animation and default-rig inspection."""
 from __future__ import annotations
 
 import argparse
@@ -19,7 +9,6 @@ from pathlib import Path
 
 import bpy
 from mathutils import Vector
-
 
 SWORD_OBJECTS = {"SwordGrip", "SwordBlade"}
 
@@ -32,11 +21,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--output", required=True)
     parser.add_argument("--rig-output", required=True)
-    parser.add_argument(
-        "--frames",
-        default=None,
-        help="Optional comma-separated source frame numbers, e.g. 1,6,7,8",
-    )
+    parser.add_argument("--frames", default=None)
+    parser.add_argument("--skip-rig-docs", action="store_true")
     return parser.parse_args(argv())
 
 
@@ -45,7 +31,7 @@ def find_view3d_context():
         for area in window.screen.areas:
             if area.type != "VIEW_3D":
                 continue
-            region = next((value for value in area.regions if value.type == "WINDOW"), None)
+            region = next((v for v in area.regions if v.type == "WINDOW"), None)
             if region is not None:
                 return window, area, region, area.spaces.active
     raise RuntimeError("No VIEW_3D area available for Blender viewport rendering")
@@ -62,7 +48,6 @@ def prepare_armature(arm):
     for obj in bpy.context.scene.objects:
         if obj.type == "MESH" and obj.name not in SWORD_OBJECTS:
             obj.hide_set(True)
-
     bpy.ops.object.select_all(action="DESELECT")
     arm.hide_set(False)
     arm.select_set(True)
@@ -81,7 +66,6 @@ def configure_view(space):
     space.shading.show_cavity = True
     space.shading.background_type = "VIEWPORT"
     space.shading.background_color = (0.035, 0.035, 0.035)
-
     overlay = space.overlay
     overlay.show_overlays = True
     overlay.show_floor = False
@@ -108,10 +92,9 @@ def write_rig_manifest(arm, root: Path):
             "parent": bone.parent.name if bone.parent else None,
             "connected": bool(bone.use_connect),
             "deform": bool(bone.use_deform),
-            "headLocal": [round(float(value), 6) for value in bone.head_local],
-            "tailLocal": [round(float(value), 6) for value in bone.tail_local],
+            "headLocal": [round(float(v), 6) for v in bone.head_local],
+            "tailLocal": [round(float(v), 6) for v in bone.tail_local],
         })
-
     payload = {
         "armature": arm.name,
         "objectRoot": arm.parent.name if arm.parent else None,
@@ -119,9 +102,7 @@ def write_rig_manifest(arm, root: Path):
         "boneCount": len(bones),
         "bones": bones,
     }
-    (root / "rig_bones.json").write_text(
-        json.dumps(payload, indent=2) + "\n", encoding="utf-8"
-    )
+    (root / "rig_bones.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
     children = {bone.name: [] for bone in arm.data.bones}
     roots = []
@@ -133,7 +114,6 @@ def write_rig_manifest(arm, root: Path):
     for names in children.values():
         names.sort()
     roots.sort()
-
     lines = [f"Armature: {arm.name}", f"Bone count: {len(bones)}", ""]
 
     def visit(name, prefix="", last=True):
@@ -145,7 +125,6 @@ def write_rig_manifest(arm, root: Path):
 
     for index, name in enumerate(roots):
         visit(name, "", index == len(roots) - 1)
-
     (root / "rig_bones.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -159,7 +138,6 @@ def render_viewport(path: Path, *, window, area, region):
 def create_bone_labels(arm):
     material = bpy.data.materials.new("_Anim2SheetRigLabelMaterial")
     material.diffuse_color = (0.95, 0.95, 0.95, 1.0)
-
     labels = []
     for bone in arm.data.bones:
         curve = bpy.data.curves.new(f"_RigLabelCurve_{bone.name}", type="FONT")
@@ -168,25 +146,19 @@ def create_bone_labels(arm):
         curve.space_character = 1.0
         curve.align_y = "CENTER"
         curve.materials.append(material)
-
         obj = bpy.data.objects.new(f"_RigLabel_{bone.name}", curve)
         bpy.context.collection.objects.link(obj)
         obj.rotation_euler = (math.radians(90.0), 0.0, 0.0)
         obj.show_in_front = True
-
-        midpoint_local = (Vector(bone.head_local) + Vector(bone.tail_local)) * 0.5
-        midpoint_world = arm.matrix_world @ midpoint_local
-
+        midpoint = arm.matrix_world @ ((Vector(bone.head_local) + Vector(bone.tail_local)) * 0.5)
         if bone.name.startswith("Left"):
             curve.align_x = "RIGHT"
             offset_x = -0.075
         else:
             curve.align_x = "LEFT"
             offset_x = 0.075
-
-        obj.location = midpoint_world + Vector((offset_x, -0.08, 0.0))
+        obj.location = midpoint + Vector((offset_x, -0.08, 0.0))
         labels.append(obj)
-
     return labels, material
 
 
@@ -202,14 +174,9 @@ def hide_and_remove_labels(labels, material):
 
 def render_default_rig(arm, root, window, area, region):
     scene = bpy.context.scene
-    old_resolution = (
-        scene.render.resolution_x,
-        scene.render.resolution_y,
-        scene.render.resolution_percentage,
-    )
+    old_resolution = (scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage)
     old_pose_position = arm.data.pose_position
     old_frame = scene.frame_current
-
     scene.render.resolution_x = 768
     scene.render.resolution_y = 768
     scene.render.resolution_percentage = 100
@@ -217,29 +184,14 @@ def render_default_rig(arm, root, window, area, region):
     arm.data.pose_position = "REST"
     set_sword_visible(False)
     bpy.context.view_layer.update()
-
-    render_viewport(
-        root / "rig_default_overview.png",
-        window=window,
-        area=area,
-        region=region,
-    )
-
+    render_viewport(root / "rig_default_overview.png", window=window, area=area, region=region)
     labels, label_material = create_bone_labels(arm)
     bpy.context.view_layer.update()
-    render_viewport(
-        root / "rig_default_labeled.png",
-        window=window,
-        area=area,
-        region=region,
-    )
+    render_viewport(root / "rig_default_labeled.png", window=window, area=area, region=region)
     hide_and_remove_labels(labels, label_material)
-
     arm.data.pose_position = old_pose_position
     set_sword_visible(True)
-    scene.render.resolution_x = old_resolution[0]
-    scene.render.resolution_y = old_resolution[1]
-    scene.render.resolution_percentage = old_resolution[2]
+    scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage = old_resolution
     scene.frame_set(old_frame)
     bpy.context.view_layer.update()
 
@@ -251,14 +203,11 @@ def render_animation(arm, output, window, area, region, frames=None):
     set_sword_visible(True)
     values = frames or list(range(scene.frame_start, scene.frame_end + 1))
     for frame in values:
+        print(f"SKELETON_RENDER_START F{frame}", flush=True)
         scene.frame_set(frame)
         bpy.context.view_layer.update()
-        render_viewport(
-            output / f"{frame:02d}.png",
-            window=window,
-            area=area,
-            region=region,
-        )
+        render_viewport(output / f"{frame:02d}.png", window=window, area=area, region=region)
+        print(f"SKELETON_RENDER_OK F{frame}", flush=True)
 
 
 def main() -> int:
@@ -269,7 +218,7 @@ def main() -> int:
     root.mkdir(parents=True, exist_ok=True)
     frames = None
     if args.frames:
-        frames = [int(value.strip()) for value in args.frames.split(",") if value.strip()]
+        frames = [int(v.strip()) for v in args.frames.split(",") if v.strip()]
         if not frames:
             raise RuntimeError("--frames did not contain any frame numbers")
 
@@ -277,17 +226,17 @@ def main() -> int:
     prepare_armature(arm)
     window, area, region, space = find_view3d_context()
     configure_view(space)
-
     with bpy.context.temp_override(window=window, area=area, region=region):
         bpy.ops.view3d.view_camera()
 
     write_rig_manifest(arm, root)
-    render_default_rig(arm, root, window, area, region)
+    if not args.skip_rig_docs:
+        render_default_rig(arm, root, window, area, region)
     render_animation(arm, output, window, area, region, frames=frames)
-
     print(
         f"anim2sheet: actual Blender armature render OK -> {output}; "
-        f"frames={frames or 'all'}; default rig docs -> {root}"
+        f"frames={frames or 'all'}; rig_docs={'skipped' if args.skip_rig_docs else 'rendered'}",
+        flush=True,
     )
     bpy.ops.wm.quit_blender()
     return 0
