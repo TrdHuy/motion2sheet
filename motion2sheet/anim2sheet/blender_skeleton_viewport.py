@@ -1,44 +1,54 @@
+"""Render the actual Blender armature for animation and default-rig inspection.
+
+This script never redraws bones with Pillow or proxy meshes. It opens the saved
+source.blend in a real Blender UI session and captures Blender's own armature
+viewport using bpy.ops.render.opengl(view_context=True).
+"""
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 import bpy
 
 
+SWORD_OBJECTS = {"SwordGrip", "SwordBlade"}
+
+
 def argv() -> list[str]:
-    return sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
+    return sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--rig-output", required=True)
     return parser.parse_args(argv())
 
 
 def find_view3d_context():
-    wm = bpy.context.window_manager
-    for window in wm.windows:
-        screen = window.screen
-        for area in screen.areas:
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
             if area.type != "VIEW_3D":
                 continue
-            region = next((r for r in area.regions if r.type == "WINDOW"), None)
+            region = next((value for value in area.regions if value.type == "WINDOW"), None)
             if region is not None:
                 return window, area, region, area.spaces.active
-    raise RuntimeError("No VIEW_3D area available for Blender viewport skeleton rendering")
+    raise RuntimeError("No VIEW_3D area available for Blender viewport rendering")
 
 
-def prepare_scene():
-    scene = bpy.context.scene
-    armatures = [obj for obj in scene.objects if obj.type == "ARMATURE"]
+def find_armature():
+    armatures = [obj for obj in bpy.context.scene.objects if obj.type == "ARMATURE"]
     if len(armatures) != 1:
         raise RuntimeError(f"Expected exactly one armature, found {len(armatures)}")
-    arm = armatures[0]
+    return armatures[0]
 
-    for obj in scene.objects:
-        if obj.type == "MESH" and obj.name not in {"SwordGrip", "SwordBlade"}:
+
+def prepare_armature(arm):
+    for obj in bpy.context.scene.objects:
+        if obj.type == "MESH" and obj.name not in SWORD_OBJECTS:
             obj.hide_set(True)
 
     bpy.ops.object.select_all(action="DESELECT")
@@ -49,7 +59,6 @@ def prepare_scene():
     arm.data.display_type = "OCTAHEDRAL"
     arm.data.show_names = False
     arm.data.show_axes = False
-    return arm
 
 
 def configure_view(space):
@@ -70,27 +79,149 @@ def configure_view(space):
     overlay.show_relationship_lines = False
     overlay.show_extras = False
     overlay.show_outline_selected = True
+    if hasattr(overlay, "show_text"):
+        overlay.show_text = True
+
+
+def set_sword_visible(visible: bool):
+    for name in SWORD_OBJECTS:
+        obj = bpy.data.objects.get(name)
+        if obj is not None:
+            obj.hide_set(not visible)
+
+
+def write_rig_manifest(arm, root: Path):
+    bones = []
+    for bone in arm.data.bones:
+        bones.append({
+            "name": bone.name,
+            "parent": bone.parent.name if bone.parent else None,
+            "connected": bool(bone.use_connect),
+            "deform": bool(bone.use_deform),
+            "headLocal": [round(float(value), 6) for value in bone.head_local],
+            "tailLocal": [round(float(value), 6) for value in bone.tail_local],
+        })
+
+    payload = {
+        "armature": arm.name,
+        "objectRoot": arm.parent.name if arm.parent else None,
+        "displayType": arm.data.display_type,
+        "boneCount": len(bones),
+        "bones": bones,
+    }
+    (root / "rig_bones.json").write_text(
+        json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+    )
+
+    children = {bone.name: [] for bone in arm.data.bones}
+    roots = []
+    for bone in arm.data.bones:
+        if bone.parent is None:
+            roots.append(bone.name)
+        else:
+            children[bone.parent.name].append(bone.name)
+    for names in children.values():
+        names.sort()
+    roots.sort()
+
+    lines = [f"Armature: {arm.name}", f"Bone count: {len(bones)}", ""]
+
+    def visit(name, prefix="", last=True):
+        lines.append(prefix + ("`- " if last else "|- ") + name)
+        next_prefix = prefix + ("   " if last else "|  ")
+        values = children[name]
+        for index, child in enumerate(values):
+            visit(child, next_prefix, index == len(values) - 1)
+
+    for index, name in enumerate(roots):
+        visit(name, "", index == len(roots) - 1)
+
+    (root / "rig_bones.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def render_viewport(path: Path, *, window, area, region):
+    bpy.context.scene.render.filepath = str(path.resolve())
+    with bpy.context.temp_override(window=window, area=area, region=region):
+        bpy.ops.render.opengl(write_still=True, view_context=True)
+
+
+def render_default_rig(arm, root, window, area, region):
+    scene = bpy.context.scene
+    old_resolution = (
+        scene.render.resolution_x,
+        scene.render.resolution_y,
+        scene.render.resolution_percentage,
+    )
+    old_pose_position = arm.data.pose_position
+    old_frame = scene.frame_current
+
+    scene.render.resolution_x = 768
+    scene.render.resolution_y = 768
+    scene.render.resolution_percentage = 100
+    scene.frame_set(scene.frame_start)
+    arm.data.pose_position = "REST"
+    set_sword_visible(False)
+    bpy.context.view_layer.update()
+
+    arm.data.show_names = False
+    render_viewport(
+        root / "rig_default_overview.png",
+        window=window, area=area, region=region,
+    )
+
+    arm.data.show_names = True
+    render_viewport(
+        root / "rig_default_labeled.png",
+        window=window, area=area, region=region,
+    )
+
+    arm.data.show_names = False
+    arm.data.pose_position = old_pose_position
+    set_sword_visible(True)
+    scene.render.resolution_x = old_resolution[0]
+    scene.render.resolution_y = old_resolution[1]
+    scene.render.resolution_percentage = old_resolution[2]
+    scene.frame_set(old_frame)
+    bpy.context.view_layer.update()
+
+
+def render_animation(arm, output, window, area, region):
+    scene = bpy.context.scene
+    arm.data.pose_position = "POSE"
+    arm.data.show_names = False
+    set_sword_visible(True)
+    for frame in range(scene.frame_start, scene.frame_end + 1):
+        scene.frame_set(frame)
+        bpy.context.view_layer.update()
+        render_viewport(
+            output / f"{frame:02d}.png",
+            window=window, area=area, region=region,
+        )
 
 
 def main() -> int:
     args = parse_args()
     output = Path(args.output).resolve()
+    root = Path(args.rig_output).resolve()
     output.mkdir(parents=True, exist_ok=True)
+    root.mkdir(parents=True, exist_ok=True)
 
-    scene = bpy.context.scene
-    prepare_scene()
+    arm = find_armature()
+    prepare_armature(arm)
     window, area, region, space = find_view3d_context()
     configure_view(space)
 
     with bpy.context.temp_override(window=window, area=area, region=region):
         bpy.ops.view3d.view_camera()
-        for frame in range(scene.frame_start, scene.frame_end + 1):
-            scene.frame_set(frame)
-            bpy.context.view_layer.update()
-            scene.render.filepath = str(output / f"{frame:02d}.png")
-            bpy.ops.render.opengl(write_still=True, view_context=True)
 
-    print(f"anim2sheet: Blender viewport skeleton render OK -> {output}")
+    write_rig_manifest(arm, root)
+    render_default_rig(arm, root, window, area, region)
+    render_animation(arm, output, window, area, region)
+
+    print(
+        f"anim2sheet: actual Blender armature render OK -> {output}; "
+        f"default rig docs -> {root}"
+    )
     bpy.ops.wm.quit_blender()
     return 0
 
