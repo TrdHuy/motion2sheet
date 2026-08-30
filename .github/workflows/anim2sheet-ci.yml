@@ -40,11 +40,12 @@ jobs:
           version: '4.5.12'
       - name: Verify Blender
         run: blender --version
-      - name: Build F1 F6 F7 F8 deterministic arm review
+      - name: Build F1 F6 F7 F8 deterministic multi-camera review
         run: >-
           python -m motion2sheet.anim2sheet.keypose_review
           --profile profiles/anim2sheet/swordsman/gale_slash.json5
           --joint-contract profiles/anim2sheet/swordsman/gale_slash_arm_joint_keyposes.json
+          --camera-profile profiles/anim2sheet/cameras/fast_keypose_review.json
           --output build/anim/keypose_review
       - name: Verify saved-blend and proxy authority
         run: python tests/anim2sheet/e2e/verify_keypose_authority.py build/anim/keypose_review
