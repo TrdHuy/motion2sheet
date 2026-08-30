@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "gale_slash_arm_joint_keyposes_v29",
+  "name": "gale_slash_arm_joint_keyposes_v30",
   "reviewFrames": [1, 6, 7, 8],
   "coordinateSystem": {"space": "world", "x": "screen-right", "y": "depth; negative is toward camera", "z": "up", "units": "Blender meters"},
   "armControl": "deterministic_joint_fk",
@@ -17,9 +17,9 @@
     "7": {
       "rootOverride": [0.33, -0.11],
       "bodyOverride": {"pelvisYawDeg": -12, "pelvisLeanDeg": 2, "spineYawDeg": -5, "spineLeanDeg": 2, "chestYawDeg": 4, "chestLeanDeg": 0, "leftClavicleSwingDeg": 0, "rightClavicleSwingDeg": 30},
-      "leftElbow": [0.203428, -0.229259, 1.256001], "leftWrist": [0.41, -0.44, 1.31],
-      "rightElbow": [0.577897, -0.328687, 1.176442], "rightWrist": [0.4425, -0.5607, 1.31],
-      "intent": "impact round 10/10; retain the best clavicle-depth shoulder twist and shift the complete body 1 cm screen-right to balance both arm reaches without changing grip or blade projection"
+      "leftElbow": [0.170002, -0.260118, 1.316547], "leftWrist": [0.41, -0.44, 1.31],
+      "rightElbow": [0.639989, -0.348814, 1.231882], "rightWrist": [0.4425, -0.5607, 1.31],
+      "intent": "impact; rotate both elbow planes outward based on front_final projected-joint evidence while preserving shoulders, wrists, grip, segment lengths and blade projection"
     },
     "8": {
       "bodyOverride": {"pelvisYawDeg": -19.5, "pelvisLeanDeg": -2.5, "spineYawDeg": -17, "spineLeanDeg": -4.5, "chestYawDeg": -17, "chestLeanDeg": -6, "leftClavicleSwingDeg": -16, "rightClavicleSwingDeg": 8},
