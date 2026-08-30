@@ -107,6 +107,16 @@ def run(args) -> int:
     if not blend_path.is_file() or not debug_path.is_file():
         raise RuntimeError("authoring stage did not produce source.blend/motion_debug.json")
 
+    # Inspect the exact saved pose before any camera-specific work. This is a
+    # representation diagnostic only: it records leg rest axes, IK pole angle,
+    # authored guide bend direction and evaluated knee bend direction.
+    leg_debug_entry = Path(__file__).resolve().with_name("blender_leg_ik_debug.py")
+    subprocess.run([blender, "--background", str(blend_path), "--python", str(leg_debug_entry), "--",
+                    "--output", str(output), "--frames", ",".join(str(v) for v in REVIEW_FRAMES)],
+                   check=True, timeout=120)
+    if not (output / "leg_ik_debug.json").is_file():
+        raise RuntimeError("leg_ik_debug.json missing")
+
     # Reopen exactly the same saved blend and change camera only.
     camera_entry = Path(__file__).resolve().with_name("blender_camera_render.py")
     subprocess.run([blender, "--background", str(blend_path), "--python", str(camera_entry), "--",
@@ -150,7 +160,7 @@ def run(args) -> int:
         "armControl": "deterministic_joint_fk", "legControl": "ik_with_explicit_knee_poles",
         "torsoControl": "fk_with_fast_body_overrides", "weaponBinding": "two_hand_joint_grip",
         "cameraProfile": str(camera_profile_path), "reviewCameras": camera_names, "finalCamera": final_name,
-        "cameraRoot": "cameras/", "cameraDebug": "camera_debug.json",
+        "cameraRoot": "cameras/", "cameraDebug": "camera_debug.json", "legIkDebug": "leg_ik_debug.json",
         "objectPreview": "object_keyposes.png", "skeletonPreview": "skeleton_keyposes.png",
         "authorityOverlay": "object_skeleton_overlay.png", "authorityOverlayFrames": "overlay_frames/",
         "debug": "motion_debug.json", "reopenDebug": "reopen_debug.json", "sourceBlend": "source.blend",
