@@ -28,11 +28,11 @@
       "intent": "strike entry; extend both arms more decisively and begin rotating the two-hand grip into depth while the blade still reads strongly screen-right, avoiding the compact right-arm fold"
     },
     "7": {
-      "leftElbow": [0.164407, -0.212298, 1.249113],
-      "leftWrist": [0.35, -0.44, 1.31],
-      "rightElbow": [0.51696, -0.315313, 1.201806],
-      "rightWrist": [0.3825, -0.5607, 1.31],
-      "intent": "impact; drive both arms into a more committed chest-level extension and preserve a larger but still foreshortened blade projection so the hit remains visible outside the torso silhouette"
+      "leftElbow": [0.207695, -0.222197, 1.269569],
+      "leftWrist": [0.41, -0.44, 1.31],
+      "rightElbow": [0.566119, -0.308848, 1.20375],
+      "rightWrist": [0.4425, -0.5607, 1.31],
+      "intent": "impact; translate the complete deterministic two-hand grip 6 cm screen-right while preserving the existing depth-facing blade axis, then separate the elbow/forearm planes slightly so the committed hit reads more clearly outside the torso silhouette"
     },
     "8": {
       "leftElbow": [0.00615, -0.02046, 1.222393],
