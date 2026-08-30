@@ -22,7 +22,6 @@ from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Vector
 
 
-REVIEW_FRAMES = [1, 6, 7, 8]
 JOINT_BONES = {
     "leftShoulder": ("LeftUpperArm", "head"),
     "leftElbow": ("LeftUpperArm", "tail"),
@@ -98,14 +97,7 @@ def average(points: list[Vector]) -> Vector:
 
 
 def sample_proxy_segment(obj, arm, bone_name: str, depsgraph) -> dict:
-    """Estimate deformed cylinder endpoints from evaluated cap centroids.
-
-    All requested proxy objects are rigid single-bone-weighted cylinders. Their
-    original vertices are split into the two rest-space caps using the matching
-    rest bone axis. The same vertex indices are then sampled from the evaluated
-    Armature-modified mesh, making this a direct deformation check rather than a
-    render/image heuristic.
-    """
+    """Estimate deformed cylinder endpoints from evaluated cap centroids."""
     rest_bone = arm.data.bones[bone_name]
     rest_head = Vector(rest_bone.head_local)
     rest_tail = Vector(rest_bone.tail_local)
@@ -209,8 +201,15 @@ def main() -> int:
 
     output = Path(args.output).resolve()
     contract = json.loads(Path(args.contract).read_text(encoding="utf-8"))
+    review_frames = [int(value) for value in contract.get("reviewFrames", [])]
+    if not review_frames:
+        raise RuntimeError("contract reviewFrames is empty after reopen")
     pre_debug = json.loads(Path(args.pre_debug).read_text(encoding="utf-8"))
     pre_by_frame = {int(row["frame"]): row for row in pre_debug["samples"]}
+    if sorted(pre_by_frame) != review_frames:
+        raise RuntimeError(
+            f"pre-save samples do not match contract frames: {sorted(pre_by_frame)} != {review_frames}"
+        )
     arm = find_armature()
     scene = bpy.context.scene
     depsgraph = bpy.context.evaluated_depsgraph_get()
@@ -224,7 +223,7 @@ def main() -> int:
     max_proxy_angle = 0.0
     max_proxy_length = 0.0
 
-    for frame in REVIEW_FRAMES:
+    for frame in review_frames:
         scene.frame_set(frame)
         bpy.context.view_layer.update()
         post = sample_joint_positions(arm)
@@ -274,7 +273,7 @@ def main() -> int:
 
     result = {
         "mode": "saved-blend-authority-diagnostic",
-        "frames": REVIEW_FRAMES,
+        "frames": review_frames,
         "sourceBlend": bpy.data.filepath,
         "renderSize": [
             int(scene.render.resolution_x * scene.render.resolution_percentage / 100),
