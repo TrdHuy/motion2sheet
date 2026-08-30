@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-"""Fail-fast checks for the 4-frame deterministic key-pose architecture proof.
+"""Fail-fast checks for the deterministic key-pose architecture proof.
 
 These gates verify authored arm authority, two-hand weapon binding, grounded
 strike mechanics, and knee-guide bend-plane authority. Visual acceptance remains
-separate; these checks protect representation and solver invariants.
+separate; these checks protect representation and solver invariants. The review
+set may expand in batches, while the accepted F1/F6/F7/F8 strike semantics stay
+frozen as core regression checks.
 """
 
 import json
@@ -12,12 +14,16 @@ import sys
 from pathlib import Path
 
 
+CORE_FRAMES = {1, 6, 7, 8}
 root = Path(sys.argv[1])
 debug = json.loads((root / "motion_debug.json").read_text(encoding="utf-8"))
 samples = debug.get("samples", [])
 frames = [int(row["frame"]) for row in samples]
-if frames != [1, 6, 7, 8]:
-    raise SystemExit(f"expected key poses [1, 6, 7, 8], got {frames}")
+if not frames or frames != sorted(set(frames)):
+    raise SystemExit(f"review frames must be sorted/unique, got {frames}")
+missing_core = CORE_FRAMES - set(frames)
+if missing_core:
+    raise SystemExit(f"review lost frozen core frames: missing={sorted(missing_core)}")
 if debug.get("armControl") != "deterministic_joint_fk":
     raise SystemExit("fast review must use deterministic_joint_fk arms")
 
@@ -54,8 +60,6 @@ for frame_row in leg_rows:
             "alignmentCos": alignment,
             "match": match,
         }
-        # Sign is the invariant: <= 0 means the evaluated knee bent into the
-        # opposite half-plane from the authored guide. No loose visual threshold.
         if not match or alignment <= 0.0:
             raise SystemExit(
                 f"F{frame} {side} knee bends opposite authored guide: alignment={alignment:.6f}"
@@ -88,6 +92,7 @@ if max_primary_grip_error > 0.008 or max_secondary_axis_error > 0.008:
 if not all(0.10 <= value <= 0.15 for value in grip_spans):
     raise SystemExit(f"two-hand grip span is unstable: {grip_spans}")
 
+# Frozen F1 ready topology.
 f1 = by_frame[1]["joints"]
 left_shoulder, left_elbow = f1["leftShoulder"], f1["leftElbow"]
 right_shoulder, right_elbow = f1["rightShoulder"], f1["rightElbow"]
@@ -115,6 +120,7 @@ def sword_dx(frame: int) -> float:
     return float(row["swordTip"][0]) - float(row["swordGrip"][0])
 
 
+# Frozen strike trajectory F6 -> F7 -> F8.
 f6_dx, f8_dx = sword_dx(6), sword_dx(8)
 f6_len = float(by_frame[6]["projectedSwordLengthXZ"])
 f7_len = float(by_frame[7]["projectedSwordLengthXZ"])
@@ -167,7 +173,8 @@ if float(by_frame[8]["rightArmExtension"]) < 0.30:
         f"F8 right arm collapses during strike exit: {by_frame[8]['rightArmExtension']:.3f}"
     )
 
-stance = {str(frame): float(by_frame[frame]["stanceWidth"]) for frame in (1, 6, 7, 8)}
+# General selected-frame groundedness; this extends naturally as new batches are added.
+stance = {str(frame): float(by_frame[frame]["stanceWidth"]) for frame in frames}
 checks["stanceWidth"] = stance
 if min(stance.values()) < 0.25:
     raise SystemExit(f"key-pose stance collapsed: {stance}")
