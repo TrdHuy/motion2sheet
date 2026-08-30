@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "gale_slash_arm_joint_keyposes_v40_batch_f13_f16_probe",
+  "name": "gale_slash_arm_joint_keyposes_v41_batch_f13_f16_solved",
   "reviewFrames": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
   "coordinateSystem": {"space": "world", "x": "screen-right", "y": "depth; negative is toward camera", "z": "up", "units": "Blender meters"},
   "armControl": "deterministic_joint_fk",
@@ -18,9 +18,9 @@
     "10": {"leftElbow": [0.045835, -0.030397, 1.402051], "leftWrist": [0.3233, -0.1054, 1.3161], "rightElbow": [0.435436, -0.304557, 1.278224], "rightWrist": [0.217, -0.1008, 1.2505], "intent": "frozen low follow-through accepted Run 131"},
     "11": {"leftElbow": [0.078943, -0.099467, 1.484891], "leftWrist": [0.2951, -0.0876, 1.2772], "rightElbow": [0.446759, -0.259144, 1.263455], "rightWrist": [0.2217, -0.081, 1.1762], "intent": "frozen recovery turn accepted Run 131"},
     "12": {"leftElbow": [0.097766, -0.159859, 1.514789], "leftWrist": [0.2351, -0.0797, 1.2604], "rightElbow": [0.428727, -0.228485, 1.262483], "rightWrist": [0.2048, -0.0713, 1.1394], "intent": "frozen stabilization accepted Run 131"},
-    "13": {"leftElbow": [0.097766, -0.159859, 1.514789], "leftWrist": [0.1704, -0.0696, 1.2744], "rightElbow": [0.428727, -0.228485, 1.262483], "rightWrist": [0.1787, -0.0613, 1.1499], "intent": "probe only; return-to-guard wrists from reference, elbows provisional"},
-    "14": {"leftElbow": [0.097766, -0.159859, 1.514789], "leftWrist": [0.15, -0.063, 1.2944], "rightElbow": [0.428727, -0.228485, 1.262483], "rightWrist": [0.1414, -0.0561, 1.1699], "intent": "probe only; guard recovery wrists from reference, elbows provisional"},
-    "15": {"leftElbow": [0.097766, -0.159859, 1.514789], "leftWrist": [0.1413, -0.0544, 1.3113], "rightElbow": [0.428727, -0.228485, 1.262483], "rightWrist": [0.0885, -0.0506, 1.1981], "intent": "probe only; settle wrists from reference, elbows provisional"},
-    "16": {"leftElbow": [0.097766, -0.159859, 1.514789], "leftWrist": [0.1117, -0.0519, 1.2924], "rightElbow": [0.428727, -0.228485, 1.262483], "rightWrist": [0.0154, -0.0503, 1.2128], "intent": "probe only; final ready wrists from reference, elbows provisional"}
+    "13": {"leftElbow": [0.066777, -0.202593, 1.522543], "leftWrist": [0.1704, -0.0696, 1.2744], "rightElbow": [0.400988, -0.220329, 1.273584], "rightWrist": [0.1787, -0.0613, 1.1499], "intent": "return-to-guard; reference wrists retained, elbows solved on exact arm-length sphere intersection toward authored elbow guides"},
+    "14": {"leftElbow": [0.013351, -0.236226, 1.497673], "leftWrist": [0.15, -0.063, 1.2944], "rightElbow": [0.369374, -0.21179, 1.287324], "rightWrist": [0.1414, -0.0561, 1.1699], "intent": "guard recovery; reference wrists retained, elbows solved on exact arm-length sphere intersection toward authored elbow guides"},
+    "15": {"leftElbow": [-0.024297, -0.254879, 1.460919], "leftWrist": [0.1413, -0.0544, 1.3113], "rightElbow": [0.325862, -0.199897, 1.304729], "rightWrist": [0.0885, -0.0506, 1.1981], "intent": "settle; reference wrists retained, elbows solved on exact arm-length sphere intersection toward authored elbow guides"},
+    "16": {"leftElbow": [-0.048912, -0.269007, 1.423047], "leftWrist": [0.1117, -0.0519, 1.2924], "rightElbow": [0.27078, -0.169225, 1.315942], "rightWrist": [0.0154, -0.0503, 1.2128], "intent": "final ready; reference wrists retained, elbows solved on exact arm-length sphere intersection toward authored elbow guides"}
   }
 }
