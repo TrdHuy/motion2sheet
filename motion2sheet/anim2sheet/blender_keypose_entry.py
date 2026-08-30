@@ -30,6 +30,9 @@ BODY_OVERRIDE_FIELDS = {
     "pelvisYawDeg", "pelvisLeanDeg", "spineYawDeg", "spineLeanDeg",
     "chestYawDeg", "chestLeanDeg", "leftClavicleSwingDeg", "rightClavicleSwingDeg",
 }
+LEG_OVERRIDE_FIELDS = {
+    "leftAnkle", "rightAnkle", "leftKneeGuide", "rightKneeGuide",
+}
 
 
 def argv() -> list[str]:
@@ -77,18 +80,36 @@ def add_fast_review_connectors(arm) -> None:
 
 
 def configure_leg_ik_conventions(arm) -> None:
-    """Compensate Blender's mirrored right-leg pole reference deterministically.
-
-    Run #109 measured the rest local basis and evaluated bend plane. With both
-    leg IK constraints at pole_angle=0, the left guide/evaluated alignment is
-    +0.988936 while the mirrored right chain is -0.988936 on F1/F6/F7/F8.
-    The guide data is authoritative, so compensate the mirrored solver basis
-    rather than rewriting rightKneeGuide positions.
-    """
+    """Compensate Blender's mirrored right-leg pole reference deterministically."""
     left = arm.pose.bones["LeftShin"].constraints["ReferenceIK_LeftShin"]
     right = arm.pose.bones["RightShin"].constraints["ReferenceIK_RightShin"]
     left.pole_angle = 0.0
     right.pole_angle = math.pi
+
+
+def apply_leg_override(targets: dict, joint_pose: dict, frame: int) -> dict | None:
+    """Apply optional fast-review leg target edits without changing base reference."""
+    override = joint_pose.get("legOverride")
+    if override is None:
+        return None
+    if not isinstance(override, dict) or not override:
+        raise RuntimeError(f"F{frame} legOverride must be a non-empty object")
+    unknown = set(override) - LEG_OVERRIDE_FIELDS
+    if unknown:
+        raise RuntimeError(f"F{frame} legOverride fields invalid: unknown={sorted(unknown)}")
+    normalized = {}
+    for name, values in override.items():
+        if not isinstance(values, list) or len(values) != 3:
+            raise RuntimeError(f"F{frame} legOverride {name} must be a 3-number array")
+        try:
+            vector = [float(value) for value in values]
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"F{frame} legOverride {name} must be numeric") from exc
+        targets[name].location = Vector(vector)
+        targets[name].keyframe_insert(data_path="location", frame=frame)
+        normalized[name] = vector
+    bpy.context.view_layer.update()
+    return normalized
 
 
 def apply_body_override(arm, joint_pose: dict, frame: int) -> dict | None:
@@ -125,6 +146,7 @@ def body_state(arm, frame: int, joint_pose: dict, base_body: dict) -> dict:
     return {
         "frame": frame,
         "bodyOverride": joint_pose.get("bodyOverride"),
+        "legOverride": joint_pose.get("legOverride"),
         "effectiveBody": effective,
         "resultingShoulders": {
             "leftShoulder": legacy.vector(legacy.bone_head_world(arm, "LeftUpperArm")),
@@ -148,10 +170,8 @@ def sample_frame(motion_root, arm, sword, frame: int, joint_pose: dict) -> dict:
         "leftAnkle": legacy.bone_tail_world(arm, "LeftShin"),
         "rightHip": legacy.bone_head_world(arm, "RightThigh"),
         "rightKnee": legacy.bone_tail_world(arm, "RightThigh"),
-        "rightAnle": legacy.bone_tail_world(arm, "RightShin"),
+        "rightAnkle": legacy.bone_tail_world(arm, "RightShin"),
     }
-    # Preserve the historical public debug key spelling used by semantic checks.
-    joints["rightAnkle"] = joints.pop("rightAnle")
     sword_grip = sword.matrix_world @ Vector((0, 0, 0))
     sword_tip = sword.matrix_world @ Vector((0, 0, 1.20))
     expected_left = Vector(joint_pose["leftWrist"])
@@ -163,6 +183,7 @@ def sample_frame(motion_root, arm, sword, frame: int, joint_pose: dict) -> dict:
         "frame": frame,
         "armPoseMode": "deterministic_joint_fk",
         "bodyOverride": joint_pose.get("bodyOverride"),
+        "legOverride": joint_pose.get("legOverride"),
         "root": [round(motion_root.location.x, 6), round(motion_root.location.z, 6)],
         "joints": {name: legacy.vector(point) for name, point in joints.items()},
         "armJointContractError": errors,
@@ -223,6 +244,7 @@ def main() -> int:
         base = ref_by_frame[frame]
         legacy.key_pose(motion_root, arm, targets, sword, base)
         joint_pose = joint_contract["poses"][str(frame)]
+        apply_leg_override(targets, joint_pose, frame)
         if "rootOverride" in joint_pose:
             root_x, root_z = joint_pose["rootOverride"]
             motion_root.location = (float(root_x), 0.0, float(root_z))
