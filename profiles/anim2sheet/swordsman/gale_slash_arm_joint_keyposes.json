@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "gale_slash_arm_joint_keyposes_v11",
+  "name": "gale_slash_arm_joint_keyposes_v12",
   "reviewFrames": [1, 6, 7, 8],
   "coordinateSystem": {"space": "world", "x": "screen-right", "y": "depth; negative is toward camera", "z": "up", "units": "Blender meters"},
   "armControl": "deterministic_joint_fk",
@@ -10,13 +10,13 @@
     "6": {"leftElbow": [0.208297, -0.246728, 1.2548], "leftWrist": [0.43, -0.43, 1.34], "rightElbow": [0.531902, -0.255216, 1.173854], "rightWrist": [0.53, -0.505, 1.34], "intent": "strike-entry baseline"},
     "7": {
       "bodyOverride": {"pelvisYawDeg": -12, "pelvisLeanDeg": 2, "spineYawDeg": -7, "spineLeanDeg": 4, "chestYawDeg": -4, "chestLeanDeg": 4, "leftClavicleSwingDeg": -8, "rightClavicleSwingDeg": 12},
-      "leftElbow": [0.207695, -0.222197, 1.269569], "leftWrist": [0.41, -0.44, 1.31], "rightElbow": [0.566119, -0.308848, 1.20375], "rightWrist": [0.4425, -0.5607, 1.31],
-      "intent": "impact upper-body probe; keep Run 76 grip while increasing torso and impact-side shoulder participation"
+      "leftElbow": [0.229224, -0.200713, 1.302144], "leftWrist": [0.41, -0.44, 1.31], "rightElbow": [0.580801, -0.331528, 1.174527], "rightWrist": [0.4425, -0.5607, 1.31],
+      "intent": "impact; preserve Run 76 grip/projection while torso and clavicles participate in the hit; elbows recalculated exactly from hierarchy-derived shoulders"
     },
     "8": {
       "bodyOverride": {"pelvisYawDeg": -20, "pelvisLeanDeg": -3, "spineYawDeg": -20, "spineLeanDeg": -6, "chestYawDeg": -22, "chestLeanDeg": -8, "leftClavicleSwingDeg": -18, "rightClavicleSwingDeg": 20},
-      "leftElbow": [0.00615, -0.02046, 1.222393], "leftWrist": [0.10, -0.28, 1.34], "rightElbow": [0.220341, -0.12958, 1.270817], "rightWrist": [-0.025, -0.285, 1.346],
-      "intent": "strike-exit upper-body probe; rotate chest spine and right clavicle into screen-left follow-through before recalculating elbows"
+      "leftElbow": [0.04342, 0.000765, 1.250726], "leftWrist": [0.10, -0.28, 1.34], "rightElbow": [0.153411, -0.132086, 1.159487], "rightWrist": [-0.025, -0.285, 1.346],
+      "intent": "strike exit; shoulder structure follows the weapon screen-left through chest/spine/clavicle rotation; elbows recalculated exactly while wrists and two-hand grip remain deterministic"
     }
   }
 }
