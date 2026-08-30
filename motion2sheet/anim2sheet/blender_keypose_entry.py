@@ -1,9 +1,10 @@
-"""Fast Blender runner for deterministic arm architecture review.
+"""Fast Blender runner for deterministic key-pose architecture review.
 
-Only F1/F6/F7/F8 are rendered. The original 16-frame pose reference still
-provides torso FK and leg IK values, while arm joints come from the dedicated
-joint-FK key-pose contract. Fast review intentionally uses Workbench rendering:
-this phase judges pose topology and silhouette, not final lighting quality.
+Only F1/F6/F7/F8 are rendered. The original 16-frame pose reference provides
+leg IK and default torso FK values. The fast key-pose contract may override
+root/upper-body FK values before deterministic arm joints are applied.
+Workbench rendering is used because this phase judges pose topology and
+silhouette rather than final lighting quality.
 """
 from __future__ import annotations
 
@@ -31,6 +32,18 @@ from motion2sheet.anim2sheet.blender_entry_joint_fk import (
 )
 
 
+BODY_OVERRIDE_FIELDS = {
+    "pelvisYawDeg",
+    "pelvisLeanDeg",
+    "spineYawDeg",
+    "spineLeanDeg",
+    "chestYawDeg",
+    "chestLeanDeg",
+    "leftClavicleSwingDeg",
+    "rightClavicleSwingDeg",
+}
+
+
 def argv() -> list[str]:
     return sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 
@@ -53,15 +66,7 @@ def configure_fast_render(scene) -> None:
 
 
 def add_fast_review_connectors(arm) -> None:
-    """Complete the review proxy and keep every proxy in MotionRoot space.
-
-    The evaluated armature is parented to MotionRoot. Legacy proxy meshes were
-    created in world space and therefore did not inherit MotionRoot translation,
-    producing a frame-dependent offset while preserving the correct local bone
-    axis. For the authority proof, all proxy meshes share the same MotionRoot
-    parent as the armature. Clavicle/hand/foot connectors are included so CI can
-    verify the requested segments directly.
-    """
+    """Complete the review proxy and keep every proxy in MotionRoot space."""
     cloth = bpy.data.materials.get("Cloth")
     skin = bpy.data.materials.get("Skin")
     boots = bpy.data.materials.get("Boots")
@@ -98,6 +103,68 @@ def add_fast_review_connectors(arm) -> None:
             obj.parent = motion_root
 
 
+def apply_body_override(arm, joint_pose: dict, frame: int) -> dict | None:
+    """Apply absolute FK body values while keeping shoulders hierarchy-derived."""
+    override = joint_pose.get("bodyOverride")
+    if override is None:
+        return None
+    if not isinstance(override, dict):
+        raise RuntimeError(f"F{frame} bodyOverride must be an object")
+    unknown = set(override) - BODY_OVERRIDE_FIELDS
+    missing = BODY_OVERRIDE_FIELDS - set(override)
+    if unknown or missing:
+        raise RuntimeError(
+            f"F{frame} bodyOverride fields invalid: missing={sorted(missing)} "
+            f"unknown={sorted(unknown)}"
+        )
+
+    for bone_name, yaw_key, lean_key in (
+        ("Pelvis", "pelvisYawDeg", "pelvisLeanDeg"),
+        ("Spine", "spineYawDeg", "spineLeanDeg"),
+        ("Chest", "chestYawDeg", "chestLeanDeg"),
+    ):
+        legacy.set_trunk_rotation(
+            arm.pose.bones[bone_name], override[yaw_key], override[lean_key]
+        )
+        arm.pose.bones[bone_name].keyframe_insert(
+            data_path="rotation_euler", frame=frame
+        )
+
+    arm.pose.bones["LeftClavicle"].rotation_euler.z = math.radians(
+        float(override["leftClavicleSwingDeg"])
+    )
+    arm.pose.bones["RightClavicle"].rotation_euler.z = math.radians(
+        -float(override["rightClavicleSwingDeg"])
+    )
+    arm.pose.bones["LeftClavicle"].keyframe_insert(
+        data_path="rotation_euler", frame=frame
+    )
+    arm.pose.bones["RightClavicle"].keyframe_insert(
+        data_path="rotation_euler", frame=frame
+    )
+    bpy.context.view_layer.update()
+    return dict(override)
+
+
+def body_state(arm, frame: int, joint_pose: dict, base_body: dict) -> dict:
+    effective = dict(base_body)
+    if joint_pose.get("bodyOverride"):
+        effective.update(joint_pose["bodyOverride"])
+    return {
+        "frame": frame,
+        "bodyOverride": joint_pose.get("bodyOverride"),
+        "effectiveBody": effective,
+        "resultingShoulders": {
+            "leftShoulder": legacy.vector(
+                legacy.bone_head_world(arm, "LeftUpperArm")
+            ),
+            "rightShoulder": legacy.vector(
+                legacy.bone_head_world(arm, "RightUpperArm")
+            ),
+        },
+    }
+
+
 def sample_frame(motion_root, arm, sword, frame: int, joint_pose: dict) -> dict:
     bpy.context.scene.frame_set(frame)
     bpy.context.view_layer.update()
@@ -126,6 +193,7 @@ def sample_frame(motion_root, arm, sword, frame: int, joint_pose: dict) -> dict:
     return {
         "frame": frame,
         "armPoseMode": "deterministic_joint_fk",
+        "bodyOverride": joint_pose.get("bodyOverride"),
         "root": [round(motion_root.location.x, 6), round(motion_root.location.z, 6)],
         "joints": {name: legacy.vector(point) for name, point in joints.items()},
         "armJointContractError": errors,
@@ -195,8 +263,12 @@ def main() -> int:
     for name in ("LeftForeArm", "RightForeArm"):
         arm.pose.bones[name].constraints[f"ReferenceIK_{name}"].influence = 0.0
 
+    # Phase 1: author root/body/legs first for every review frame. This makes
+    # shoulder positions a deterministic hierarchy result before any explicit
+    # elbow/wrist segment is solved.
+    body_debug = []
     for frame in review_frames:
-        print(f"KEYPOSE_SOLVE_START F{frame}", flush=True)
+        print(f"KEYPOSE_BODY_START F{frame}", flush=True)
         base = ref_by_frame[frame]
         legacy.key_pose(motion_root, arm, targets, sword, base)
         joint_pose = joint_contract["poses"][str(frame)]
@@ -204,9 +276,28 @@ def main() -> int:
             root_x, root_z = joint_pose["rootOverride"]
             motion_root.location = (float(root_x), 0.0, float(root_z))
             motion_root.keyframe_insert(data_path="location", frame=frame)
+        apply_body_override(arm, joint_pose, frame)
         bpy.context.view_layer.update()
+        row = body_state(arm, frame, joint_pose, base["body"])
+        body_debug.append(row)
+        print(
+            f"KEYPOSE_BODY_OK F{frame} shoulders={row['resultingShoulders']}",
+            flush=True,
+        )
+
+    (output / "body_authoring_debug.json").write_text(
+        json.dumps({"frames": body_debug}, indent=2) + "\n", encoding="utf-8"
+    )
+
+    # Phase 2: with shoulders now hierarchy-derived and keyed, solve explicit
+    # elbow/wrist segments deterministically in world space.
+    for frame in review_frames:
+        print(f"KEYPOSE_ARM_SOLVE_START F{frame}", flush=True)
+        scene.frame_set(frame)
+        bpy.context.view_layer.update()
+        joint_pose = joint_contract["poses"][str(frame)]
         apply_arm_pose(arm, sword, joint_pose, frame=frame)
-        print(f"KEYPOSE_SOLVE_OK F{frame}", flush=True)
+        print(f"KEYPOSE_ARM_SOLVE_OK F{frame}", flush=True)
 
     for owner in [motion_root, arm, sword, *targets.values()]:
         legacy.configure_interpolation(owner, set(review_frames))
@@ -218,8 +309,9 @@ def main() -> int:
         "rig": arm.name,
         "armControl": "deterministic_joint_fk",
         "legControl": "ik_with_explicit_knee_poles",
-        "torsoControl": "fk",
+        "torsoControl": "fk_with_fast_body_overrides",
         "weaponBinding": joint_contract["weaponBinding"],
+        "bodyAuthoring": body_debug,
         "samples": [
             sample_frame(
                 motion_root,
