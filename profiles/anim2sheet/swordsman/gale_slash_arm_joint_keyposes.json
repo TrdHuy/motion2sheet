@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "gale_slash_arm_joint_keyposes_v27",
+  "name": "gale_slash_arm_joint_keyposes_v28",
   "reviewFrames": [1, 6, 7, 8],
   "coordinateSystem": {"space": "world", "x": "screen-right", "y": "depth; negative is toward camera", "z": "up", "units": "Blender meters"},
   "armControl": "deterministic_joint_fk",
@@ -9,11 +9,11 @@
     "1": {"rootOverride": [0.0, -0.06], "leftElbow": [-0.278118, -0.107812, 1.18566], "leftWrist": [-0.01, -0.22, 1.26], "rightElbow": [0.186533, -0.157995, 1.19234], "rightWrist": [-0.10375, -0.2325, 1.17875], "intent": "ready baseline"},
     "6": {"leftElbow": [0.208297, -0.246728, 1.2548], "leftWrist": [0.43, -0.43, 1.34], "rightElbow": [0.531902, -0.255216, 1.173854], "rightWrist": [0.53, -0.505, 1.34], "intent": "strike-entry baseline"},
     "7": {
-      "rootOverride": [0.32, -0.11],
+      "rootOverride": [0.33, -0.11],
       "bodyOverride": {"pelvisYawDeg": -12, "pelvisLeanDeg": 2, "spineYawDeg": -5, "spineLeanDeg": 2, "chestYawDeg": 4, "chestLeanDeg": 0, "leftClavicleSwingDeg": 0, "rightClavicleSwingDeg": 30},
-      "leftElbow": [0.203693, -0.228860, 1.256546], "leftWrist": [0.41, -0.44, 1.31],
-      "rightElbow": [0.577119, -0.327063, 1.178504], "rightWrist": [0.4425, -0.5607, 1.31],
-      "intent": "impact round 9/10; render the clavicle-depth candidate with exact arm lengths, stronger hierarchy-derived shoulder twist, unchanged grip, and unchanged 0.312m sword projection"
+      "leftElbow": [0.203428, -0.229259, 1.256001], "leftWrist": [0.41, -0.44, 1.31],
+      "rightElbow": [0.577897, -0.328687, 1.176442], "rightWrist": [0.4425, -0.5607, 1.31],
+      "intent": "impact round 10/10; retain the best clavicle-depth shoulder twist and shift the complete body 1 cm screen-right to balance both arm reaches without changing grip or blade projection"
     },
     "8": {
       "bodyOverride": {"pelvisYawDeg": -19.5, "pelvisLeanDeg": -2.5, "spineYawDeg": -17, "spineLeanDeg": -4.5, "chestYawDeg": -17, "chestLeanDeg": -6, "leftClavicleSwingDeg": -16, "rightClavicleSwingDeg": 8},
