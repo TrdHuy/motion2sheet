@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-"""Fail-fast checks for the 4-frame deterministic arm architecture proof.
+"""Fail-fast checks for the 4-frame deterministic key-pose architecture proof.
 
-These gates do not judge the full animation. They verify that authored arm
-joints survive evaluation exactly, F1 has sane elbow/forearm anatomy, both
-hands remain bound to one weapon axis, and the strike key poses preserve the
-intended right->depth->left weapon transition while the legs stay grounded.
+These gates verify authored arm authority, two-hand weapon binding, grounded
+strike mechanics, and knee-guide bend-plane authority. Visual acceptance remains
+separate; these checks protect representation and solver invariants.
 """
 
 import json
@@ -24,6 +23,48 @@ if debug.get("armControl") != "deterministic_joint_fk":
 
 by_frame = {int(row["frame"]): row for row in samples}
 checks = {}
+
+# Knee authority is directional, not an angle/visual heuristic. The evaluated
+# knee and authored guide are projected onto the plane normal to the same
+# hip->ankle chain axis. Their directions must lie in the same half-plane.
+leg_debug_path = root / "leg_ik_debug.json"
+if not leg_debug_path.is_file():
+    raise SystemExit("leg_ik_debug.json is missing")
+leg_debug = json.loads(leg_debug_path.read_text(encoding="utf-8"))
+leg_rows = leg_debug.get("framesData", [])
+if [int(row["frame"]) for row in leg_rows] != frames:
+    raise SystemExit("leg IK diagnostic frames do not match fast-review frames")
+knee_authority = {}
+for frame_row in leg_rows:
+    frame = int(frame_row["frame"])
+    knee_authority[str(frame)] = {}
+    for side in ("left", "right"):
+        row = frame_row.get("legs", {}).get(side)
+        if not row:
+            raise SystemExit(f"F{frame} {side} knee authority data is missing")
+        alignment = float(row["alignmentCos"])
+        match = bool(row["match"])
+        knee_authority[str(frame)][side] = {
+            "hip": row["hip"],
+            "knee": row["knee"],
+            "ankle": row["ankle"],
+            "kneeGuide": row["kneeGuide"],
+            "evaluatedBendDirection": row["evaluatedBendDirection"],
+            "guideBendDirection": row["guideBendDirection"],
+            "alignmentCos": alignment,
+            "match": match,
+        }
+        # Sign is the invariant: <= 0 means the evaluated knee bent into the
+        # opposite half-plane from the authored guide. No loose visual threshold.
+        if not match or alignment <= 0.0:
+            raise SystemExit(
+                f"F{frame} {side} knee bends opposite authored guide: alignment={alignment:.6f}"
+            )
+checks["kneeGuideAuthority"] = knee_authority
+checks["legIkPoleAnglesDeg"] = {
+    side: float(leg_debug["rigSetup"][side]["ik"]["poleAngleDeg"])
+    for side in ("left", "right")
+}
 
 max_joint_error = max(float(row["maxArmJointContractError"]) for row in samples)
 checks["maxArmJointContractError"] = max_joint_error
