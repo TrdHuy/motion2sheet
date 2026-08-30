@@ -11,7 +11,6 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import bpy
-from mathutils import Vector
 
 from motion2sheet.anim2sheet.blender_camera import (
     apply_camera_config,
@@ -19,7 +18,6 @@ from motion2sheet.anim2sheet.blender_camera import (
     projected_bones,
 )
 
-REVIEW_FRAMES = [1, 6, 7, 8]
 PROJECTED_POINTS = {
     "pelvis": ("Pelvis", "head"),
     "leftHip": ("LeftThigh", "head"),
@@ -62,6 +60,9 @@ def main() -> int:
     config = json.loads(Path(args.camera_config).read_text(encoding="utf-8"))
     cameras = config["cameras"]
     names = config["selectedCameras"]
+    review_frames = [int(value) for value in config.get("reviewFrames", [])]
+    if not review_frames:
+        raise RuntimeError("camera config missing reviewFrames")
     output = Path(args.output).resolve()
     scene = bpy.context.scene
     arm = find_armature()
@@ -69,6 +70,7 @@ def main() -> int:
     debug = {
         "sourceBlend": bpy.data.filepath,
         "selectedCameras": names,
+        "reviewFrames": review_frames,
         "cameras": {},
     }
     for name in names:
@@ -78,7 +80,7 @@ def main() -> int:
         frame_dir = camera_root / "frames"
         frame_dir.mkdir(parents=True, exist_ok=True)
         frames = []
-        for frame in REVIEW_FRAMES:
+        for frame in review_frames:
             scene.frame_set(frame)
             bpy.context.view_layer.update()
             scene.render.filepath = str((frame_dir / f"{frame:02d}.png").resolve())
@@ -93,7 +95,7 @@ def main() -> int:
             "frames": frames,
         }
     (output / "camera_debug.json").write_text(json.dumps(debug, indent=2) + "\n", encoding="utf-8")
-    print(f"anim2sheet camera object render OK: {names}", flush=True)
+    print(f"anim2sheet camera object render OK: frames={review_frames}; cameras={names}", flush=True)
     return 0
 
 
