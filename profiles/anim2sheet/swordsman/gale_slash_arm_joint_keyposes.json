@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "gale_slash_arm_joint_keyposes_v36_batch_f2_f5_probe",
+  "name": "gale_slash_arm_joint_keyposes_v37_batch_f2_f5_solved",
   "reviewFrames": [1, 2, 3, 4, 5, 6, 7, 8],
   "coordinateSystem": {"space": "world", "x": "screen-right", "y": "depth; negative is toward camera", "z": "up", "units": "Blender meters"},
   "armControl": "deterministic_joint_fk",
@@ -14,24 +14,24 @@
       "intent": "frozen ready stance accepted Run 121"
     },
     "2": {
-      "leftElbow": [-0.278118, -0.107812, 1.18566], "leftWrist": [0.1247, -0.072, 1.2168],
-      "rightElbow": [0.182343, -0.247401, 1.267793], "rightWrist": [0.0, -0.0789, 1.2196],
-      "intent": "probe only; reference wrists authoritative for load phase, elbows intentionally provisional until body-FK shoulder diagnostics are captured"
+      "leftElbow": [-0.101476, -0.264324, 1.259883], "leftWrist": [0.1247, -0.072, 1.2168],
+      "rightElbow": [0.222993, -0.272713, 1.271662], "rightWrist": [0.0, -0.0789, 1.2196],
+      "intent": "load; reference wrists retained, elbows solved on exact arm-length sphere intersection toward authored elbow guides"
     },
     "3": {
-      "leftElbow": [-0.278118, -0.107812, 1.18566], "leftWrist": [0.231, -0.1077, 1.2875],
-      "rightElbow": [0.182343, -0.247401, 1.267793], "rightWrist": [0.1353, -0.1183, 1.3672],
-      "intent": "probe only; reference wrists authoritative for chamber phase, elbows provisional"
+      "leftElbow": [0.007784, -0.307934, 1.278485], "leftWrist": [0.231, -0.1077, 1.2875],
+      "rightElbow": [0.388278, -0.251464, 1.276264], "rightWrist": [0.1353, -0.1183, 1.3672],
+      "intent": "chamber; reference wrists retained, elbows solved on exact arm-length sphere intersection toward authored elbow guides"
     },
     "4": {
-      "leftElbow": [-0.278118, -0.107812, 1.18566], "leftWrist": [0.24, -0.134, 1.4059],
-      "rightElbow": [0.182343, -0.247401, 1.267793], "rightWrist": [0.24, -0.1478, 1.5301],
-      "intent": "probe only; reference wrists authoritative for high wind-up phase, elbows provisional"
+      "leftElbow": [0.073659, -0.376845, 1.34796], "leftWrist": [0.24, -0.134, 1.4059],
+      "rightElbow": [0.38425, -0.220793, 1.277387], "rightWrist": [0.24, -0.1478, 1.5301],
+      "intent": "high wind-up; reference wrists retained, elbows solved on exact arm-length sphere intersection toward authored elbow guides"
     },
     "5": {
-      "leftElbow": [-0.278118, -0.107812, 1.18566], "leftWrist": [0.2378, -0.168, 1.3978],
-      "rightElbow": [0.182343, -0.247401, 1.267793], "rightWrist": [0.3259, -0.1783, 1.4859],
-      "intent": "probe only; reference wrists authoritative for release phase, elbows provisional"
+      "leftElbow": [0.008147, -0.355817, 1.353256], "leftWrist": [0.2378, -0.168, 1.3978],
+      "rightElbow": [0.473113, -0.237212, 1.231228], "rightWrist": [0.3259, -0.1783, 1.4859],
+      "intent": "release; reference wrists retained, elbows solved on exact arm-length sphere intersection toward authored elbow guides, transitioning into frozen F6"
     },
     "6": {"leftElbow": [0.208297, -0.246728, 1.2548], "leftWrist": [0.43, -0.43, 1.34], "rightElbow": [0.531902, -0.255216, 1.173854], "rightWrist": [0.53, -0.505, 1.34], "intent": "frozen strike-entry baseline"},
     "7": {
