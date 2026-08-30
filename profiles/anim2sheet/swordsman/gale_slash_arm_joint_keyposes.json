@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "gale_slash_arm_joint_keyposes_v13",
+  "name": "gale_slash_arm_joint_keyposes_v14",
   "reviewFrames": [1, 6, 7, 8],
   "coordinateSystem": {"space": "world", "x": "screen-right", "y": "depth; negative is toward camera", "z": "up", "units": "Blender meters"},
   "armControl": "deterministic_joint_fk",
@@ -10,13 +10,13 @@
     "6": {"leftElbow": [0.208297, -0.246728, 1.2548], "leftWrist": [0.43, -0.43, 1.34], "rightElbow": [0.531902, -0.255216, 1.173854], "rightWrist": [0.53, -0.505, 1.34], "intent": "strike-entry baseline"},
     "7": {
       "bodyOverride": {"pelvisYawDeg": -12, "pelvisLeanDeg": 2, "spineYawDeg": -6, "spineLeanDeg": 3, "chestYawDeg": 0, "chestLeanDeg": 3, "leftClavicleSwingDeg": -6, "rightClavicleSwingDeg": 14},
-      "leftElbow": [0.229224, -0.200713, 1.302144], "leftWrist": [0.41, -0.44, 1.31], "rightElbow": [0.580801, -0.331528, 1.174527], "rightWrist": [0.4425, -0.5607, 1.31],
-      "intent": "impact body probe; moderate torso turn with stronger impact-side clavicle while preserving Run 76 grip"
+      "leftElbow": [0.21804, -0.210461, 1.288481], "leftWrist": [0.41, -0.44, 1.31], "rightElbow": [0.576406, -0.32375, 1.183811], "rightWrist": [0.4425, -0.5607, 1.31],
+      "intent": "impact; moderate torso and impact-side clavicle participation while preserving Run 76 grip and depth-facing projection"
     },
     "8": {
       "bodyOverride": {"pelvisYawDeg": -19, "pelvisLeanDeg": -2.5, "spineYawDeg": -16, "spineLeanDeg": -4, "chestYawDeg": -15, "chestLeanDeg": -5, "leftClavicleSwingDeg": -15, "rightClavicleSwingDeg": 4},
-      "leftElbow": [0.04342, 0.000765, 1.250726], "leftWrist": [0.10, -0.28, 1.34], "rightElbow": [0.153411, -0.132086, 1.159487], "rightWrist": [-0.025, -0.285, 1.346],
-      "intent": "strike-exit body probe; retain substantial follow-through but keep right shoulder far enough from the grip for a visibly bent non-collapsed arm"
+      "leftElbow": [0.022897, -0.009117, 1.236669], "leftWrist": [0.10, -0.28, 1.34], "rightElbow": [0.187513, -0.119678, 1.213687], "rightWrist": [-0.025, -0.285, 1.346],
+      "intent": "strike exit; torso and shoulder structure follow the screen-left weapon while both arms remain visibly bent and deterministic"
     }
   }
 }
