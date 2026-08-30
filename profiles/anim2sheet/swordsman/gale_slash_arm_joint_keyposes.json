@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "gale_slash_arm_joint_keyposes_v8",
+  "name": "gale_slash_arm_joint_keyposes_v9",
   "reviewFrames": [1, 6, 7, 8],
   "coordinateSystem": {
     "space": "world",
@@ -21,18 +21,18 @@
       "intent": "low grounded ready; elbows bend down and outward while both forearms converge naturally into the two-hand low guard"
     },
     "6": {
-      "leftElbow": [0.197865, -0.242538, 1.244275],
-      "leftWrist": [0.42, -0.42, 1.34],
-      "rightElbow": [0.535607, -0.208585, 1.127361],
-      "rightWrist": [0.545, -0.42, 1.34],
-      "intent": "strike entry; shift the complete two-hand grip farther screen-right while preserving depth and bend so the entry reads as committed extension instead of a compact arm-only pose"
+      "leftElbow": [0.208297, -0.246728, 1.2548],
+      "leftWrist": [0.43, -0.43, 1.34],
+      "rightElbow": [0.531902, -0.255216, 1.173854],
+      "rightWrist": [0.53, -0.505, 1.34],
+      "intent": "strike entry; extend both arms more decisively and begin rotating the two-hand grip into depth while the blade still reads strongly screen-right, avoiding the compact right-arm fold"
     },
     "7": {
-      "leftElbow": [0.135293, -0.192703, 1.226912],
-      "leftWrist": [0.32, -0.41, 1.32],
-      "rightElbow": [0.516312, -0.315979, 1.202649],
-      "rightWrist": [0.345, -0.5325, 1.32],
-      "intent": "impact; keep both hands at chest level and rotate the grip almost straight into camera depth while retaining a small horizontal blade projection so impact stays visually readable"
+      "leftElbow": [0.164407, -0.212298, 1.249113],
+      "leftWrist": [0.35, -0.44, 1.31],
+      "rightElbow": [0.51696, -0.315313, 1.201806],
+      "rightWrist": [0.3825, -0.5607, 1.31],
+      "intent": "impact; drive both arms into a more committed chest-level extension and preserve a larger but still foreshortened blade projection so the hit remains visible outside the torso silhouette"
     },
     "8": {
       "leftElbow": [0.00615, -0.02046, 1.222393],
