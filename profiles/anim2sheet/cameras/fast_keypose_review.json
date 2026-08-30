@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "defaultReviewCameras": [
+    "front_final",
+    "side_diag"
+  ],
+  "cameras": {
+    "front_final": {
+      "role": "final",
+      "projection": "orthographic",
+      "position": [0.18, -7.5, 2.25],
+      "rotationDeg": [81.129, 0.0, 1.375],
+      "orthoScale": 3.55
+    },
+    "side_diag": {
+      "role": "diagnostic",
+      "projection": "orthographic",
+      "position": [7.5, 0.0, 2.25],
+      "rotationDeg": [81.129, 0.0, 91.375],
+      "orthoScale": 3.55
+    }
+  }
+}
