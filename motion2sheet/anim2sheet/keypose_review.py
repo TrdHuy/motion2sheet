@@ -1,4 +1,4 @@
-"""Fast F1/F6/F7/F8 review with config-driven multi-camera rendering."""
+"""Contract-driven deterministic key-pose review with multi-camera rendering."""
 from __future__ import annotations
 
 import argparse
@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw
 from .camera_profile import final_camera_name, load_camera_profile, resolve_camera_names
 from .common.output.packer import compose_sheet
 
-REVIEW_FRAMES = [1, 6, 7, 8]
+CORE_REVIEW_FRAMES = {1, 6, 7, 8}
 
 
 def blender_executable(name: str) -> str:
@@ -32,14 +32,30 @@ def load_profile(path: Path) -> tuple[dict, Path, dict]:
     return profile, ref_path.resolve(), reference
 
 
-def write_camera_overlays(output: Path, camera_debug: dict, camera_names: list[str]) -> None:
+def load_review_frames(joint_path: Path) -> list[int]:
+    contract = json.loads(joint_path.read_text(encoding="utf-8"))
+    frames = [int(value) for value in contract.get("reviewFrames", [])]
+    if not frames or frames != sorted(set(frames)):
+        raise ValueError(f"joint contract reviewFrames must be sorted/unique, got {frames}")
+    missing = CORE_REVIEW_FRAMES - set(frames)
+    if missing:
+        raise ValueError(f"joint contract must retain frozen core frames; missing={sorted(missing)}")
+    return frames
+
+
+def write_camera_overlays(
+    output: Path,
+    camera_debug: dict,
+    camera_names: list[str],
+    review_frames: list[int],
+) -> None:
     for name in camera_names:
         camera_root = output / "cameras" / name
         by_frame = {int(row["frame"]): row for row in camera_debug["cameras"][name]["frames"]}
         overlay_dir = camera_root / "overlay_frames"
         overlay_dir.mkdir(parents=True, exist_ok=True)
         overlay_paths = []
-        for frame in REVIEW_FRAMES:
+        for frame in review_frames:
             source_path = camera_root / "frames" / f"{frame:02d}.png"
             image = Image.open(source_path).convert("RGBA")
             draw = ImageDraw.Draw(image, "RGBA")
@@ -72,6 +88,7 @@ def run(args) -> int:
     if output.exists(): shutil.rmtree(output)
     output.mkdir(parents=True)
 
+    review_frames = load_review_frames(joint_path)
     camera_profile = load_camera_profile(camera_profile_path)
     camera_names = resolve_camera_names(camera_profile, args.cameras)
     final_name = final_camera_name(camera_profile, camera_names)
@@ -82,6 +99,7 @@ def run(args) -> int:
         "source": camera_profile["source"],
         "selectedCameras": camera_names,
         "finalCamera": final_name,
+        "reviewFrames": review_frames,
         "cameras": {name: camera_profile["cameras"][name] for name in camera_names},
     }
     camera_config_path = output / "camera_config.json"
@@ -90,8 +108,8 @@ def run(args) -> int:
     profile, ref_path, reference = load_profile(profile_path)
     source = dict(profile)
     source.update({
-        "generator": "fast-keypose-deterministic-joint-fk-v2-multicamera",
-        "reviewMode": "fast-keypose-review", "reviewFrames": REVIEW_FRAMES,
+        "generator": "fast-keypose-deterministic-joint-fk-v3-contract-frames",
+        "reviewMode": "fast-keypose-review", "reviewFrames": review_frames,
         "poseReferenceSource": str(ref_path), "poseReferenceData": reference,
         "armJointContractSource": str(joint_path), "cameraProfileSource": str(camera_profile_path),
     })
@@ -107,17 +125,13 @@ def run(args) -> int:
     if not blend_path.is_file() or not debug_path.is_file():
         raise RuntimeError("authoring stage did not produce source.blend/motion_debug.json")
 
-    # Inspect the exact saved pose before any camera-specific work. This is a
-    # representation diagnostic only: it records leg rest axes, IK pole angle,
-    # authored guide bend direction and evaluated knee bend direction.
     leg_debug_entry = Path(__file__).resolve().with_name("blender_leg_ik_debug.py")
     subprocess.run([blender, "--background", str(blend_path), "--python", str(leg_debug_entry), "--",
-                    "--output", str(output), "--frames", ",".join(str(v) for v in REVIEW_FRAMES)],
+                    "--output", str(output), "--frames", ",".join(str(v) for v in review_frames)],
                    check=True, timeout=120)
     if not (output / "leg_ik_debug.json").is_file():
         raise RuntimeError("leg_ik_debug.json missing")
 
-    # Reopen exactly the same saved blend and change camera only.
     camera_entry = Path(__file__).resolve().with_name("blender_camera_render.py")
     subprocess.run([blender, "--background", str(blend_path), "--python", str(camera_entry), "--",
                     "--camera-config", str(camera_config_path), "--output", str(output)],
@@ -136,27 +150,27 @@ def run(args) -> int:
     xvfb = shutil.which("xvfb-run")
     for name in camera_names:
         camera_root = output / "cameras" / name
-        object_frames = [camera_root / "frames" / f"{frame:02d}.png" for frame in REVIEW_FRAMES]
+        object_frames = [camera_root / "frames" / f"{frame:02d}.png" for frame in review_frames]
         for path in object_frames:
             if not path.is_file(): raise RuntimeError(f"camera object output missing: {path}")
         compose_sheet(object_frames, camera_root / "object_keyposes.png", columns=4)
 
         command = [blender, str(blend_path), "--python", str(skeleton_entry), "--",
                    "--output", str(camera_root / "skeleton_frames"), "--rig-output", str(output),
-                   "--frames", ",".join(str(v) for v in REVIEW_FRAMES), "--skip-rig-docs",
+                   "--frames", ",".join(str(v) for v in review_frames), "--skip-rig-docs",
                    "--camera-config", str(camera_config_path), "--camera-name", name]
         if xvfb: command = [xvfb, "-a", *command]
         subprocess.run(command, check=True, timeout=120)
-        skeleton_frames = [camera_root / "skeleton_frames" / f"{frame:02d}.png" for frame in REVIEW_FRAMES]
+        skeleton_frames = [camera_root / "skeleton_frames" / f"{frame:02d}.png" for frame in review_frames]
         for path in skeleton_frames:
             if not path.is_file(): raise RuntimeError(f"camera skeleton output missing: {path}")
         compose_sheet(skeleton_frames, camera_root / "skeleton_keyposes.png", columns=4)
 
-    write_camera_overlays(output, camera_debug, camera_names)
+    write_camera_overlays(output, camera_debug, camera_names, review_frames)
     copy_final_aliases(output, final_name)
 
     metadata = {
-        "tool": "anim2sheet", "mode": "fast-keypose-review", "reviewFrames": REVIEW_FRAMES,
+        "tool": "anim2sheet", "mode": "fast-keypose-review", "reviewFrames": review_frames,
         "armControl": "deterministic_joint_fk", "legControl": "ik_with_explicit_knee_poles",
         "torsoControl": "fk_with_fast_body_overrides", "weaponBinding": "two_hand_joint_grip",
         "cameraProfile": str(camera_profile_path), "reviewCameras": camera_names, "finalCamera": final_name,
@@ -166,7 +180,10 @@ def run(args) -> int:
         "debug": "motion_debug.json", "reopenDebug": "reopen_debug.json", "sourceBlend": "source.blend",
     }
     (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-    print(f"anim2sheet multi-camera fast key-pose review OK -> {output}; cameras={camera_names}", flush=True)
+    print(
+        f"anim2sheet multi-camera fast key-pose review OK -> {output}; "
+        f"frames={review_frames}; cameras={camera_names}", flush=True
+    )
     return 0
 
 
