@@ -76,7 +76,6 @@ def rest_bone_debug(arm, name: str) -> dict:
     basis = bone.matrix_local.to_3x3()
     return {
         "name": name,
-        "rollDeg": round(math.degrees(float(bone.roll)), 6),
         "headLocal": vec(Vector(bone.head_local)),
         "tailLocal": vec(Vector(bone.tail_local)),
         "xAxisArmature": vec(Vector(basis.col[0]).normalized()),
