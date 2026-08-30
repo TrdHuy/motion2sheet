@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "gale_slash_arm_joint_keyposes_v26",
+  "name": "gale_slash_arm_joint_keyposes_v27",
   "reviewFrames": [1, 6, 7, 8],
   "coordinateSystem": {"space": "world", "x": "screen-right", "y": "depth; negative is toward camera", "z": "up", "units": "Blender meters"},
   "armControl": "deterministic_joint_fk",
@@ -11,9 +11,9 @@
     "7": {
       "rootOverride": [0.32, -0.11],
       "bodyOverride": {"pelvisYawDeg": -12, "pelvisLeanDeg": 2, "spineYawDeg": -5, "spineLeanDeg": 2, "chestYawDeg": 4, "chestLeanDeg": 0, "leftClavicleSwingDeg": 0, "rightClavicleSwingDeg": 30},
-      "leftElbow": [0.205832, -0.225694, 1.261127], "leftWrist": [0.41, -0.44, 1.31],
-      "rightElbow": [0.574593, -0.322365, 1.184509], "rightWrist": [0.4425, -0.5607, 1.31],
-      "intent": "impact round 8/10 probe; increase clavicle-driven shoulder depth separation while holding Run 88 root/grip; elbows intentionally remain prior values so body debug can measure the new hierarchy-derived shoulders"
+      "leftElbow": [0.203693, -0.228860, 1.256546], "leftWrist": [0.41, -0.44, 1.31],
+      "rightElbow": [0.577119, -0.327063, 1.178504], "rightWrist": [0.4425, -0.5607, 1.31],
+      "intent": "impact round 9/10; render the clavicle-depth candidate with exact arm lengths, stronger hierarchy-derived shoulder twist, unchanged grip, and unchanged 0.312m sword projection"
     },
     "8": {
       "bodyOverride": {"pelvisYawDeg": -19.5, "pelvisLeanDeg": -2.5, "spineYawDeg": -17, "spineLeanDeg": -4.5, "chestYawDeg": -17, "chestLeanDeg": -6, "leftClavicleSwingDeg": -16, "rightClavicleSwingDeg": 8},
