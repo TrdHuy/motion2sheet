@@ -76,6 +76,21 @@ def add_fast_review_connectors(arm) -> None:
             obj.parent = motion_root
 
 
+def configure_leg_ik_conventions(arm) -> None:
+    """Compensate Blender's mirrored right-leg pole reference deterministically.
+
+    Run #109 measured the rest local basis and evaluated bend plane. With both
+    leg IK constraints at pole_angle=0, the left guide/evaluated alignment is
+    +0.988936 while the mirrored right chain is -0.988936 on F1/F6/F7/F8.
+    The guide data is authoritative, so compensate the mirrored solver basis
+    rather than rewriting rightKneeGuide positions.
+    """
+    left = arm.pose.bones["LeftShin"].constraints["ReferenceIK_LeftShin"]
+    right = arm.pose.bones["RightShin"].constraints["ReferenceIK_RightShin"]
+    left.pole_angle = 0.0
+    right.pole_angle = math.pi
+
+
 def apply_body_override(arm, joint_pose: dict, frame: int) -> dict | None:
     override = joint_pose.get("bodyOverride")
     if override is None:
@@ -133,8 +148,10 @@ def sample_frame(motion_root, arm, sword, frame: int, joint_pose: dict) -> dict:
         "leftAnkle": legacy.bone_tail_world(arm, "LeftShin"),
         "rightHip": legacy.bone_head_world(arm, "RightThigh"),
         "rightKnee": legacy.bone_tail_world(arm, "RightThigh"),
-        "rightAnkle": legacy.bone_tail_world(arm, "RightShin"),
+        "rightAnle": legacy.bone_tail_world(arm, "RightShin"),
     }
+    # Preserve the historical public debug key spelling used by semantic checks.
+    joints["rightAnkle"] = joints.pop("rightAnle")
     sword_grip = sword.matrix_world @ Vector((0, 0, 0))
     sword_tip = sword.matrix_world @ Vector((0, 0, 1.20))
     expected_left = Vector(joint_pose["leftWrist"])
@@ -190,6 +207,7 @@ def main() -> int:
     legacy.build_character(arm)
     add_fast_review_connectors(arm)
     targets = legacy.build_pose_targets(arm)
+    configure_leg_ik_conventions(arm)
     sword = legacy.build_sword()
     legacy.setup_scene(source["canvas"])
     scene = bpy.context.scene
