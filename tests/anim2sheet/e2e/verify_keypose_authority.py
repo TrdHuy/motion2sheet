@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Fail-fast saved-blend and proxy authority checks for the 4 key poses."""
+"""Fail-fast saved-blend and proxy authority checks for selected key poses."""
 
 import json
 import sys
@@ -13,8 +13,15 @@ if not path.is_file():
     raise SystemExit("reopen_debug.json is missing")
 
 data = json.loads(path.read_text(encoding="utf-8"))
-if data.get("frames") != [1, 6, 7, 8]:
-    raise SystemExit(f"unexpected reopen diagnostic frames: {data.get('frames')}")
+metadata = json.loads((root / "metadata.json").read_text(encoding="utf-8"))
+frames = [int(value) for value in metadata.get("reviewFrames", [])]
+if not frames:
+    raise SystemExit("metadata reviewFrames is empty")
+if [int(value) for value in data.get("frames", [])] != frames:
+    raise SystemExit(
+        f"reopen diagnostic frames do not match metadata: "
+        f"reopen={data.get('frames')} metadata={frames}"
+    )
 
 summary = data["summary"]
 
@@ -73,7 +80,7 @@ if max_length > 0.006:
 
 for required in [
     root / "object_skeleton_overlay.png",
-    *(root / "overlay_frames" / f"{frame:02d}.png" for frame in (1, 6, 7, 8)),
+    *(root / "overlay_frames" / f"{frame:02d}.png" for frame in frames),
 ]:
     if not required.is_file():
         raise SystemExit(f"authority overlay missing: {required}")
@@ -81,6 +88,7 @@ for required in [
 result = {
     "status": "pass",
     "mode": "keypose-authority",
+    "frames": frames,
     "jointPersistence": {
         "maxPrePostJointError": summary["maxPrePostJointError"],
         "maxAuthoredPostReopenJointError": summary["maxAuthoredPostReopenJointError"],
