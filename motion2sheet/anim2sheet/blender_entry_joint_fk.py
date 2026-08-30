@@ -27,6 +27,7 @@ ARM_SEGMENTS = {
     "left": ("LeftUpperArm", "LeftForeArm", "LeftHand"),
     "right": ("RightUpperArm", "RightForeArm", "RightHand"),
 }
+CORE_REVIEW_FRAMES = {1, 6, 7, 8}
 
 
 def load_joint_contract(path: str | Path) -> dict:
@@ -34,8 +35,18 @@ def load_joint_contract(path: str | Path) -> dict:
     if data.get("armControl") != "deterministic_joint_fk":
         raise RuntimeError("joint contract must use deterministic_joint_fk")
     review_frames = [int(v) for v in data.get("reviewFrames", [])]
-    if review_frames != [1, 6, 7, 8]:
-        raise RuntimeError(f"expected reviewFrames [1, 6, 7, 8], got {review_frames}")
+    if not review_frames:
+        raise RuntimeError("joint contract reviewFrames must not be empty")
+    if review_frames != sorted(set(review_frames)):
+        raise RuntimeError(f"reviewFrames must be sorted and unique, got {review_frames}")
+    if any(frame < 1 or frame > 16 for frame in review_frames):
+        raise RuntimeError(f"reviewFrames must stay inside F1-F16, got {review_frames}")
+    missing_core = CORE_REVIEW_FRAMES - set(review_frames)
+    if missing_core:
+        raise RuntimeError(
+            f"reviewFrames must retain frozen core frames {sorted(CORE_REVIEW_FRAMES)}; "
+            f"missing={sorted(missing_core)}"
+        )
     poses = data.get("poses", {})
     for frame in review_frames:
         row = poses.get(str(frame))
