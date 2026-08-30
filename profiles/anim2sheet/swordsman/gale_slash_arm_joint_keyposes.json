@@ -28,11 +28,11 @@
       "intent": "strike entry; extend both arms more decisively and begin rotating the two-hand grip into depth while the blade still reads strongly screen-right, avoiding the compact right-arm fold"
     },
     "7": {
-      "leftElbow": [0.244894, -0.197136, 1.248702],
+      "leftElbow": [0.207695, -0.222197, 1.269569],
       "leftWrist": [0.41, -0.44, 1.31],
-      "rightElbow": [0.622271, -0.325151, 1.263108],
+      "rightElbow": [0.566119, -0.308848, 1.20375],
       "rightWrist": [0.4425, -0.5607, 1.31],
-      "intent": "impact; keep the Run 74 grip and blade projection unchanged while opening the two elbow planes laterally and in depth so both forearms converge cleanly into the grip instead of visually stacking across the chest"
+      "intent": "impact; translate the complete deterministic two-hand grip 6 cm screen-right while preserving the existing depth-facing blade axis, then separate the elbow/forearm planes slightly so the committed hit reads more clearly outside the torso silhouette"
     },
     "8": {
       "leftElbow": [0.00615, -0.02046, 1.222393],
