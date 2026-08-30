@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "gale_slash_arm_joint_keyposes_v30",
+  "name": "gale_slash_arm_joint_keyposes_v31",
   "reviewFrames": [1, 6, 7, 8],
   "coordinateSystem": {"space": "world", "x": "screen-right", "y": "depth; negative is toward camera", "z": "up", "units": "Blender meters"},
   "armControl": "deterministic_joint_fk",
@@ -18,8 +18,8 @@
       "rootOverride": [0.33, -0.11],
       "bodyOverride": {"pelvisYawDeg": -12, "pelvisLeanDeg": 2, "spineYawDeg": -5, "spineLeanDeg": 2, "chestYawDeg": 4, "chestLeanDeg": 0, "leftClavicleSwingDeg": 0, "rightClavicleSwingDeg": 30},
       "leftElbow": [0.170002, -0.260118, 1.316547], "leftWrist": [0.41, -0.44, 1.31],
-      "rightElbow": [0.639989, -0.348814, 1.231882], "rightWrist": [0.4425, -0.5607, 1.31],
-      "intent": "impact; rotate both elbow planes outward based on front_final projected-joint evidence while preserving shoulders, wrists, grip, segment lengths and blade projection"
+      "rightElbow": [0.639984, -0.357617, 1.243575], "rightWrist": [0.436368, -0.5607, 1.329],
+      "intent": "impact; front_final evidence: outward elbow planes plus a level projected grip axis; preserve ~0.125m hand span and 0.312m XZ blade projection"
     },
     "8": {
       "bodyOverride": {"pelvisYawDeg": -19.5, "pelvisLeanDeg": -2.5, "spineYawDeg": -17, "spineLeanDeg": -4.5, "chestYawDeg": -17, "chestLeanDeg": -6, "leftClavicleSwingDeg": -16, "rightClavicleSwingDeg": 8},
