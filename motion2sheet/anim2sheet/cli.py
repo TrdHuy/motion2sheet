@@ -27,11 +27,9 @@ def validate(args) -> int:
 
 
 def _execution_args(parser: argparse.ArgumentParser, *, frames: bool) -> None:
-    parser.add_argument("--animation", default=None, help="Optional action-name assertion; implementation is resolved from rig profile")
+    parser.add_argument("--animation", default=None, help="Optional action-name assertion; implementation is resolved from Motion target rig")
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--rig-profile", default=None, help="Optional override for animation profile rigProfile")
-    parser.add_argument("--character-profile", default=None, help="Optional override for animation profile characterProfile")
-    parser.add_argument("--joint-contract", default=None, help="Optional override for animation profile jointContract")
+    parser.add_argument("--character-profile", default=None, help="Optional compatible Character override for animation defaultCharacterProfile")
     parser.add_argument("--camera-profile", required=True)
     if frames:
         parser.add_argument("--frames", default=None)

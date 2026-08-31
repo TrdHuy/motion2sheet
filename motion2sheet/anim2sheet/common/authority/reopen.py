@@ -16,7 +16,7 @@ JOINT_BONES = {
     "leftWrist": ("LeftForeArm", "tail"), "rightShoulder": ("RightUpperArm", "head"),
     "rightElbow": ("RightUpperArm", "tail"), "rightWrist": ("RightForeArm", "tail"),
 }
-AUTHORED_JOINTS = {"leftElbow": "leftElbow", "leftWrist": "leftWrist", "rightElbow": "rightElbow", "rightWrist": "rightWrist"}
+AUTHORED_JOINTS = {"leftElbow", "leftWrist", "rightElbow", "rightWrist"}
 PROXY_SEGMENTS = {
     "Body_LeftUpperArm": "LeftUpperArm", "Body_LeftForeArm": "LeftForeArm",
     "Body_RightUpperArm": "RightUpperArm", "Body_RightForeArm": "RightForeArm",
@@ -26,7 +26,6 @@ PROXY_SEGMENTS = {
 OVERLAY_BONES = ["Spine", "Chest", "Neck", "Head", "LeftClavicle", "LeftUpperArm", "LeftForeArm", "LeftHand",
                  "RightClavicle", "RightUpperArm", "RightForeArm", "RightHand", "LeftThigh", "LeftShin", "LeftFoot",
                  "RightThigh", "RightShin", "RightFoot"]
-
 
 def argv(): return sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 def vec(values): return [round(float(v), 6) for v in values]
@@ -43,7 +42,6 @@ def average(points):
     total = Vector((0.0, 0.0, 0.0))
     for point in points: total += point
     return total / len(points)
-
 def sample_proxy_segment(obj, arm, bone_name, depsgraph):
     rest = arm.data.bones[bone_name]; head = Vector(rest.head_local); tail = Vector(rest.tail_local); axis = tail - head
     if axis.length < 1e-8: raise RuntimeError(f"{bone_name} has zero rest length")
@@ -77,19 +75,19 @@ def projected_bones(scene,arm):
              "headPx":project_pixel(scene,scene.camera,bone_point_world(arm,name,"head")),"tailPx":project_pixel(scene,scene.camera,bone_point_world(arm,name,"tail"))}
             for name in OVERLAY_BONES if name in arm.pose.bones]
 def main():
-    p=argparse.ArgumentParser(add_help=False); p.add_argument("--output",required=True); p.add_argument("--contract",required=True); p.add_argument("--pre-debug",required=True); p.add_argument("--frames",required=True); args,_=p.parse_known_args(argv())
-    output=Path(args.output).resolve(); contract=json.loads(Path(args.contract).read_text(encoding="utf-8")); frames=[int(v) for v in args.frames.split(",") if v.strip()]
-    contract_frames=[int(v) for v in contract.get("reviewFrames",[])]; invalid=[f for f in frames if f not in contract_frames]
-    if not frames or invalid: raise RuntimeError(f"invalid authority execution frames {frames}; outside contract={invalid}")
+    p=argparse.ArgumentParser(add_help=False); p.add_argument("--output",required=True); p.add_argument("--motion",required=True); p.add_argument("--pre-debug",required=True); p.add_argument("--frames",required=True); args,_=p.parse_known_args(argv())
+    output=Path(args.output).resolve(); motion=json.loads(Path(args.motion).read_text(encoding="utf-8")); frames=[int(v) for v in args.frames.split(",") if v.strip()]
+    motion_by_frame={int(row["frame"]):row for row in motion.get("frames",[])}; invalid=[f for f in frames if f not in motion_by_frame]
+    if not frames or invalid: raise RuntimeError(f"invalid authority execution frames {frames}; outside motion={invalid}")
     pre_debug=json.loads(Path(args.pre_debug).read_text(encoding="utf-8")); pre_by_frame={int(row["frame"]):row for row in pre_debug["samples"]}
     if sorted(pre_by_frame)!=frames: raise RuntimeError(f"pre-save samples do not match execution frames: {sorted(pre_by_frame)} != {frames}")
     arm=find_armature(); scene=bpy.context.scene; depsgraph=bpy.context.evaluated_depsgraph_get(); rows=[]; max_pre=max_auth_pre=max_auth_post=max_ep=max_center=max_angle=max_len=0.0
     for frame in frames:
-        scene.frame_set(frame); bpy.context.view_layer.update(); post=sample_joint_positions(arm); pre=pre_by_frame[frame]["joints"]; authored=contract["poses"][str(frame)]; joints={}
+        scene.frame_set(frame); bpy.context.view_layer.update(); post=sample_joint_positions(arm); pre=pre_by_frame[frame]["joints"]; authored=motion_by_frame[frame]["joints"]; joints={}
         for name in JOINT_BONES:
-            row={"preSave":pre[name],"postReopen":post[name],"prePostError":distance(pre[name],post[name])}; max_pre=max(max_pre,row["prePostError"]); key=AUTHORED_JOINTS.get(name)
-            if key:
-                row["authored"]=authored[key]; row["authoredPreError"]=distance(authored[key],pre[name]); row["authoredPostError"]=distance(authored[key],post[name]); max_auth_pre=max(max_auth_pre,row["authoredPreError"]); max_auth_post=max(max_auth_post,row["authoredPostError"])
+            row={"preSave":pre[name],"postReopen":post[name],"prePostError":distance(pre[name],post[name])}; max_pre=max(max_pre,row["prePostError"])
+            if name in AUTHORED_JOINTS:
+                row["authored"]=authored[name]; row["authoredPreError"]=distance(authored[name],pre[name]); row["authoredPostError"]=distance(authored[name],post[name]); max_auth_pre=max(max_auth_pre,row["authoredPreError"]); max_auth_post=max(max_auth_post,row["authoredPostError"])
             joints[name]=row
         proxies={}
         for object_name,bone_name in PROXY_SEGMENTS.items():

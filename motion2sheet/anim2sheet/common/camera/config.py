@@ -1,10 +1,14 @@
-"""Config-driven camera profile loading and validation for anim2sheet review."""
+"""Schema-v2 camera profile loading and validation for anim2sheet review."""
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
+CAMERA_SCHEMA = "anim2sheet.camera"
+CAMERA_VERSION = 2
+PROFILE_ID = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
 SUPPORTED_PROJECTIONS = {"orthographic", "perspective"}
 SUPPORTED_ROLES = {"final", "diagnostic"}
 
@@ -24,33 +28,29 @@ def _vec3(value: Any, field: str) -> list[float]:
 def validate_camera_profile(data: Any) -> dict:
     if not isinstance(data, dict):
         raise ValueError("camera profile root must be an object")
-    version = data.get("version")
-    if not isinstance(version, int) or version < 1:
-        raise ValueError("camera profile version must be an integer >= 1")
+    if data.get("schema") != CAMERA_SCHEMA:
+        raise ValueError(f"camera profile schema must be {CAMERA_SCHEMA!r}")
+    if data.get("version") != CAMERA_VERSION:
+        raise ValueError(f"camera profile version must be {CAMERA_VERSION}")
+    profile_id = data.get("id")
+    if not isinstance(profile_id, str) or not PROFILE_ID.fullmatch(profile_id):
+        raise ValueError(f"camera profile id must match {PROFILE_ID.pattern}")
 
     cameras = data.get("cameras")
     if not isinstance(cameras, dict) or not cameras:
         raise ValueError("camera profile cameras must be a non-empty object")
-
     normalized: dict[str, dict] = {}
     for name, raw in cameras.items():
         if not isinstance(name, str) or not name.strip():
             raise ValueError("camera profile keys must be non-empty strings")
         if not isinstance(raw, dict):
             raise ValueError(f"camera {name} must be an object")
-
         role = raw.get("role")
         if role not in SUPPORTED_ROLES:
-            raise ValueError(
-                f"camera {name} role must be one of {sorted(SUPPORTED_ROLES)}, got {role!r}"
-            )
+            raise ValueError(f"camera {name} role must be one of {sorted(SUPPORTED_ROLES)}, got {role!r}")
         projection = raw.get("projection")
         if projection not in SUPPORTED_PROJECTIONS:
-            raise ValueError(
-                f"camera {name} projection must be one of "
-                f"{sorted(SUPPORTED_PROJECTIONS)}, got {projection!r}"
-            )
-
+            raise ValueError(f"camera {name} projection must be one of {sorted(SUPPORTED_PROJECTIONS)}, got {projection!r}")
         row = {
             "name": name,
             "role": role,
@@ -80,9 +80,10 @@ def validate_camera_profile(data: Any) -> dict:
     unknown = [name for name in defaults if name not in normalized]
     if unknown:
         raise ValueError(f"defaultReviewCameras contains unknown cameras: {unknown}")
-
     return {
-        "version": version,
+        "schema": CAMERA_SCHEMA,
+        "version": CAMERA_VERSION,
+        "id": profile_id,
         "defaultReviewCameras": list(defaults),
         "cameras": normalized,
     }

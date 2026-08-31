@@ -1,50 +1,40 @@
-# anim2sheet
+# Anim2Sheet — Profile Contract v2
 
-`anim2sheet` is the Blender-native character-animation pipeline in `motion2sheet`. The current architecture is **profile-driven**: an animation clip is data, while reusable authoring behavior is selected by the rig capability.
+Anim2Sheet is a Blender-native, profile-driven character animation renderer. Profile Contract v2 removes the old split motion authority and makes `motion.json` the canonical target for authored data and future FBX/BVH/Mixamo importers.
 
-The core flow is:
+## Runtime dependency graph
 
 ```text
-Rig Profile
-    +
-Character / Equipment Profile
-    +
-Animation Profile / Pose / Joint Contract
-        ↓
-Generic profile resolver
-        ↓
-Authoring capability registry
-        ↓
-Generic Humanoid Author
-        ↓
-source.blend
-        ↓
-authoritative PNG frames
-        ↓
-sheets / overlays / optional GIF preview
+                       animation.json5
+                       /             \
+                      v               v
+                motion.json      character profile
+                     |                |
+                     | rigProfile     | rigProfile
+                     +-------+  +-----+
+                             v  v
+                         rig profile
+
+camera profile -----------------------> render
 ```
 
-`gale_slash` and `sword_idle` are the canonical proof: both use the same `GameHumanoidV2` rig profile, the same `swordsman_v1` character/equipment profile, and the same `humanoid_v2` generic Blender author. Adding a clip for this contract requires only profile data; canonical CI discovers valid clip directories automatically.
+The runtime resolves both Motion and Character to a Rig and rejects the request unless they identify the same Rig Contract. Camera remains independent.
 
-## Architecture
+## Ownership
+
+| Domain | Owns | Does not own |
+| --- | --- | --- |
+| Rig | skeleton identity, rest pose, hierarchy/topology, semantic targets, axes, constraints, IK/FK solver conventions, capability motion-channel contract | character appearance, equipment, frames, camera, render/package settings |
+| Character | identity, `rigProfile`, body/model/proxy, materials, equipment, attachments/binding, character review visualization | animation motion |
+| Motion | identity, target `rigProfile`, FPS, frame count, coordinate/space, one final frame state, optional non-authoritative provenance | character appearance, camera, render settings, override layers |
+| Animation | action semantics, `motionProfile`, default Character, loop/playback, phases, render/package composition | Rig link, FPS, frame count, duplicate skeletal motion |
+| Camera | camera identity, definitions, projection, transforms, scale/lens, roles/default review cameras | Motion/Character/Rig ownership |
+
+Stable machine identity uses `schema`, `version`, and `id` on Rig, Character, Motion, Animation, and Camera profiles. `action` is playback semantics, not profile identity.
+
+## Canonical file tree
 
 ```text
-motion2sheet/anim2sheet/
-├── __init__.py
-├── cli.py
-├── registry.py
-├── blender_entry.py
-└── common/
-    ├── profile.py
-    ├── equipment.py
-    ├── authoring/
-    │   └── humanoid.py
-    ├── camera/
-    ├── output/
-    ├── rig/
-    ├── authority/
-    └── review/
-
 profiles/anim2sheet/
 ├── rigs/
 │   └── game_humanoid_v2.json5
@@ -55,124 +45,51 @@ profiles/anim2sheet/
 └── animations/
     ├── gale_slash/
     │   ├── animation.json5
-    │   ├── pose_reference.json
-    │   └── joint_contract.json
+    │   └── motion.json
     └── sword_idle/
         ├── animation.json5
-        ├── pose_reference.json
-        └── joint_contract.json
+        └── motion.json
 ```
 
-There is intentionally no Python package per clip. Clip names are not implementation identities.
+There is no canonical dual runtime format. Each clip has one Motion file and one Animation composition manifest.
 
-## Responsibility boundaries
+## Motion v2: one effective state per frame
 
-### Package root
+`motion.json` is the single authoritative frame-motion source. Each frame contains one explicit final state:
 
-- `cli.py` exposes `anim2sheet build`, `anim2sheet review`, and `anim2sheet validate`.
-- `registry.py` resolves reusable **authoring capabilities**, currently `humanoid_v2`; it does not register `gale_slash`, `sword_idle`, or other clips.
-- `blender_entry.py` reads the resolved source spec, resolves its `authoringCapability`, loads the corresponding generic Blender author, and executes it.
-
-### `common/profile.py`
-
-The generic resolver loads and validates:
-
-- the animation profile,
-- linked rig profile,
-- linked character/equipment profile,
-- pose reference,
-- joint contract,
-- camera profile,
-- requested execution frame/camera subsets.
-
-An animation profile owns links to its rig, character and joint contract. CLI `--rig-profile`, `--character-profile`, and `--joint-contract` are optional overrides; `--animation` is only an optional assertion that the requested name matches the profile `action`.
-
-### Rig profile
-
-`profiles/anim2sheet/rigs/game_humanoid_v2.json5` owns fixed rig knowledge rather than a clip:
-
-- bone rest pose and parent/topology assumptions,
-- semantic bone/target mapping,
-- coordinate and local-axis conventions,
-- torso FK channels,
-- deterministic arm joint-FK convention,
-- leg IK chain convention,
-- knee-guide targets,
-- mirrored pole angles (`left=0°`, `right=180°`),
-- IK constraint names and chain counts.
-
-This information is shared by every clip authored for the same rig.
-
-### Character / equipment profile
-
-`profiles/anim2sheet/characters/swordsman_v1.json5` owns the reusable swordsman construction:
-
-- proxy body materials and dimensions,
-- review connectors,
-- sword controller, grip and blade dimensions,
-- sword materials,
-- reference guide names,
-- two-hand binding (`leftWrist` primary, `rightWrist` secondary),
-- weapon local axis, grip-span minimum and tip distance,
-- meshes visible in skeleton review.
-
-Therefore idle, slash, and future clips for this same swordsman reuse the same character/equipment data.
-
-### Generic Humanoid Author
-
-`common/authoring/humanoid.py` consumes the resolved rig, character/equipment, pose, and joint-contract data. It does not branch on the animation name.
-
-For the current `GameHumanoidV2` + swordsman contract it performs:
-
-- torso/body FK from profile-defined channels,
-- optional root/body/leg overrides supplied by clip data,
-- deterministic elbow/wrist-driven arm FK,
-- profile-configured leg IK and knee poles,
-- profile-configured two-hand equipment binding,
-- deterministic keyframe authoring,
-- `source.blend` save and motion diagnostics.
-
-The same author is used for both canonical clips.
-
-## Canonical clips
-
-### Gale Slash
-
-`profiles/anim2sheet/animations/gale_slash/**` remains the full F1-F16 authoritative clip data. The architecture refactor does not change the accepted authored pose values.
-
-The canonical Gale review still uses:
-
-- deterministic joint-FK arms,
-- explicit knee-guide leg IK,
-- `front_final` and `side_diag`,
-- saved-`source.blend` reopen verification,
-- proxy/joint authority checks,
-- Gale-specific semantic regression checks.
-
-### Sword Idle
-
-`profiles/anim2sheet/animations/sword_idle/**` is the proof that a second clip needs no Python implementation. It has four subtle guard-idle frames and reuses exactly:
-
-- `game_humanoid_v2.json5`,
-- `swordsman_v1.json5`,
-- `humanoid_v2` generic authoring capability,
-- common camera/render/output/authority/review pipeline.
-
-It produces the same artifact classes as Gale Slash: `source.blend`, PNG frames, object/skeleton sheets, overlays, diagnostics, and GIF previews when enabled.
-
-## Public CLI
-
-The profile is the main animation input:
-
-```bash
-anim2sheet review \
-  --profile profiles/anim2sheet/animations/gale_slash/animation.json5 \
-  --camera-profile profiles/anim2sheet/cameras/fast_keypose_review.json \
-  --gif \
-  --output build/anim/gale_slash
+```json
+{
+  "frame": 1,
+  "root": {"translation": [0.0, 0.0, -0.06]},
+  "body": {"pelvisYawDeg": 0},
+  "joints": {"leftElbow": [0.0, 0.0, 0.0]},
+  "targets": {"leftAnkle": [0.0, 0.0, 0.0]}
+}
 ```
 
-The same command for Idle changes only profile/output data:
+The exact required semantic channels are declared by the target Rig profile's `motionContract` and validated generically. The generic profile loader does not encode left/right humanoid assumptions. `humanoid_v2` capability code interprets the channels its Rig declares.
+
+Root translation is a proper XYZ transform. Motion has no correction/precedence layer. Equipment guide positions are not duplicate motion authority: the current swordsman's sword transform is derived deterministically from Character equipment binding plus the authored wrist joints.
+
+Optional Motion `provenance` may describe source asset/type, source skeleton, importer version, or sampling. Provenance never participates in final pose authority.
+
+## Runtime resolution
+
+```text
+Animation
+  -> Motion -> Rig
+  -> Character -> Rig
+  -> validate identical Rig Contract
+  -> capability registry
+  -> Generic Humanoid Author
+  -> apply_motion_frame(frame)
+  -> source.blend
+  -> authoritative PNG / diagnostics
+```
+
+The author consumes one canonical frame state. There is no staged correction precedence in the v2 runtime.
+
+## Canonical CLI
 
 ```bash
 anim2sheet review \
@@ -182,118 +99,45 @@ anim2sheet review \
   --output build/anim/sword_idle
 ```
 
-`--frames` selects an execution/debug subset and never mutates the authoritative contract. `--cameras` selects a valid camera subset. Optional rig/character/contract flags override links in the animation profile without changing the generic authoring path.
+Optional execution/presentation controls are `--animation` (action assertion), `--character-profile` (compatible Character only), `--frames`, `--cameras`, and `--gif`. A Character override must resolve to the same Rig Contract as Motion.
 
-## Solver and authority model
+Target-Rig replacement is deliberately not a render-time override. Retarget/import tools own that concern.
 
-### Deterministic arm FK
+## Authority and regression
 
-The joint contract provides elbow and wrist world positions. Shoulder positions derive from the evaluated torso/clavicle hierarchy. Upper-arm and forearm segments are solved deterministically from profile-mapped bones and pose fields; endpoint IK is not used to choose elbow topology.
+`source.blend`, rendered PNGs, evaluated joint/proxy diagnostics, and saved-blend reopen diagnostics remain authoritative. `front_final` remains the final presentation camera and `side_diag` remains diagnostic. GIF remains presentation-only.
 
-### Leg IK and knee authority
+Gale Slash and Sword Idle were migrated by computing each old frame's effective final root/body/leg state and authoritative arm joints, then writing that result once to Motion v2. The old split files are not runtime inputs after migration.
 
-The rig profile defines both leg IK chains, ankle targets, knee guides, constraint names, and mirrored pole angles. `leg_ik_debug.json` verifies the evaluated knee bend lies in the same bend-plane half-space as its authored guide.
+## Dynamic CI
 
-### Saved-blend authority
+A valid clip directory contains `animation.json5` + `motion.json`. CI discovers it dynamically; no workflow/manifest clip whitelist is required. Clip-only changes select only that clip E2E, while Rig/Character/Camera/common changes fan out to all discovered clips. Incomplete clip directories fail closed.
 
-`source.blend` remains the authoritative Blender state. The review pipeline reopens the saved file and verifies joint persistence plus proxy/bone consistency. PNGs and authority diagnostics remain the regression authority; GIF is presentation-only.
+## Future importer boundary
 
-## Multi-camera review and output
-
-Camera definitions remain generic data under `profiles/anim2sheet/cameras/**`. The canonical reviews use `front_final` and `side_diag`.
-
-A review artifact is self-describing and can contain:
+Profile Contract v2 is the required target for future source-motion importers:
 
 ```text
-source.json
-source.blend
-invocation.json
-resolved_config.json
-metadata.json
-motion_debug.json
-camera_config.json
-camera_debug.json
-leg_ik_debug.json
-reopen_debug.json
-preview.gif                 # optional Python packaging
-cameras/
-  front_final/
-    frames/*.png
-    object_keyposes.png
-    skeleton_keyposes.png
-    object_skeleton_overlay.png
-    preview.gif             # optional
-  side_diag/
-    ...
+FBX / BVH / Mixamo source
+        |
+source rig inspection
+        |
+semantic mapping / retarget
+        |
+target Rig Profile
+        |
+sample target motion
+        |
+        +--> motion.json
+        +--> animation.json5
+                  |
+          existing compatible Character
+                  |
+              anim2sheet
 ```
 
-GIF encoding happens only in Python under `common/output/` after authoritative PNG rendering. Blender never encodes GIF and GIF is not an authority input.
-
-## Adding another clip for this rig/character
-
-For another swordsman clip such as `walk`, add only data:
-
-```text
-profiles/anim2sheet/animations/walk/
-├── animation.json5
-├── pose_reference.json
-└── joint_contract.json
-```
-
-Point `animation.json5` at the existing rig and character profiles. Do **not** add a clip-specific author, solver, registry entry, CI component, workflow branch, or clip whitelist.
-
-A directory is eligible for canonical animation CI when it contains all three required profile files above and has a safe clip name. The central CI resolver discovers it from `profiles/anim2sheet/animations/*`, adds the clip to the animation matrix, and runs the same generic command:
-
-```bash
-anim2sheet review \
-  --profile profiles/anim2sheet/animations/$TARGET/animation.json5 \
-  --camera-profile profiles/anim2sheet/cameras/fast_keypose_review.json \
-  --gif \
-  --output build/anim/$TARGET
-```
-
-A new Python authoring capability is justified only when the actual reusable authoring model changes, not when a new motion clip is added.
-
-## Central affected CI
-
-Anim2sheet uses the repository's central affected graph without static per-clip manifest entries:
-
-- `anim-common` owns reusable `common/**`, camera profiles, rig profiles, and character/equipment profiles.
-- `anim-core` owns the public CLI, capability registry, and Blender bootstrap.
-- `ci/detect_affected.py` discovers valid clip directories and synthesizes their unit/E2E targets at runtime.
-- `ci/components.json` does not list `anim-gale-slash`, `anim-sword-idle`, or future clip components.
-
-A change under `profiles/anim2sheet/animations/<clip>/**` selects that clip's canonical E2E without pulling another clip's E2E. A common rig/character/camera/common-code change reaches `anim-core` and therefore selects every currently discovered animation clip. Full/global CI also discovers and selects every valid clip directory. VFX-only changes do not pull anim E2E.
-
-The workflow consumes `matrix.target` generically; there is no Gale/Idle whitelist. Gale Slash keeps one legacy semantic regression step guarded only by `matrix.target == 'gale_slash'`, while all clips share the generic profile-driven artifact and saved-blend/proxy authority checks.
-
-Push to `master` and central `workflow_dispatch` retain full-repository CI behavior.
-
-## Manual remote review
-
-`.github/workflows/anim2sheet-debug.yml` is a thin `workflow_dispatch` adapter for public `anim2sheet review`. Its inputs mirror the CLI: profile, optional action assertion, optional rig/character/contract overrides, camera profile, frame/camera subsets, GIF flag, Blender executable, and output path. The YAML contains no animation or solver logic.
-
-## Tests
-
-Tests remain organized by responsibility:
-
-```text
-tests/anim2sheet/
-├── common/
-│   └── authority/
-├── cli/
-└── animations/
-    ├── gale_slash/
-    │   ├── unit/
-    │   └── e2e/
-    └── sword_idle/
-        └── unit/
-```
-
-Common tests prove rig/character ownership and the absence of clip-specific Python authors. CLI tests prove both profiles resolve to the same generic authoring stack. A generic E2E verifier checks self-describing profile-driven artifacts, while the saved-blend/proxy authority verifier runs for every discovered clip. CI tests also create synthetic clip names to prove discovery, clip-only isolation, common fan-out, full/global fan-out, and VFX isolation without editing the manifest.
-
-Default local `pytest` discovery includes `tests/anim2sheet`.
+An importer should not create a new Character for every animation and should not require another motion-profile redesign. Importer implementation is outside this refactor.
 
 ## Scope
 
-This profile-driven layer is intentionally limited to the current humanoid/swordsman contract. It does not attempt to pre-design quadruped, facial, cloth, death, or hurt frameworks. Gale Slash visual polish is a separate task and is not part of this architecture refactor.
+This refactor does not add Mixamo conversion, new animations, visual polish, quadruped/facial/cloth systems, or broader equipment abstraction. It preserves the accepted current humanoid/swordsman behavior while making the contract single-owner and importer-ready.
