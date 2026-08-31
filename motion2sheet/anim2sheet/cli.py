@@ -3,36 +3,27 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from pathlib import Path
 
+from .common.output.validator import validate_output
 from .common.review.runner import run_review
 from .registry import DEFAULT_ANIMATION, animation_names
 
 
 def build(args) -> int:
     args.frames = None
-    return run_review(args)
+    return run_review(args, command="build")
 
 
 def review(args) -> int:
-    return run_review(args)
+    return run_review(args, command="review")
 
 
 def validate(args) -> int:
-    from pathlib import Path
-    import json
-    root = Path(args.output)
-    metadata_path = root / "metadata.json"
-    if not metadata_path.is_file():
-        raise RuntimeError("metadata.json is missing")
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    required = ["source.json", "source.blend", "motion_debug.json", "camera_debug.json",
-                "leg_ik_debug.json", "reopen_debug.json", "invocation.json", "resolved_config.json"]
-    missing = [name for name in required if not (root / name).exists()]
-    if missing:
-        raise RuntimeError(f"anim2sheet output missing files: {missing}")
-    if metadata.get("tool") != "anim2sheet":
-        raise RuntimeError("metadata tool must be anim2sheet")
-    print(f"anim2sheet: validation OK -> {root}")
+    errors = validate_output(Path(args.output))
+    if errors:
+        raise RuntimeError("; ".join(errors))
+    print(f"anim2sheet: validation OK -> {args.output}")
     return 0
 
 
