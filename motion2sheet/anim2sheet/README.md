@@ -24,7 +24,7 @@ authoritative PNG frames
 sheets / overlays / optional GIF preview
 ```
 
-`gale_slash` and `sword_idle` are the canonical proof: both use the same `GameHumanoidV2` rig profile, the same `swordsman_v1` character/equipment profile, and the same `humanoid_v2` generic Blender author. Adding `sword_idle` required only profile data; there is no `animations/sword_idle/` Python implementation.
+`gale_slash` and `sword_idle` are the canonical proof: both use the same `GameHumanoidV2` rig profile, the same `swordsman_v1` character/equipment profile, and the same `humanoid_v2` generic Blender author. Adding a clip for this contract requires only profile data; canonical CI discovers valid clip directories automatically.
 
 ## Architecture
 
@@ -240,22 +240,32 @@ profiles/anim2sheet/animations/walk/
 └── joint_contract.json
 ```
 
-Point `animation.json5` at the existing rig and character profiles. Do **not** add a clip-specific author, solver, registry entry, or `if animation == ...` branch.
+Point `animation.json5` at the existing rig and character profiles. Do **not** add a clip-specific author, solver, registry entry, CI component, workflow branch, or clip whitelist.
+
+A directory is eligible for canonical animation CI when it contains all three required profile files above and has a safe clip name. The central CI resolver discovers it from `profiles/anim2sheet/animations/*`, adds the clip to the animation matrix, and runs the same generic command:
+
+```bash
+anim2sheet review \
+  --profile profiles/anim2sheet/animations/$TARGET/animation.json5 \
+  --camera-profile profiles/anim2sheet/cameras/fast_keypose_review.json \
+  --gif \
+  --output build/anim/$TARGET
+```
 
 A new Python authoring capability is justified only when the actual reusable authoring model changes, not when a new motion clip is added.
 
 ## Central affected CI
 
-Anim2sheet uses the repository's central affected graph:
+Anim2sheet uses the repository's central affected graph without static per-clip manifest entries:
 
 - `anim-common` owns reusable `common/**`, camera profiles, rig profiles, and character/equipment profiles.
 - `anim-core` owns the public CLI, capability registry, and Blender bootstrap.
-- `anim-gale-slash` owns only Gale Slash profile data.
-- `anim-sword-idle` owns only Sword Idle profile data.
+- `ci/detect_affected.py` discovers valid clip directories and synthesizes their unit/E2E targets at runtime.
+- `ci/components.json` does not list `anim-gale-slash`, `anim-sword-idle`, or future clip components.
 
-A common rig/character/camera change therefore runs both clip targets. A change limited to `profiles/anim2sheet/animations/sword_idle/**` runs Idle targets without pulling Gale E2E; the inverse holds for Gale profile-only changes. VFX changes do not pull anim E2E.
+A change under `profiles/anim2sheet/animations/<clip>/**` selects that clip's canonical E2E without pulling another clip's E2E. A common rig/character/camera/common-code change reaches `anim-core` and therefore selects every currently discovered animation clip. Full/global CI also discovers and selects every valid clip directory. VFX-only changes do not pull anim E2E.
 
-Canonical automatic CI runs both registered proof clips through the same public CLI and generic humanoid author. Gale keeps its full F1-F16 semantic regression gate; Idle proves profile-only generation and common saved-blend/proxy authority.
+The workflow consumes `matrix.target` generically; there is no Gale/Idle whitelist. Gale Slash keeps one legacy semantic regression step guarded only by `matrix.target == 'gale_slash'`, while all clips share the generic profile-driven artifact and saved-blend/proxy authority checks.
 
 Push to `master` and central `workflow_dispatch` retain full-repository CI behavior.
 
@@ -280,7 +290,7 @@ tests/anim2sheet/
         └── unit/
 ```
 
-Common tests prove rig/character ownership and the absence of clip-specific Python authors. CLI tests prove both profiles resolve to the same generic authoring stack. A generic E2E verifier checks self-describing profile-driven artifacts, while the saved-blend/proxy authority verifier runs for both clips.
+Common tests prove rig/character ownership and the absence of clip-specific Python authors. CLI tests prove both profiles resolve to the same generic authoring stack. A generic E2E verifier checks self-describing profile-driven artifacts, while the saved-blend/proxy authority verifier runs for every discovered clip. CI tests also create synthetic clip names to prove discovery, clip-only isolation, common fan-out, full/global fan-out, and VFX isolation without editing the manifest.
 
 Default local `pytest` discovery includes `tests/anim2sheet`.
 
