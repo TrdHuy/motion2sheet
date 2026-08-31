@@ -1,1 +1,1 @@
-"""CI dependency graph helpers."""
+"""Repository CI affected-graph helpers."""
