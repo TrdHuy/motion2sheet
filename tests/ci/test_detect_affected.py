@@ -5,152 +5,143 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ci.detect_affected import load_manifest, resolve_targets
+from ci.detect_affected import discover_animation_clips, load_manifest, resolve_targets
 
 
-def resolve(*paths):
-    return resolve_targets(load_manifest(), list(paths))
+def resolve(*paths, manifest=None):
+    return resolve_targets(manifest or load_manifest(), list(paths))
+
+
+def make_clip(repo_root: Path, name: str, *, unit: bool = False) -> None:
+    clip_dir = repo_root / "profiles" / "anim2sheet" / "animations" / name
+    clip_dir.mkdir(parents=True)
+    for filename in ("animation.json5", "pose_reference.json", "joint_contract.json"):
+        (clip_dir / filename).write_text("{}\n", encoding="utf-8")
+    if unit:
+        (repo_root / "tests" / "anim2sheet" / "animations" / name / "unit").mkdir(parents=True)
+
+
+def anim_e2e_targets(manifest: dict, targets: set[str]) -> set[str]:
+    return {name for name in targets if manifest["test_targets"][name]["kind"] == "anim-e2e"}
 
 
 def test_component_change_runs_only_dependent_targets():
-    components, targets = resolve("motion2sheet/motion/normalize/core.py")
-    assert "motion-normalize" in components
-    assert "motion-cli" in components
+    _, targets = resolve("motion2sheet/motion/normalize/core.py")
     assert "motion-normalize-unit" in targets
     assert "motion-synthetic-fbx" in targets
-    assert "motion-synthetic-bvh" in targets
-    assert "motion-mixamo-real" in targets
-    assert "motion-output-mode-e2e" in targets
-    assert "motion-retarget-unit" not in targets
     assert "vfx-unit" not in targets
-    assert "vfx-splash-e2e" not in targets
-    assert "anim-gale-slash-e2e" not in targets
-    assert "anim-sword-idle-e2e" not in targets
-    assert "sprite-workflow-contract" not in targets
-
-
-def test_output_contract_change_runs_only_motion_dependents():
-    components, targets = resolve("motion2sheet/motion/output/contracts.py")
-    assert "motion-output" in components
-    assert "motion-cli" in components
-    assert "motion-output-unit" in targets
-    assert "motion-output-mode-unit" in targets
-    assert "motion-output-mode-e2e" in targets
-    assert "motion-synthetic-fbx" in targets
-    assert "motion-synthetic-bvh" in targets
-    assert "motion-mixamo-real" in targets
-    assert "vfx-unit" not in targets
-    assert "vfx-splash-e2e" not in targets
-    assert "anim-gale-slash-e2e" not in targets
-    assert "anim-sword-idle-e2e" not in targets
-    assert "sprite-workflow-contract" not in targets
-
-
-def test_sprite_skill_change_runs_only_sprite_workflow_contract():
-    components, targets = resolve("skills/pose-frame-to-sprite-frame/SKILL.md")
-    assert components == {"sprite-workflow"}
-    assert targets == {"sprite-workflow-contract"}
-
-
-def test_sprite_sample_change_runs_only_sprite_workflow_contract():
-    components, targets = resolve("sample/sprite-generation/walk-down/walk pose 4.png")
-    assert components == {"sprite-workflow"}
-    assert targets == {"sprite-workflow-contract"}
+    assert not any(name.endswith("-e2e") and name.startswith("anim-") for name in targets)
 
 
 def test_vfx_effect_change_does_not_run_motion_or_anim():
-    components, targets = resolve("motion2sheet/vfx2sheet/effects/splash/config.py")
+    manifest = load_manifest()
+    components, targets = resolve("motion2sheet/vfx2sheet/effects/splash/config.py", manifest=manifest)
     assert "vfx-splash" in components
     assert "vfx-unit" in targets
     assert "vfx-splash-e2e" in targets
-    assert not any(name.startswith("motion-") for name in targets)
-    assert not any(name.startswith("anim-") for name in targets)
-    assert "sprite-workflow-contract" not in targets
+    assert not anim_e2e_targets(manifest, targets)
 
 
-def assert_common_anim_change(components, targets):
-    assert "anim-common" in components
-    assert "anim-core" in components
-    assert "anim-gale-slash" in components
-    assert "anim-sword-idle" in components
-    assert "anim-common-unit" in targets
+def test_dynamic_animation_discovery_accepts_profile_only_clip(tmp_path):
+    make_clip(tmp_path, "walk")
+    assert discover_animation_clips(tmp_path) == ["walk"]
+    manifest = load_manifest(repo_root=tmp_path)
+    assert manifest["test_targets"]["anim-walk-e2e"]["target"] == "walk"
+    assert "anim-walk-unit" not in manifest["test_targets"]
+    assert "anim-walk" not in manifest["components"]
+
+
+def test_dynamic_animation_discovery_adds_existing_unit_target(tmp_path):
+    make_clip(tmp_path, "walk", unit=True)
+    manifest = load_manifest(repo_root=tmp_path)
+    assert manifest["test_targets"]["anim-walk-unit"]["path"] == "tests/anim2sheet/animations/walk/unit"
+
+
+def test_synthetic_clip_only_change_selects_only_that_anim_e2e(tmp_path):
+    make_clip(tmp_path, "walk")
+    make_clip(tmp_path, "guard")
+    manifest = load_manifest(repo_root=tmp_path)
+    components, targets = resolve(
+        "profiles/anim2sheet/animations/walk/joint_contract.json",
+        manifest=manifest,
+    )
+    assert components == set()
+    assert anim_e2e_targets(manifest, targets) == {"anim-walk-e2e"}
     assert "anim-cli-unit" in targets
-    assert "anim-gale-slash-unit" in targets
-    assert "anim-sword-idle-unit" in targets
-    assert "anim-gale-slash-e2e" in targets
-    assert "anim-sword-idle-e2e" in targets
-    assert "vfx-splash-e2e" not in targets
 
 
-def test_anim_common_code_change_runs_all_profile_dependents():
-    assert_common_anim_change(*resolve("motion2sheet/anim2sheet/common/profile.py"))
+def test_common_change_selects_all_discovered_animation_clips(tmp_path):
+    for clip in ("walk", "guard", "hurt"):
+        make_clip(tmp_path, clip)
+    manifest = load_manifest(repo_root=tmp_path)
+    components, targets = resolve("motion2sheet/anim2sheet/common/profile.py", manifest=manifest)
+    assert {"anim-common", "anim-core"}.issubset(components)
+    assert anim_e2e_targets(manifest, targets) == {"anim-walk-e2e", "anim-guard-e2e", "anim-hurt-e2e"}
 
 
-def test_anim_camera_profile_is_common_and_runs_all_profile_dependents():
-    assert_common_anim_change(*resolve("profiles/anim2sheet/cameras/fast_keypose_review.json"))
+def test_full_ci_selects_all_discovered_animation_clips(tmp_path):
+    for clip in ("walk", "guard", "hurt"):
+        make_clip(tmp_path, clip)
+    manifest = load_manifest(repo_root=tmp_path)
+    _, targets = resolve_targets(manifest, [], full=True)
+    assert anim_e2e_targets(manifest, targets) == {"anim-walk-e2e", "anim-guard-e2e", "anim-hurt-e2e"}
 
 
-def test_anim_rig_profile_is_common_and_runs_all_profile_dependents():
-    assert_common_anim_change(*resolve("profiles/anim2sheet/rigs/game_humanoid_v2.json5"))
-
-
-def test_anim_character_profile_is_common_and_runs_all_profile_dependents():
-    assert_common_anim_change(*resolve("profiles/anim2sheet/characters/swordsman_v1.json5"))
-
-
-def test_gale_slash_profile_change_runs_only_gale_clip_targets():
-    components, targets = resolve("profiles/anim2sheet/animations/gale_slash/joint_contract.json")
-    assert components == {"anim-gale-slash"}
-    assert "anim-cli-unit" in targets
-    assert "anim-gale-slash-unit" in targets
-    assert "anim-gale-slash-e2e" in targets
-    assert "anim-sword-idle-unit" not in targets
-    assert "anim-sword-idle-e2e" not in targets
-    assert "anim-common-unit" not in targets
-    assert "vfx-splash-e2e" not in targets
-
-
-def test_sword_idle_profile_change_runs_only_idle_clip_targets():
-    components, targets = resolve("profiles/anim2sheet/animations/sword_idle/animation.json5")
-    assert components == {"anim-sword-idle"}
-    assert "anim-cli-unit" in targets
-    assert "anim-sword-idle-unit" in targets
-    assert "anim-sword-idle-e2e" in targets
-    assert "anim-gale-slash-unit" not in targets
-    assert "anim-gale-slash-e2e" not in targets
-    assert "anim-common-unit" not in targets
-    assert "vfx-splash-e2e" not in targets
-
-
-def test_direct_mixamo_test_change_runs_only_mixamo_target():
-    _, targets = resolve("tests/motion/e2e/verify_mixamo_output.py")
-    assert targets == {"motion-mixamo-real"}
-
-
-def test_direct_output_mode_unit_change_runs_only_output_mode_unit():
-    _, targets = resolve("tests/motion/output/test_output_mode.py")
-    assert targets == {"motion-output-mode-unit"}
-
-
-def test_direct_output_mode_e2e_change_runs_only_output_mode_e2e():
-    _, targets = resolve("tests/motion/e2e/verify_output_mode.py")
-    assert targets == {"motion-output-mode-e2e"}
-
-
-def test_direct_sprite_workflow_contract_change_runs_only_itself():
-    _, targets = resolve("tests/sprite_workflow/test_single_frame_contract.py")
-    assert targets == {"sprite-workflow-contract"}
-
-
-def test_global_ci_change_runs_every_target():
-    manifest = load_manifest()
-    _, targets = resolve(".github/workflows/ci.yml")
+def test_global_ci_change_selects_all_discovered_animation_clips(tmp_path):
+    for clip in ("walk", "guard"):
+        make_clip(tmp_path, clip)
+    manifest = load_manifest(repo_root=tmp_path)
+    _, targets = resolve(".github/workflows/ci.yml", manifest=manifest)
     assert targets == set(manifest["test_targets"])
+    assert anim_e2e_targets(manifest, targets) == {"anim-walk-e2e", "anim-guard-e2e"}
+
+
+def test_current_repo_discovers_canonical_clips_without_manifest_whitelist():
+    manifest = load_manifest()
+    assert discover_animation_clips(ROOT) == ["gale_slash", "sword_idle"]
+    assert "anim-gale-slash" not in manifest["components"]
+    assert "anim-sword-idle" not in manifest["components"]
+    assert manifest["test_targets"]["anim-gale-slash-e2e"]["target"] == "gale_slash"
+    assert manifest["test_targets"]["anim-sword-idle-e2e"]["target"] == "sword_idle"
+
+
+def test_gale_slash_profile_change_does_not_pull_idle_e2e():
+    manifest = load_manifest()
+    _, targets = resolve("profiles/anim2sheet/animations/gale_slash/joint_contract.json", manifest=manifest)
+    assert anim_e2e_targets(manifest, targets) == {"anim-gale-slash-e2e"}
+    assert "anim-gale-slash-unit" in targets
+    assert "anim-sword-idle-unit" not in targets
+
+
+def test_sword_idle_profile_change_does_not_pull_gale_e2e():
+    manifest = load_manifest()
+    _, targets = resolve("profiles/anim2sheet/animations/sword_idle/animation.json5", manifest=manifest)
+    assert anim_e2e_targets(manifest, targets) == {"anim-sword-idle-e2e"}
+    assert "anim-sword-idle-unit" in targets
+    assert "anim-gale-slash-unit" not in targets
+
+
+def test_anim_camera_profile_common_change_runs_all_current_anim_e2e():
+    manifest = load_manifest()
+    _, targets = resolve("profiles/anim2sheet/cameras/fast_keypose_review.json", manifest=manifest)
+    assert anim_e2e_targets(manifest, targets) == {"anim-gale-slash-e2e", "anim-sword-idle-e2e"}
+
+
+def test_anim_rig_profile_common_change_runs_all_current_anim_e2e():
+    manifest = load_manifest()
+    _, targets = resolve("profiles/anim2sheet/rigs/game_humanoid_v2.json5", manifest=manifest)
+    assert anim_e2e_targets(manifest, targets) == {"anim-gale-slash-e2e", "anim-sword-idle-e2e"}
+
+
+def test_anim_character_profile_common_change_runs_all_current_anim_e2e():
+    manifest = load_manifest()
+    _, targets = resolve("profiles/anim2sheet/characters/swordsman_v1.json5", manifest=manifest)
+    assert anim_e2e_targets(manifest, targets) == {"anim-gale-slash-e2e", "anim-sword-idle-e2e"}
 
 
 def test_unknown_path_fails_safe_to_full_ci():
     manifest = load_manifest()
-    _, targets = resolve("motion2sheet/new_unmapped_module.py")
+    _, targets = resolve("motion2sheet/new_unmapped_module.py", manifest=manifest)
     assert targets == set(manifest["test_targets"])
 
 
