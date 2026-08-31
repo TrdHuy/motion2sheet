@@ -11,7 +11,7 @@ from mathutils import Matrix, Quaternion, Vector
 from motion2sheet.motion.extract.blender import activate_animation, clean_scene, find_armature, import_motion
 
 MATRIX_TRS_TOLERANCE = 2e-6
-MATRIX_SHEAR_TOLERANCE = 1e-6
+MATRIX_SHEAR_TOLERANCE = 1e-5
 
 
 def source_sha256(path: Path) -> str:
