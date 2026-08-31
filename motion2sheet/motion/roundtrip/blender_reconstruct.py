@@ -112,33 +112,64 @@ def build_action(armature, animation: dict):
     return action
 
 
+def shift_action_frames(action, delta: float) -> None:
+    for fcurve in action.fcurves:
+        for keyframe in fcurve.keyframe_points:
+            keyframe.co.x += delta
+            keyframe.handle_left.x += delta
+            keyframe.handle_right.x += delta
+        fcurve.update()
+
+
 def export_fbx(armature, output_path: Path) -> None:
     bpy.ops.object.select_all(action="DESELECT")
     armature.select_set(True)
     bpy.context.view_layer.objects.active = armature
-    bpy.ops.export_scene.fbx(
-        filepath=str(output_path),
-        use_selection=True,
-        object_types={"ARMATURE"},
-        apply_unit_scale=True,
-        apply_scale_options="FBX_SCALE_NONE",
-        use_space_transform=True,
-        bake_space_transform=False,
-        axis_forward="-Z",
-        axis_up="Y",
-        primary_bone_axis="Y",
-        secondary_bone_axis="X",
-        add_leaf_bones=False,
-        use_armature_deform_only=False,
-        armature_nodetype="NULL",
-        bake_anim=True,
-        bake_anim_use_all_bones=True,
-        bake_anim_use_nla_strips=False,
-        bake_anim_use_all_actions=False,
-        bake_anim_force_startend_keying=True,
-        bake_anim_step=1.0,
-        bake_anim_simplify_factor=0.0,
-    )
+    action = armature.animation_data.action
+    scene = bpy.context.scene
+    original_start = scene.frame_start
+    original_end = scene.frame_end
+
+    # Blender's legacy FBX importer applies anim_offset=1.0 by default. The
+    # source FBX therefore arrives one Blender frame later than its FBX time.
+    # Invert that convention only while writing FBX so a clean default re-import
+    # lands back on the exact canonical source frame range.
+    shift_action_frames(action, -1.0)
+    scene.frame_start = original_start - 1
+    scene.frame_end = original_end - 1
+    try:
+        bpy.ops.export_scene.fbx(
+            filepath=str(output_path),
+            use_selection=True,
+            object_types={"ARMATURE"},
+            apply_unit_scale=True,
+            apply_scale_options="FBX_SCALE_NONE",
+            # This round-trip targets Blender mathematical equivalence, not a
+            # Maya-oriented interchange preset. Leave object transforms intact
+            # and write Blender's native axis space into FBX metadata.
+            use_space_transform=False,
+            bake_space_transform=False,
+            axis_forward="-Y",
+            axis_up="Z",
+            primary_bone_axis="Y",
+            secondary_bone_axis="X",
+            add_leaf_bones=False,
+            use_armature_deform_only=False,
+            armature_nodetype="NULL",
+            bake_anim=True,
+            bake_anim_use_all_bones=True,
+            bake_anim_use_nla_strips=False,
+            bake_anim_use_all_actions=False,
+            bake_anim_force_startend_keying=True,
+            bake_anim_step=1.0,
+            bake_anim_simplify_factor=0.0,
+        )
+    finally:
+        shift_action_frames(action, 1.0)
+        scene.frame_start = original_start
+        scene.frame_end = original_end
+        scene.frame_set(original_start)
+        bpy.context.view_layer.update()
 
 
 def main() -> None:
