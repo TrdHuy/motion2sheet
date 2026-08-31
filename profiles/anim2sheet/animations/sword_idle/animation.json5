@@ -1,1 +1,25 @@
-{"schema":"anim2sheet.animation","version":2,"action":"sword_idle","motionProfile":"motion.json","defaultCharacterProfile":"../../characters/swordsman_v1.json5","loop":true,"interpolation":"LINEAR","phases":[{"name":"guard_idle","start":1,"end":4}],"render":{"canvas":[320,320],"sheetColumns":4,"background":"transparent"}}
+{
+  "schema": "anim2sheet.animation",
+  "version": 2,
+  "id": "sword_idle_v1",
+  "action": "sword_idle",
+  "motionProfile": "motion.json",
+  "defaultCharacterProfile": "../../characters/swordsman_v1.json5",
+  "loop": true,
+  "interpolation": "LINEAR",
+  "phases": [
+    {
+      "name": "guard_idle",
+      "start": 1,
+      "end": 4
+    }
+  ],
+  "render": {
+    "canvas": [
+      320,
+      320
+    ],
+    "sheetColumns": 4,
+    "background": "transparent"
+  }
+}

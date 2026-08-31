@@ -16,28 +16,7 @@ def arm_segments(rig_profile: dict | None = None) -> dict[str, tuple[str, str, s
     if rig_profile is None:
         return ARM_SEGMENTS
     sides = rig_profile["solvers"]["arms"]["sides"]
-    return {
-        side: (str(cfg["upperBone"]), str(cfg["foreBone"]), str(cfg["handBone"]))
-        for side, cfg in sides.items()
-    }
-
-
-def disable_arm_ik(arm, rig_profile: dict | None = None) -> None:
-    if rig_profile is None:
-        rows = [
-            ("LeftForeArm", "ReferenceIK_LeftForeArm"),
-            ("RightForeArm", "ReferenceIK_RightForeArm"),
-        ]
-    else:
-        rows = [
-            (str(cfg["foreBone"]), str(cfg["ikConstraint"]))
-            for cfg in rig_profile["solvers"]["arms"]["sides"].values()
-        ]
-    for bone_name, constraint_name in rows:
-        constraint = arm.pose.bones[bone_name].constraints.get(constraint_name)
-        if constraint is None:
-            raise RuntimeError(f"missing arm IK constraint {constraint_name} on {bone_name}")
-        constraint.influence = 0.0
+    return {side: (str(cfg["upperBone"]), str(cfg["foreBone"]), str(cfg["handBone"])) for side, cfg in sides.items()}
 
 
 def segment_matrix(arm, head_world: Vector, tail_world: Vector) -> Matrix:
@@ -70,23 +49,23 @@ def set_segment(arm, bone_name: str, head_world: Vector, tail_world: Vector, *, 
         bone.keyframe_insert(data_path="rotation_quaternion", frame=frame)
 
 
-def joint_errors(arm, joint_pose: dict, rig_profile: dict | None = None) -> dict[str, float]:
+def joint_errors(arm, joint_state: dict, rig_profile: dict | None = None) -> dict[str, float]:
     segments = arm_segments(rig_profile)
     if rig_profile is None:
-        pose_fields = {
-            "left": {"elbowPoseField": "leftElbow", "wristPoseField": "leftWrist"},
-            "right": {"elbowPoseField": "rightElbow", "wristPoseField": "rightWrist"},
+        fields = {
+            "left": {"elbowJoint": "leftElbow", "wristJoint": "leftWrist"},
+            "right": {"elbowJoint": "rightElbow", "wristJoint": "rightWrist"},
         }
     else:
-        pose_fields = rig_profile["solvers"]["arms"]["sides"]
+        fields = rig_profile["solvers"]["arms"]["sides"]
     expected = {}
     actual = {}
     for side in ("left", "right"):
         upper, fore, _hand = segments[side]
-        elbow_key = str(pose_fields[side]["elbowPoseField"])
-        wrist_key = str(pose_fields[side]["wristPoseField"])
-        expected[elbow_key] = Vector(joint_pose[elbow_key])
-        expected[wrist_key] = Vector(joint_pose[wrist_key])
+        elbow_key = str(fields[side]["elbowJoint"])
+        wrist_key = str(fields[side]["wristJoint"])
+        expected[elbow_key] = Vector(joint_state[elbow_key])
+        expected[wrist_key] = Vector(joint_state[wrist_key])
         actual[elbow_key] = bone_tail_world(arm, upper)
         actual[wrist_key] = bone_tail_world(arm, fore)
     return {name: round((actual[name] - expected[name]).length, 6) for name in expected}
