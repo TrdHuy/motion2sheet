@@ -13,18 +13,8 @@ on:
         required: true
         default: profiles/anim2sheet/animations/gale_slash/animation.json5
         type: string
-      rig_profile:
-        description: Optional rig profile override
-        required: false
-        default: ''
-        type: string
       character_profile:
-        description: Optional character/equipment profile override
-        required: false
-        default: ''
-        type: string
-      joint_contract:
-        description: Optional joint contract override
+        description: Optional compatible character profile override
         required: false
         default: ''
         type: string
@@ -84,9 +74,7 @@ jobs:
         env:
           ANIMATION: ${{ inputs.animation }}
           PROFILE: ${{ inputs.profile }}
-          RIG_PROFILE: ${{ inputs.rig_profile }}
           CHARACTER_PROFILE: ${{ inputs.character_profile }}
-          JOINT_CONTRACT: ${{ inputs.joint_contract }}
           CAMERA_PROFILE: ${{ inputs.camera_profile }}
           FRAMES: ${{ inputs.frames }}
           CAMERAS: ${{ inputs.cameras }}
@@ -97,9 +85,7 @@ jobs:
           set -euo pipefail
           args=(anim2sheet review --profile "$PROFILE" --camera-profile "$CAMERA_PROFILE" --blender "$BLENDER" --output "$OUTPUT")
           if [[ -n "$ANIMATION" ]]; then args+=(--animation "$ANIMATION"); fi
-          if [[ -n "$RIG_PROFILE" ]]; then args+=(--rig-profile "$RIG_PROFILE"); fi
           if [[ -n "$CHARACTER_PROFILE" ]]; then args+=(--character-profile "$CHARACTER_PROFILE"); fi
-          if [[ -n "$JOINT_CONTRACT" ]]; then args+=(--joint-contract "$JOINT_CONTRACT"); fi
           if [[ -n "$FRAMES" ]]; then args+=(--frames "$FRAMES"); fi
           if [[ -n "$CAMERAS" ]]; then args+=(--cameras "$CAMERAS"); fi
           if [[ "$GIF" == "true" ]]; then args+=(--gif); fi
