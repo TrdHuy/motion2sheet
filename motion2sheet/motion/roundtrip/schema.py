@@ -53,12 +53,32 @@ def validate_trs(data: Any, label: str) -> None:
     vec(data["scale"], 3, f"{label}.scale")
 
 
+def validate_edit_geometry(data: Any, label: str) -> None:
+    if not isinstance(data, dict):
+        raise ValueError(f"{label} must be an object")
+    expected = {"head", "tail", "roll"}
+    unknown = set(data) - expected
+    if unknown:
+        raise ValueError(f"{label} has unknown fields: {sorted(unknown)}")
+    missing = expected - set(data)
+    if missing:
+        raise ValueError(f"{label} missing fields: {sorted(missing)}")
+    head = vec(data["head"], 3, f"{label}.head")
+    tail = vec(data["tail"], 3, f"{label}.tail")
+    _finite(data["roll"], f"{label}.roll")
+    length = math.sqrt(sum((a - b) ** 2 for a, b in zip(head, tail)))
+    if length <= 1e-12:
+        raise ValueError(f"{label} head/tail must define a non-zero bone")
+
+
 def validate_rig_document(data: Any) -> dict:
     if not isinstance(data, dict):
         raise ValueError("rig document must be an object")
     if data.get("schema") != RIG_SCHEMA or data.get("version") != VERSION:
         raise ValueError(f"unsupported rig schema/version: {data.get('schema')!r}/{data.get('version')!r}")
     validate_id(data.get("id"), "rig.id")
+    if data.get("editGeometrySpace") != "armature-local":
+        raise ValueError("rig.editGeometrySpace must be 'armature-local'")
     validate_trs(data.get("armatureObject", {}).get("transform"), "rig.armatureObject.transform")
     bones = data.get("bones")
     if not isinstance(bones, list) or not bones:
@@ -77,6 +97,7 @@ def validate_rig_document(data: Any) -> dict:
         if parent is not None and not isinstance(parent, str):
             raise ValueError(f"bone {name}.parent must be string or null")
         validate_trs(bone.get("rest"), f"bone {name}.rest")
+        validate_edit_geometry(bone.get("editGeometry"), f"bone {name}.editGeometry")
         length = _finite(bone.get("length"), f"bone {name}.length")
         if length <= 0:
             raise ValueError(f"bone {name}.length must be positive")
