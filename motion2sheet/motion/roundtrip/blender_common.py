@@ -10,7 +10,8 @@ from mathutils import Matrix, Quaternion, Vector
 
 from motion2sheet.motion.extract.blender import activate_animation, clean_scene, find_armature, import_motion
 
-MATRIX_TRS_TOLERANCE = 1e-8
+MATRIX_TRS_TOLERANCE = 2e-6
+MATRIX_SHEAR_TOLERANCE = 1e-6
 
 
 def source_sha256(path: Path) -> str:
@@ -49,15 +50,37 @@ def matrix_residual(first: Matrix, second: Matrix) -> float:
     return max(abs(float(first[row][column]) - float(second[row][column])) for row in range(4) for column in range(4))
 
 
-def matrix_to_trs(matrix: Matrix, label: str, *, tolerance: float = MATRIX_TRS_TOLERANCE) -> dict[str, list[float]]:
+def matrix_shear_metric(matrix: Matrix) -> float:
+    basis = matrix.to_3x3()
+    axes = [basis.col[index].copy() for index in range(3)]
+    if any(axis.length <= 1e-12 for axis in axes):
+        raise RuntimeError("Degenerate transform axis cannot be represented as stable TRS")
+    for axis in axes:
+        axis.normalize()
+    return max(abs(float(axes[i].dot(axes[j]))) for i in range(3) for j in range(i + 1, 3))
+
+
+def matrix_to_trs(
+    matrix: Matrix,
+    label: str,
+    *,
+    tolerance: float = MATRIX_TRS_TOLERANCE,
+    shear_tolerance: float = MATRIX_SHEAR_TOLERANCE,
+) -> dict[str, list[float]]:
+    shear = matrix_shear_metric(matrix)
+    if shear > shear_tolerance:
+        raise RuntimeError(
+            f"{label} contains shear/non-orthogonal basis that TRS cannot preserve; "
+            f"normalized-axis dot={shear:.12g} > {shear_tolerance:.12g}. Source transforms fail closed."
+        )
     translation, rotation, scale = matrix.decompose()
     rotation = canonical_quaternion(rotation)
     recomposed = Matrix.LocRotScale(translation, rotation, scale)
     residual = matrix_residual(matrix, recomposed)
     if residual > tolerance:
         raise RuntimeError(
-            f"{label} is not losslessly representable as translation/quaternion/scale; "
-            f"matrix residual={residual:.12g} > {tolerance:.12g}. Shear/non-TRS source transforms fail closed."
+            f"{label} is not representable as translation/quaternion/scale within Blender numeric precision; "
+            f"matrix residual={residual:.12g} > {tolerance:.12g}; shearMetric={shear:.12g}."
         )
     return {
         "translation": [_clean_float(value) for value in translation],
