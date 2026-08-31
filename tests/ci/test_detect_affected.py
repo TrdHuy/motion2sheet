@@ -25,6 +25,7 @@ def test_component_change_runs_only_dependent_targets():
     assert "vfx-unit" not in targets
     assert "vfx-splash-e2e" not in targets
     assert "anim-gale-slash-e2e" not in targets
+    assert "anim-sword-idle-e2e" not in targets
     assert "sprite-workflow-contract" not in targets
 
 
@@ -41,6 +42,7 @@ def test_output_contract_change_runs_only_motion_dependents():
     assert "vfx-unit" not in targets
     assert "vfx-splash-e2e" not in targets
     assert "anim-gale-slash-e2e" not in targets
+    assert "anim-sword-idle-e2e" not in targets
     assert "sprite-workflow-contract" not in targets
 
 
@@ -66,43 +68,58 @@ def test_vfx_effect_change_does_not_run_motion_or_anim():
     assert "sprite-workflow-contract" not in targets
 
 
-def test_anim_common_change_runs_gale_slash_dependents():
-    components, targets = resolve("motion2sheet/anim2sheet/common/camera/config.py")
+def assert_common_anim_change(components, targets):
     assert "anim-common" in components
     assert "anim-core" in components
     assert "anim-gale-slash" in components
+    assert "anim-sword-idle" in components
     assert "anim-common-unit" in targets
     assert "anim-cli-unit" in targets
     assert "anim-gale-slash-unit" in targets
+    assert "anim-sword-idle-unit" in targets
     assert "anim-gale-slash-e2e" in targets
+    assert "anim-sword-idle-e2e" in targets
     assert "vfx-splash-e2e" not in targets
 
 
-def test_anim_camera_profile_is_common_and_runs_anim_dependents():
-    components, targets = resolve("profiles/anim2sheet/cameras/fast_keypose_review.json")
-    assert "anim-common" in components
-    assert "anim-core" in components
-    assert "anim-gale-slash" in components
-    assert "anim-common-unit" in targets
-    assert "anim-cli-unit" in targets
-    assert "anim-gale-slash-unit" in targets
-    assert "anim-gale-slash-e2e" in targets
-    assert "vfx-splash-e2e" not in targets
+def test_anim_common_code_change_runs_all_profile_dependents():
+    assert_common_anim_change(*resolve("motion2sheet/anim2sheet/common/profile.py"))
 
 
-def test_gale_slash_change_runs_only_relevant_anim_targets():
-    components, targets = resolve("motion2sheet/anim2sheet/animations/gale_slash/contract.py")
+def test_anim_camera_profile_is_common_and_runs_all_profile_dependents():
+    assert_common_anim_change(*resolve("profiles/anim2sheet/cameras/fast_keypose_review.json"))
+
+
+def test_anim_rig_profile_is_common_and_runs_all_profile_dependents():
+    assert_common_anim_change(*resolve("profiles/anim2sheet/rigs/game_humanoid_v2.json5"))
+
+
+def test_anim_character_profile_is_common_and_runs_all_profile_dependents():
+    assert_common_anim_change(*resolve("profiles/anim2sheet/characters/swordsman_v1.json5"))
+
+
+def test_gale_slash_profile_change_runs_only_gale_clip_targets():
+    components, targets = resolve("profiles/anim2sheet/animations/gale_slash/joint_contract.json")
     assert components == {"anim-gale-slash"}
+    assert "anim-cli-unit" in targets
     assert "anim-gale-slash-unit" in targets
     assert "anim-gale-slash-e2e" in targets
+    assert "anim-sword-idle-unit" not in targets
+    assert "anim-sword-idle-e2e" not in targets
     assert "anim-common-unit" not in targets
     assert "vfx-splash-e2e" not in targets
 
 
-def test_gale_slash_profile_change_runs_gale_slash_target():
-    components, targets = resolve("profiles/anim2sheet/animations/gale_slash/joint_contract.json")
-    assert components == {"anim-gale-slash"}
-    assert "anim-gale-slash-e2e" in targets
+def test_sword_idle_profile_change_runs_only_idle_clip_targets():
+    components, targets = resolve("profiles/anim2sheet/animations/sword_idle/animation.json5")
+    assert components == {"anim-sword-idle"}
+    assert "anim-cli-unit" in targets
+    assert "anim-sword-idle-unit" in targets
+    assert "anim-sword-idle-e2e" in targets
+    assert "anim-gale-slash-unit" not in targets
+    assert "anim-gale-slash-e2e" not in targets
+    assert "anim-common-unit" not in targets
+    assert "vfx-splash-e2e" not in targets
 
 
 def test_direct_mixamo_test_change_runs_only_mixamo_target():

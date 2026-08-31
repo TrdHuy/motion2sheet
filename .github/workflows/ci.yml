@@ -250,24 +250,34 @@ jobs:
       - name: Verify Blender
         run: blender --version
       - name: Reject unknown animation target
-        if: matrix.target != 'gale_slash'
+        if: matrix.target != 'gale_slash' && matrix.target != 'sword_idle'
         run: |
           echo "Unknown anim2sheet E2E target: ${{ matrix.target }}" >&2
           exit 2
-      - name: Run canonical F1-F16 multi-camera review
+      - name: Run canonical profile-driven multi-camera review
+        env:
+          TARGET: ${{ matrix.target }}
         run: >-
           anim2sheet review
-          --animation gale_slash
-          --profile profiles/anim2sheet/animations/gale_slash/animation.json5
-          --joint-contract profiles/anim2sheet/animations/gale_slash/joint_contract.json
+          --animation "$TARGET"
+          --profile "profiles/anim2sheet/animations/$TARGET/animation.json5"
           --camera-profile profiles/anim2sheet/cameras/fast_keypose_review.json
           --gif
-          --output build/anim/gale_slash
+          --output "build/anim/$TARGET"
       - name: Validate canonical artifact
-        run: anim2sheet validate build/anim/gale_slash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: anim2sheet validate "build/anim/$TARGET"
+      - name: Verify generic profile-driven artifact
+        env:
+          TARGET: ${{ matrix.target }}
+        run: python tests/anim2sheet/common/authority/verify_profile_driven_output.py "build/anim/$TARGET" "$TARGET"
       - name: Verify saved-blend and proxy authority
-        run: python tests/anim2sheet/common/authority/verify_keypose_authority.py build/anim/gale_slash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: python tests/anim2sheet/common/authority/verify_keypose_authority.py "build/anim/$TARGET"
       - name: Verify Gale Slash semantics
+        if: matrix.target == 'gale_slash'
         run: python tests/anim2sheet/animations/gale_slash/e2e/verify_keypose_architecture.py build/anim/gale_slash
       - name: Upload canonical animation artifact
         if: always()
