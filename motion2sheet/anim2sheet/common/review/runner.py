@@ -30,90 +30,55 @@ def _write_json(path: Path, data: dict) -> None:
 
 
 def run_review(args) -> int:
-    definition, runtime = _runtime(args.animation)
+    _definition, runtime = _runtime(args.animation)
     resolved = runtime.resolve_review_request(
-        profile_path=Path(args.profile),
-        joint_contract_path=Path(args.joint_contract),
-        camera_profile_path=Path(args.camera_profile),
-        frames=args.frames,
-        cameras=args.cameras,
-    )
+        profile_path=Path(args.profile), joint_contract_path=Path(args.joint_contract),
+        camera_profile_path=Path(args.camera_profile), frames=args.frames, cameras=args.cameras)
     output = Path(args.output).resolve()
     if output.exists():
         shutil.rmtree(output)
     output.mkdir(parents=True)
-    frames = resolved["executionFrames"]
-    camera_names = resolved["cameraNames"]
+    frames = list(resolved["executionFrames"])
+    camera_names = list(resolved["cameraNames"])
     camera_profile = resolved["cameraProfile"]
     final_name = final_camera_name(camera_profile, camera_names)
     alias_name = final_name or camera_names[0]
-    camera_config = {
-        "version": camera_profile["version"],
-        "source": camera_profile["source"],
-        "selectedCameras": camera_names,
-        "finalCamera": final_name,
-        "reviewFrames": frames,
-        "cameras": {name: camera_profile["cameras"][name] for name in camera_names},
-    }
+    camera_config = {"version": camera_profile["version"], "source": camera_profile["source"],
+                     "selectedCameras": camera_names, "finalCamera": final_name, "reviewFrames": frames,
+                     "cameras": {name: camera_profile["cameras"][name] for name in camera_names}}
+    source = dict(resolved["source"])
+    source["blenderAuthorArgs"] = ["--joint-contract", str(resolved["jointContractPath"])]
     source_path = output / "source.json"
     camera_config_path = output / "camera_config.json"
-    _write_json(source_path, resolved["source"])
+    _write_json(source_path, source)
     _write_json(camera_config_path, camera_config)
-    invocation = {
-        "tool": "anim2sheet",
-        "command": "review",
-        "animation": args.animation,
-        "profile": str(resolved["profilePath"]),
-        "jointContract": str(resolved["jointContractPath"]),
-        "cameraProfile": str(resolved["cameraProfilePath"]),
-        "contractFrames": resolved["contractFrames"],
-        "executionFrames": frames,
-        "cameras": camera_names,
-        "blender": args.blender,
-        "output": str(output),
-    }
+    invocation = {"tool": "anim2sheet", "command": "review", "animation": args.animation,
+                  "profile": str(resolved["profilePath"]), "jointContract": str(resolved["jointContractPath"]),
+                  "cameraProfile": str(resolved["cameraProfilePath"]), "contractFrames": resolved["contractFrames"],
+                  "executionFrames": frames, "cameras": camera_names, "blender": args.blender, "output": str(output)}
     _write_json(output / "invocation.json", invocation)
-    _write_json(output / "resolved_config.json", {
-        "animation": args.animation,
-        "profile": resolved["profile"],
-        "contractFrames": resolved["contractFrames"],
-        "executionFrames": frames,
-        "cameraConfig": camera_config,
-    })
-
+    _write_json(output / "resolved_config.json", {"animation": args.animation, "profile": resolved["profile"],
+                "jointContract": resolved["contract"], "cameraConfig": camera_config,
+                "contractFrames": resolved["contractFrames"], "executionFrames": frames, "cameras": camera_names})
     blender = blender_executable(args.blender)
     root = Path(__file__).resolve().parents[2]
-    entry = root / "blender_entry.py"
-    subprocess.run([
-        blender, "--background", "--factory-startup", "--python", str(entry), "--",
-        "--spec", str(source_path), "--joint-contract", str(resolved["jointContractPath"]),
-        "--output", str(output),
-    ], check=True, timeout=240)
-    blend_path = output / "source.blend"
-    debug_path = output / "motion_debug.json"
+    subprocess.run([blender, "--background", "--factory-startup", "--python", str(root / "blender_entry.py"), "--",
+                    "--spec", str(source_path), "--output", str(output)], check=True, timeout=300)
+    blend_path, debug_path = output / "source.blend", output / "motion_debug.json"
     if not blend_path.is_file() or not debug_path.is_file():
         raise RuntimeError("authoring stage did not produce source.blend/motion_debug.json")
-
-    leg_entry = root / "common/rig/leg_ik.py"
-    subprocess.run([
-        blender, "--background", str(blend_path), "--python", str(leg_entry), "--",
-        "--output", str(output), "--frames", ",".join(map(str, frames)),
-    ], check=True, timeout=120)
-
-    camera_entry = root / "common/camera/render.py"
-    subprocess.run([
-        blender, "--background", str(blend_path), "--python", str(camera_entry), "--",
-        "--camera-config", str(camera_config_path), "--output", str(output),
-    ], check=True, timeout=240)
+    subprocess.run([blender, "--background", str(blend_path), "--python", str(root / "common/rig/leg_ik.py"), "--",
+                    "--output", str(output), "--frames", ",".join(map(str, frames))], check=True, timeout=120)
+    subprocess.run([blender, "--background", str(blend_path), "--python", str(root / "common/camera/render.py"), "--",
+                    "--camera-config", str(camera_config_path), "--output", str(output)], check=True, timeout=300)
     camera_debug = json.loads((output / "camera_debug.json").read_text(encoding="utf-8"))
-
-    reopen_entry = root / "common/authority/reopen.py"
-    subprocess.run([
-        blender, "--background", str(blend_path), "--python", str(reopen_entry), "--",
-        "--output", str(output), "--contract", str(output / "arm_joint_contract.json"),
-        "--pre-debug", str(debug_path), "--frames", ",".join(map(str, frames)),
-    ], check=True, timeout=120)
-
+    execution_contract = dict(resolved["contract"])
+    execution_contract["reviewFrames"] = frames
+    execution_contract_path = output / "execution_contract.json"
+    _write_json(execution_contract_path, execution_contract)
+    subprocess.run([blender, "--background", str(blend_path), "--python", str(root / "common/authority/reopen.py"), "--",
+                    "--output", str(output), "--contract", str(execution_contract_path), "--pre-debug", str(debug_path)],
+                   check=True, timeout=120)
     skeleton_entry = root / "common/rig/skeleton_viewport.py"
     xvfb = shutil.which("xvfb-run")
     for name in camera_names:
@@ -123,32 +88,26 @@ def run_review(args) -> int:
             if not path.is_file():
                 raise RuntimeError(f"camera object output missing: {path}")
         compose_sheet(object_frames, camera_root / "object_keyposes.png", columns=4)
-        command = [
-            blender, str(blend_path), "--python", str(skeleton_entry), "--",
-            "--output", str(camera_root / "skeleton_frames"), "--rig-output", str(output),
-            "--frames", ",".join(map(str, frames)), "--skip-rig-docs",
-            "--camera-config", str(camera_config_path), "--camera-name", name,
-        ]
+        command = [blender, str(blend_path), "--python", str(skeleton_entry), "--",
+                   "--output", str(camera_root / "skeleton_frames"), "--rig-output", str(output),
+                   "--frames", ",".join(map(str, frames)), "--skip-rig-docs",
+                   "--camera-config", str(camera_config_path), "--camera-name", name]
         if xvfb:
             command = [xvfb, "-a", *command]
-        subprocess.run(command, check=True, timeout=120)
+        subprocess.run(command, check=True, timeout=180)
         skeleton_frames = [camera_root / "skeleton_frames" / f"{frame:02d}.png" for frame in frames]
         for path in skeleton_frames:
             if not path.is_file():
                 raise RuntimeError(f"camera skeleton output missing: {path}")
         compose_sheet(skeleton_frames, camera_root / "skeleton_keyposes.png", columns=4)
-
     write_camera_overlays(output, camera_debug, camera_names, frames)
     copy_camera_aliases(output, alias_name)
-    _write_json(output / "metadata.json", {
-        "tool": "anim2sheet", "mode": "review", "animation": args.animation,
-        "contractFrames": resolved["contractFrames"], "reviewFrames": frames,
-        "armControl": "deterministic_joint_fk", "legControl": "ik_with_explicit_knee_poles",
-        "cameraProfile": str(resolved["cameraProfilePath"]), "reviewCameras": camera_names,
-        "finalCamera": final_name, "aliasCamera": alias_name,
-        "cameraDebug": "camera_debug.json", "legIkDebug": "leg_ik_debug.json",
-        "debug": "motion_debug.json", "reopenDebug": "reopen_debug.json",
-        "sourceBlend": "source.blend", "invocation": "invocation.json",
-    })
+    _write_json(output / "metadata.json", {"tool": "anim2sheet", "mode": "review", "animation": args.animation,
+                "contractFrames": resolved["contractFrames"], "reviewFrames": frames,
+                "armControl": resolved["contract"].get("armControl"), "legControl": "ik_with_explicit_knee_poles",
+                "cameraProfile": str(resolved["cameraProfilePath"]), "reviewCameras": camera_names,
+                "finalCamera": final_name, "aliasCamera": alias_name, "cameraDebug": "camera_debug.json",
+                "legIkDebug": "leg_ik_debug.json", "debug": "motion_debug.json", "reopenDebug": "reopen_debug.json",
+                "sourceBlend": "source.blend", "invocation": "invocation.json", "resolvedConfig": "resolved_config.json"})
     print(f"anim2sheet review OK -> {output}; frames={frames}; cameras={camera_names}", flush=True)
     return 0

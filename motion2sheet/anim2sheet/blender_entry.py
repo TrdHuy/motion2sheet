@@ -27,7 +27,6 @@ def _load_module(name: str, path: Path):
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--spec", required=True)
-    parser.add_argument("--joint-contract", required=True)
     parser.add_argument("--output", required=True)
     args, unknown = parser.parse_known_args(argv())
     source = json.loads(Path(args.spec).read_text(encoding="utf-8"))
@@ -38,7 +37,10 @@ def main() -> int:
         f"motion2sheet_anim2sheet_{animation_name}_author",
         ROOT / animation.blender_author,
     )
-    forwarded = ["--spec", args.spec, "--joint-contract", args.joint_contract, "--output", args.output, *unknown]
+    author_args = source.get("blenderAuthorArgs", [])
+    if not isinstance(author_args, list) or any(not isinstance(value, str) for value in author_args):
+        raise RuntimeError("source blenderAuthorArgs must be a string array")
+    forwarded = ["--spec", args.spec, *author_args, "--output", args.output, *unknown]
     old_argv = sys.argv
     try:
         sys.argv = [str(ROOT / "blender_entry.py"), "--", *forwarded]
