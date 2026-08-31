@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import bpy
+from mathutils import Vector
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[3]
 if str(PACKAGE_ROOT) not in sys.path:
@@ -34,22 +35,36 @@ def build_armature(rig: dict):
     bpy.context.view_layer.objects.active = armature
     armature.select_set(True)
     bpy.ops.object.mode_set(mode="EDIT")
-    matrices: dict[str, object] = {}
+
+    # Create every EditBone first so hierarchy attachment cannot reinterpret
+    # already-authored source geometry. The actual source head/tail/roll are
+    # restored only after all parent links exist.
     for bone_data in rig["bones"]:
         edit_bone = armature_data.edit_bones.new(bone_data["name"])
+        edit_bone.head = Vector((0.0, 0.0, 0.0))
+        edit_bone.tail = Vector((0.0, 1.0, 0.0))
+
+    for bone_data in rig["bones"]:
         parent_name = bone_data["parent"]
         if parent_name:
-            edit_bone.parent = armature_data.edit_bones[parent_name]
-            edit_bone.use_connect = bool(bone_data["properties"].get("useConnect", False))
-        parent_matrix = matrices[parent_name] if parent_name else None
-        local_matrix = trs_to_matrix(bone_data["rest"])
-        matrix = parent_matrix @ local_matrix if parent_matrix is not None else local_matrix
-        # EditBone.matrix is armature-space. Parent first, then assign the
-        # fully composed source rest matrix so Blender cannot reinterpret the
-        # already-authored child transform when hierarchy is attached.
-        edit_bone.matrix = matrix
-        edit_bone.length = float(bone_data["length"])
-        matrices[bone_data["name"]] = edit_bone.matrix.copy()
+            armature_data.edit_bones[bone_data["name"]].parent = armature_data.edit_bones[parent_name]
+
+    for bone_data in rig["bones"]:
+        edit_bone = armature_data.edit_bones[bone_data["name"]]
+        geometry = bone_data["editGeometry"]
+        edit_bone.head = Vector(geometry["head"])
+        edit_bone.tail = Vector(geometry["tail"])
+        edit_bone.roll = float(geometry["roll"])
+
+    # Apply connectivity last. A connected source bone is expected to have a
+    # head exactly at its parent's tail; Blender may snap that shared endpoint,
+    # which preserves the source topology rather than inventing geometry.
+    for bone_data in rig["bones"]:
+        if bone_data["parent"]:
+            armature_data.edit_bones[bone_data["name"]].use_connect = bool(
+                bone_data["properties"].get("useConnect", False)
+            )
+
     bpy.ops.object.mode_set(mode="POSE")
     bpy.ops.object.mode_set(mode="OBJECT")
     for bone_data in rig["bones"]:
