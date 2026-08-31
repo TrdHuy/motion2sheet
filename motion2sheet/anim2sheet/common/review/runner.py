@@ -8,7 +8,7 @@ from pathlib import Path
 
 from motion2sheet.anim2sheet.registry import get_animation
 from motion2sheet.anim2sheet.common.camera.config import final_camera_name
-from motion2sheet.anim2sheet.common.output.packer import compose_sheet
+from motion2sheet.anim2sheet.common.output.packer import compose_sheet, write_camera_previews
 from .overlay import write_camera_overlays, copy_camera_aliases
 
 
@@ -54,6 +54,8 @@ def run_review(args, *, command: str = "review") -> int:
     camera_profile = resolved["cameraProfile"]
     final_name = final_camera_name(camera_profile, camera_names)
     alias_name = final_name or camera_names[0]
+    gif_enabled = bool(getattr(args, "gif", False))
+    gif_fps = int(resolved["profile"]["fps"])
     camera_config = {
         "version": camera_profile["version"],
         "source": camera_profile["source"],
@@ -78,6 +80,7 @@ def run_review(args, *, command: str = "review") -> int:
         "contractFrames": resolved["contractFrames"],
         "executionFrames": frames,
         "cameras": camera_names,
+        "gif": gif_enabled,
         "blender": args.blender,
         "output": str(output),
     }
@@ -90,6 +93,7 @@ def run_review(args, *, command: str = "review") -> int:
         "contractFrames": resolved["contractFrames"],
         "executionFrames": frames,
         "cameras": camera_names,
+        "gif": gif_enabled,
     })
     blender = blender_executable(args.blender)
     root = Path(__file__).resolve().parents[2]
@@ -141,6 +145,14 @@ def run_review(args, *, command: str = "review") -> int:
         compose_sheet(skeleton_frames, camera_root / "skeleton_keyposes.png", columns=4)
     write_camera_overlays(output, camera_debug, camera_names, frames)
     copy_camera_aliases(output, alias_name)
+    write_camera_previews(
+        output,
+        camera_names,
+        frames,
+        fps=gif_fps,
+        alias_camera=alias_name,
+        enabled=gif_enabled,
+    )
     _write_json(output / "metadata.json", {
         "tool": "anim2sheet",
         "mode": command,
@@ -153,6 +165,9 @@ def run_review(args, *, command: str = "review") -> int:
         "reviewCameras": camera_names,
         "finalCamera": final_name,
         "aliasCamera": alias_name,
+        "gifEnabled": gif_enabled,
+        "gifFps": gif_fps if gif_enabled else None,
+        "previewGif": "preview.gif" if gif_enabled else None,
         "cameraDebug": "camera_debug.json",
         "legIkDebug": "leg_ik_debug.json",
         "debug": "motion_debug.json",
@@ -161,5 +176,8 @@ def run_review(args, *, command: str = "review") -> int:
         "invocation": "invocation.json",
         "resolvedConfig": "resolved_config.json",
     })
-    print(f"anim2sheet {command} OK -> {output}; frames={frames}; cameras={camera_names}", flush=True)
+    print(
+        f"anim2sheet {command} OK -> {output}; frames={frames}; cameras={camera_names}; gif={gif_enabled}",
+        flush=True,
+    )
     return 0

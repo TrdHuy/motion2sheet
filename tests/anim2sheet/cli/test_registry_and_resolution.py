@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from motion2sheet.anim2sheet.animations.gale_slash.animation import resolve_review_request
+from motion2sheet.anim2sheet.cli import parser as cli_parser
 from motion2sheet.anim2sheet.registry import get_animation
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -21,6 +22,17 @@ def resolve(*, frames=None, cameras=None):
         frames=frames,
         cameras=cameras,
     )
+
+
+def execution_argv(command: str) -> list[str]:
+    return [
+        command,
+        "--animation", "gale_slash",
+        "--profile", str(PROFILE),
+        "--joint-contract", str(CONTRACT),
+        "--camera-profile", str(CAMERAS),
+        "--output", "build/test",
+    ]
 
 
 def test_known_animation_resolves():
@@ -59,3 +71,12 @@ def test_review_frame_outside_contract_fails_fast():
 def test_unknown_camera_fails_fast():
     with pytest.raises(ValueError, match="unknown cameras"):
         resolve(cameras="front_final,missing")
+
+
+@pytest.mark.parametrize("command", ["build", "review"])
+def test_gif_cli_option_defaults_off_and_enables_explicitly(command: str):
+    parsed_default = cli_parser().parse_args(execution_argv(command))
+    assert parsed_default.gif is False
+
+    parsed_enabled = cli_parser().parse_args([*execution_argv(command), "--gif"])
+    assert parsed_enabled.gif is True

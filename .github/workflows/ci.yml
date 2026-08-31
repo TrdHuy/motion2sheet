@@ -261,6 +261,7 @@ jobs:
           --profile profiles/anim2sheet/animations/gale_slash/animation.json5
           --joint-contract profiles/anim2sheet/animations/gale_slash/joint_contract.json
           --camera-profile profiles/anim2sheet/cameras/fast_keypose_review.json
+          --gif
           --output build/anim/gale_slash
       - name: Validate canonical artifact
         run: anim2sheet validate build/anim/gale_slash

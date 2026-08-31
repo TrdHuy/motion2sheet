@@ -33,6 +33,11 @@ on:
         required: false
         default: ''
         type: string
+      gif:
+        description: Package execution-frame PNGs into GIF previews
+        required: true
+        default: false
+        type: boolean
       blender:
         description: Blender executable
         required: true
@@ -73,6 +78,7 @@ jobs:
           CAMERA_PROFILE: ${{ inputs.camera_profile }}
           FRAMES: ${{ inputs.frames }}
           CAMERAS: ${{ inputs.cameras }}
+          GIF: ${{ inputs.gif }}
           BLENDER: ${{ inputs.blender }}
           OUTPUT: ${{ inputs.output }}
         run: |
@@ -80,6 +86,7 @@ jobs:
           args=(anim2sheet review --animation "$ANIMATION" --profile "$PROFILE" --joint-contract "$JOINT_CONTRACT" --camera-profile "$CAMERA_PROFILE" --blender "$BLENDER" --output "$OUTPUT")
           if [[ -n "$FRAMES" ]]; then args+=(--frames "$FRAMES"); fi
           if [[ -n "$CAMERAS" ]]; then args+=(--cameras "$CAMERAS"); fi
+          if [[ "$GIF" == "true" ]]; then args+=(--gif); fi
           "${args[@]}"
       - name: Validate artifact
         env:

@@ -37,6 +37,7 @@ def _execution_args(parser: argparse.ArgumentParser, *, frames: bool) -> None:
     else:
         parser.set_defaults(frames=None)
     parser.add_argument("--cameras", default=None)
+    parser.add_argument("--gif", action="store_true", help="Package rendered execution-frame PNGs into GIF previews")
     parser.add_argument("--blender", default="blender")
     parser.add_argument("--output", required=True)
 

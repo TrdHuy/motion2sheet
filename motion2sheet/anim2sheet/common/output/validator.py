@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from PIL import Image
+
 
 REQUIRED_JSON = (
     "source.json",
@@ -31,6 +33,36 @@ def _read_json(path: Path, errors: list[str]) -> dict:
 
 def _frames(values) -> list[int]:
     return [int(value) for value in values]
+
+
+def _validate_preview(path: Path, expected_frames: int, fps: float, errors: list[str], label: str) -> None:
+    if not path.is_file():
+        errors.append(f"{label} preview.gif is missing")
+        return
+    try:
+        image = Image.open(path)
+    except OSError as exc:
+        errors.append(f"{label} preview.gif is invalid: {exc}")
+        return
+    try:
+        if int(getattr(image, "n_frames", 1)) != expected_frames:
+            errors.append(
+                f"{label} preview.gif frame count must be {expected_frames}, got {getattr(image, 'n_frames', 1)}"
+            )
+        expected_duration = 1000.0 / fps
+        for index in range(int(getattr(image, "n_frames", 1))):
+            image.seek(index)
+            duration = image.info.get("duration")
+            if not isinstance(duration, (int, float)) or duration <= 0:
+                errors.append(f"{label} preview.gif frame {index} has invalid duration")
+                continue
+            # GIF timing is stored in centiseconds, so allow one GIF clock tick.
+            if abs(float(duration) - expected_duration) > 10.0:
+                errors.append(
+                    f"{label} preview.gif frame {index} duration {duration}ms does not match fps {fps}"
+                )
+    finally:
+        image.close()
 
 
 def validate_output(root: Path) -> list[str]:
@@ -117,4 +149,40 @@ def validate_output(root: Path) -> list[str]:
     for name in ("object_keyposes.png", "skeleton_keyposes.png", "object_skeleton_overlay.png"):
         if not (root / name).is_file():
             errors.append(f"{name} is missing")
+
+    gif_enabled = invocation.get("gif", False)
+    if not isinstance(gif_enabled, bool):
+        errors.append("invocation gif must be boolean")
+        gif_enabled = False
+    if resolved.get("gif", False) != gif_enabled:
+        errors.append("resolved_config gif does not match invocation")
+    if metadata.get("gifEnabled", False) != gif_enabled:
+        errors.append("metadata gifEnabled does not match invocation")
+
+    preview_paths = [root / "preview.gif", *[root / "cameras" / name / "preview.gif" for name in cameras]]
+    if gif_enabled:
+        fps = resolved.get("profile", {}).get("fps")
+        if isinstance(fps, bool) or not isinstance(fps, (int, float)) or fps <= 0:
+            errors.append("resolved profile fps must be positive when GIF preview is enabled")
+        else:
+            for camera_name in cameras:
+                _validate_preview(
+                    root / "cameras" / camera_name / "preview.gif",
+                    len(execution_frames),
+                    float(fps),
+                    errors,
+                    camera_name,
+                )
+            _validate_preview(root / "preview.gif", len(execution_frames), float(fps), errors, "top-level")
+        alias_camera = metadata.get("aliasCamera")
+        if alias_camera in cameras:
+            alias_preview = root / "cameras" / str(alias_camera) / "preview.gif"
+            top_preview = root / "preview.gif"
+            if alias_preview.is_file() and top_preview.is_file() and alias_preview.read_bytes() != top_preview.read_bytes():
+                errors.append("top-level preview.gif must alias the selected final/alias camera GIF")
+    else:
+        for path in preview_paths:
+            if path.exists():
+                errors.append(f"{path.relative_to(root)} must not exist when GIF preview is disabled")
+
     return errors
