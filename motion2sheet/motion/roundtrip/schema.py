@@ -1,0 +1,139 @@
+from __future__ import annotations
+
+import json
+import math
+import re
+from pathlib import Path
+from typing import Any
+
+RIG_SCHEMA = "motion2sheet.source-rig"
+ANIMATION_SCHEMA = "motion2sheet.source-animation"
+VERSION = 1
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+
+def _finite(value: Any, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a number")
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError(f"{label} must be finite")
+    if value == 0.0:
+        return 0.0
+    return value
+
+
+def vec(values: Any, size: int, label: str) -> list[float]:
+    if not isinstance(values, list) or len(values) != size:
+        raise ValueError(f"{label} must contain exactly {size} numbers")
+    return [_finite(value, f"{label}[{index}]") for index, value in enumerate(values)]
+
+
+def validate_id(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not ID_RE.fullmatch(value):
+        raise ValueError(f"{label} must match {ID_RE.pattern}")
+    return value
+
+
+def validate_trs(data: Any, label: str) -> None:
+    if not isinstance(data, dict):
+        raise ValueError(f"{label} must be an object")
+    expected = {"translation", "rotationQuaternion", "scale"}
+    unknown = set(data) - expected
+    if unknown:
+        raise ValueError(f"{label} has unknown fields: {sorted(unknown)}")
+    missing = expected - set(data)
+    if missing:
+        raise ValueError(f"{label} missing fields: {sorted(missing)}")
+    vec(data["translation"], 3, f"{label}.translation")
+    quaternion = vec(data["rotationQuaternion"], 4, f"{label}.rotationQuaternion")
+    norm = math.sqrt(sum(value * value for value in quaternion))
+    if abs(norm - 1.0) > 1e-8:
+        raise ValueError(f"{label}.rotationQuaternion must be normalized; norm={norm}")
+    vec(data["scale"], 3, f"{label}.scale")
+
+
+def validate_rig_document(data: Any) -> dict:
+    if not isinstance(data, dict):
+        raise ValueError("rig document must be an object")
+    if data.get("schema") != RIG_SCHEMA or data.get("version") != VERSION:
+        raise ValueError(f"unsupported rig schema/version: {data.get('schema')!r}/{data.get('version')!r}")
+    validate_id(data.get("id"), "rig.id")
+    validate_trs(data.get("armatureObject", {}).get("transform"), "rig.armatureObject.transform")
+    bones = data.get("bones")
+    if not isinstance(bones, list) or not bones:
+        raise ValueError("rig.bones must be a non-empty list")
+    names: set[str] = set()
+    for index, bone in enumerate(bones):
+        if not isinstance(bone, dict):
+            raise ValueError(f"rig.bones[{index}] must be an object")
+        name = bone.get("name")
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"rig.bones[{index}].name must be non-empty")
+        if name in names:
+            raise ValueError(f"duplicate bone name: {name}")
+        names.add(name)
+        parent = bone.get("parent")
+        if parent is not None and not isinstance(parent, str):
+            raise ValueError(f"bone {name}.parent must be string or null")
+        validate_trs(bone.get("rest"), f"bone {name}.rest")
+        length = _finite(bone.get("length"), f"bone {name}.length")
+        if length <= 0:
+            raise ValueError(f"bone {name}.length must be positive")
+    for bone in bones:
+        parent = bone.get("parent")
+        if parent is not None and parent not in names:
+            raise ValueError(f"bone {bone['name']} references missing parent {parent}")
+    return data
+
+
+def validate_animation_document(data: Any, rig: dict) -> dict:
+    if not isinstance(data, dict):
+        raise ValueError("animation document must be an object")
+    if data.get("schema") != ANIMATION_SCHEMA or data.get("version") != VERSION:
+        raise ValueError(f"unsupported animation schema/version: {data.get('schema')!r}/{data.get('version')!r}")
+    validate_id(data.get("id"), "animation.id")
+    rig_ref = data.get("rig")
+    if not isinstance(rig_ref, dict) or rig_ref.get("id") != rig.get("id"):
+        raise ValueError("animation.rig.id must match rig.id")
+    fps = _finite(data.get("fps"), "animation.fps")
+    if fps <= 0:
+        raise ValueError("animation.fps must be positive")
+    frame_range = data.get("frameRange")
+    if not isinstance(frame_range, list) or len(frame_range) != 2 or not all(isinstance(v, int) and not isinstance(v, bool) for v in frame_range):
+        raise ValueError("animation.frameRange must be [integerStart, integerEnd]")
+    start, end = frame_range
+    if end < start:
+        raise ValueError("animation.frameRange end must be >= start")
+    frames = data.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise ValueError("animation.frames must be non-empty")
+    expected_frames = list(range(start, end + 1))
+    actual_frames = [entry.get("frame") if isinstance(entry, dict) else None for entry in frames]
+    if actual_frames != expected_frames:
+        raise ValueError(f"animation.frames must be ordered and contiguous: expected {expected_frames[0]}..{expected_frames[-1]}")
+    if data.get("frameCount") != len(expected_frames):
+        raise ValueError("animation.frameCount contradicts frameRange")
+    rig_bones = {bone["name"] for bone in rig["bones"]}
+    for entry in frames:
+        bones = entry.get("bones")
+        if not isinstance(bones, dict) or set(bones) != rig_bones:
+            missing = rig_bones - set(bones or {})
+            extra = set(bones or {}) - rig_bones
+            raise ValueError(f"frame {entry.get('frame')} bone set mismatch; missing={sorted(missing)} extra={sorted(extra)}")
+        for bone_name, transform in bones.items():
+            validate_trs(transform, f"frame {entry['frame']} bone {bone_name}")
+    return data
+
+
+def canonical_json_text(data: Any) -> str:
+    return json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False, separators=(",", ": ")) + "\n"
+
+
+def write_canonical_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(canonical_json_text(data), encoding="utf-8")
+
+
+def read_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
