@@ -78,6 +78,18 @@ def test_anim_common_change_runs_gale_slash_dependents():
     assert "vfx-splash-e2e" not in targets
 
 
+def test_anim_camera_profile_is_common_and_runs_anim_dependents():
+    components, targets = resolve("profiles/anim2sheet/cameras/fast_keypose_review.json")
+    assert "anim-common" in components
+    assert "anim-core" in components
+    assert "anim-gale-slash" in components
+    assert "anim-common-unit" in targets
+    assert "anim-cli-unit" in targets
+    assert "anim-gale-slash-unit" in targets
+    assert "anim-gale-slash-e2e" in targets
+    assert "vfx-splash-e2e" not in targets
+
+
 def test_gale_slash_change_runs_only_relevant_anim_targets():
     components, targets = resolve("motion2sheet/anim2sheet/animations/gale_slash/contract.py")
     assert components == {"anim-gale-slash"}

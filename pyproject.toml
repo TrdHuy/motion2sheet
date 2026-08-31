@@ -30,5 +30,5 @@ include = ["motion2sheet*"]
 "motion2sheet.motion" = ["profiles/*.json"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/motion", "tests/vfx2sheet/unit", "tests/ci"]
+testpaths = ["tests/motion", "tests/vfx2sheet/unit", "tests/anim2sheet", "tests/ci"]
 addopts = "-q"

@@ -24,9 +24,9 @@
     "vfx-trajectory": {"paths": ["motion2sheet/vfx2sheet/common/trajectory/**", "profiles/vfx2sheet/trajectories/**"], "depends_on": []},
     "vfx-core": {"paths": ["motion2sheet/vfx2sheet/__init__.py", "motion2sheet/vfx2sheet/cli.py", "motion2sheet/vfx2sheet/registry.py", "motion2sheet/vfx2sheet/blender_entry.py"], "depends_on": ["vfx-output"]},
     "vfx-splash": {"paths": ["motion2sheet/vfx2sheet/effects/splash/**", "profiles/vfx2sheet/splash/**"], "depends_on": ["vfx-core", "vfx-output", "vfx-trajectory"]},
-    "anim-common": {"paths": ["motion2sheet/anim2sheet/common/**"], "depends_on": []},
+    "anim-common": {"paths": ["motion2sheet/anim2sheet/common/**", "profiles/anim2sheet/cameras/**"], "depends_on": []},
     "anim-core": {"paths": ["motion2sheet/anim2sheet/__init__.py", "motion2sheet/anim2sheet/cli.py", "motion2sheet/anim2sheet/registry.py", "motion2sheet/anim2sheet/blender_entry.py"], "depends_on": ["anim-common"]},
-    "anim-gale-slash": {"paths": ["motion2sheet/anim2sheet/animations/gale_slash/**", "profiles/anim2sheet/animations/gale_slash/**", "profiles/anim2sheet/cameras/**"], "depends_on": ["anim-core", "anim-common"]}
+    "anim-gale-slash": {"paths": ["motion2sheet/anim2sheet/animations/gale_slash/**", "profiles/anim2sheet/animations/gale_slash/**"], "depends_on": ["anim-core", "anim-common"]}
   },
   "test_targets": {
     "motion-normalize-unit": {"kind": "unit", "path": "tests/motion/normalize/test_normalize.py", "paths": ["tests/motion/normalize/**"], "depends_on": ["motion-normalize"]},
