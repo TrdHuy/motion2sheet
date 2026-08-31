@@ -19,6 +19,8 @@ jobs:
       motion_e2e_count: ${{ steps.affected.outputs.motion_e2e_count }}
       vfx_e2e_matrix: ${{ steps.affected.outputs.vfx_e2e_matrix }}
       vfx_e2e_count: ${{ steps.affected.outputs.vfx_e2e_count }}
+      anim_e2e_matrix: ${{ steps.affected.outputs.anim_e2e_matrix }}
+      anim_e2e_count: ${{ steps.affected.outputs.anim_e2e_count }}
       affected_components: ${{ steps.affected.outputs.affected_components }}
       affected_targets: ${{ steps.affected.outputs.affected_targets }}
     steps:
@@ -218,8 +220,58 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  anim-e2e:
+    needs: detect
+    if: needs.detect.outputs.anim_e2e_count != '0'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.anim_e2e_matrix) }}
+    name: anim-e2e / ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Python package
+        run: python -m pip install -e '.[dev]'
+      - name: Install Blender runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 xvfb libx11-6 libxext6 libxrender1 libxi6 libxkbcommon0 libgl1-mesa-dri
+      - name: Setup Blender 4.5 LTS
+        uses: bradyajohnston/setup-blender@v5
+        with:
+          version: "4.5.12"
+      - name: Verify Blender
+        run: blender --version
+      - name: Reject unknown animation target
+        if: matrix.target != 'gale_slash'
+        run: echo "Unknown anim2sheet E2E target: ${{ matrix.target }}" >&2; exit 2
+      - name: Run canonical F1-F16 multi-camera review
+        run: >-
+          anim2sheet review
+          --animation gale_slash
+          --profile profiles/anim2sheet/animations/gale_slash/animation.json5
+          --joint-contract profiles/anim2sheet/animations/gale_slash/joint_contract.json
+          --camera-profile profiles/anim2sheet/cameras/fast_keypose_review.json
+          --output build/anim/gale_slash
+      - name: Validate canonical artifact
+        run: anim2sheet validate build/anim/gale_slash
+      - name: Verify saved-blend and proxy authority
+        run: python tests/anim2sheet/e2e/verify_keypose_authority.py build/anim/gale_slash
+      - name: Verify Gale Slash semantics
+        run: python tests/anim2sheet/e2e/verify_keypose_architecture.py build/anim/gale_slash
+      - name: Upload canonical animation artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion2sheet-anim-${{ matrix.target }}-e2e-output
+          path: build/anim/${{ matrix.target }}/
+          if-no-files-found: warn
+          retention-days: 7
+
   test:
-    needs: [detect, unit, motion-e2e, vfx-e2e]
+    needs: [detect, unit, motion-e2e, vfx-e2e, anim-e2e]
     if: always()
     runs-on: ubuntu-latest
     name: test
@@ -230,9 +282,10 @@ jobs:
           UNIT_RESULT: ${{ needs.unit.result }}
           MOTION_RESULT: ${{ needs.motion-e2e.result }}
           VFX_RESULT: ${{ needs.vfx-e2e.result }}
+          ANIM_RESULT: ${{ needs.anim-e2e.result }}
         run: |
           set -euo pipefail
-          for result in "$DETECT_RESULT" "$UNIT_RESULT" "$MOTION_RESULT" "$VFX_RESULT"; do
+          for result in "$DETECT_RESULT" "$UNIT_RESULT" "$MOTION_RESULT" "$VFX_RESULT" "$ANIM_RESULT"; do
             case "$result" in
               success|skipped) ;;
               *) echo "CI dependency failed with result: $result" >&2; exit 1 ;;
