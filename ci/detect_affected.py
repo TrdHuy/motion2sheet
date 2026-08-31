@@ -19,10 +19,7 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict:
 
 
 def changed_files(base: str, head: str) -> list[str]:
-    result = subprocess.run(
-        ["git", "diff", "--name-only", base, head],
-        check=True, text=True, capture_output=True,
-    )
+    result = subprocess.run(["git", "diff", "--name-only", base, head], check=True, text=True, capture_output=True)
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
@@ -96,6 +93,7 @@ def emit_outputs(manifest: dict, target_names: set[str], affected_components: se
         "unit": matrix_for(manifest, target_names, "unit"),
         "motion_e2e": matrix_for(manifest, target_names, "motion-e2e"),
         "vfx_e2e": matrix_for(manifest, target_names, "vfx-e2e"),
+        "anim_e2e": matrix_for(manifest, target_names, "anim-e2e"),
     }
     for key, matrix in groups.items():
         print(f"{key}_matrix={json.dumps(matrix, separators=(',', ':'))}")
