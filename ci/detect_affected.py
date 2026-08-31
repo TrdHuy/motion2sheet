@@ -3,19 +3,78 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Iterable
 
 DEFAULT_MANIFEST = Path(__file__).with_name("components.json")
+DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
+ANIMATION_ROOT = Path("profiles/anim2sheet/animations")
+ANIMATION_TEST_ROOT = Path("tests/anim2sheet/animations")
+REQUIRED_ANIMATION_FILES = ("animation.json5", "pose_reference.json", "joint_contract.json")
+SAFE_CLIP_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
 def matches(path: str, patterns: Iterable[str]) -> bool:
     return any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
 
 
-def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+def animation_target_prefix(clip: str) -> str:
+    return f"anim-{clip.replace('_', '-')}"
+
+
+def discover_animation_clips(repo_root: Path = DEFAULT_REPO_ROOT) -> list[str]:
+    animation_root = repo_root / ANIMATION_ROOT
+    if not animation_root.is_dir():
+        return []
+    clips: list[str] = []
+    target_prefixes: set[str] = set()
+    for candidate in sorted(animation_root.iterdir(), key=lambda path: path.name):
+        if not candidate.is_dir():
+            continue
+        if not all((candidate / filename).is_file() for filename in REQUIRED_ANIMATION_FILES):
+            continue
+        clip = candidate.name
+        if not SAFE_CLIP_NAME.fullmatch(clip):
+            raise ValueError(f"Invalid animation clip directory name: {clip!r}")
+        prefix = animation_target_prefix(clip)
+        if prefix in target_prefixes:
+            raise ValueError(f"Animation clip CI target collision for {clip!r}: {prefix!r}")
+        target_prefixes.add(prefix)
+        clips.append(clip)
+    return clips
+
+
+def add_discovered_animation_targets(manifest: dict, repo_root: Path = DEFAULT_REPO_ROOT) -> dict:
+    targets = manifest["test_targets"]
+    for clip in discover_animation_clips(repo_root):
+        prefix = animation_target_prefix(clip)
+        profile_paths = [f"{ANIMATION_ROOT.as_posix()}/{clip}/**"]
+        unit_dir = repo_root / ANIMATION_TEST_ROOT / clip / "unit"
+        if unit_dir.is_dir():
+            targets[f"{prefix}-unit"] = {
+                "kind": "unit",
+                "path": f"{ANIMATION_TEST_ROOT.as_posix()}/{clip}/unit",
+                "paths": [*profile_paths, f"{ANIMATION_TEST_ROOT.as_posix()}/{clip}/unit/**"],
+                "depends_on": ["anim-core"],
+            }
+        targets[f"{prefix}-e2e"] = {
+            "kind": "anim-e2e",
+            "target": clip,
+            "paths": [
+                *profile_paths,
+                f"{ANIMATION_TEST_ROOT.as_posix()}/{clip}/e2e/**",
+                "tests/anim2sheet/common/authority/**",
+            ],
+            "depends_on": ["anim-core"],
+        }
+    return manifest
+
+
+def load_manifest(path: Path = DEFAULT_MANIFEST, *, repo_root: Path = DEFAULT_REPO_ROOT) -> dict:
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    return add_discovered_animation_targets(manifest, repo_root)
 
 
 def changed_files(base: str, head: str) -> list[str]:
