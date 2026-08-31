@@ -1,4 +1,4 @@
-name: Fast Keypose Review
+name: Anim2sheet Migration Review
 
 on:
   pull_request:
@@ -7,7 +7,6 @@ on:
       - 'profiles/anim2sheet/**'
       - 'tests/anim2sheet/**'
       - '.github/workflows/anim2sheet-ci.yml'
-      - '.github/workflows/anim2sheet-full-review.yml'
       - 'pyproject.toml'
   workflow_dispatch:
 
@@ -15,13 +14,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: anim2sheet-fast-keypose-${{ github.event.pull_request.number || github.ref }}
+  group: anim2sheet-migration-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  fast-keypose-review:
+  canonical-review:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -40,22 +39,25 @@ jobs:
           version: '4.5.12'
       - name: Verify Blender
         run: blender --version
-      - name: Build F1 F6 F7 F8 deterministic multi-camera review
+      - name: Review canonical Gale Slash F1-F16 through public CLI
         run: >-
-          python -m motion2sheet.anim2sheet.keypose_review
-          --profile profiles/anim2sheet/swordsman/gale_slash.json5
-          --joint-contract profiles/anim2sheet/swordsman/gale_slash_arm_joint_keyposes.json
+          anim2sheet review
+          --animation gale_slash
+          --profile profiles/anim2sheet/animations/gale_slash/animation.json5
+          --joint-contract profiles/anim2sheet/animations/gale_slash/joint_contract.json
           --camera-profile profiles/anim2sheet/cameras/fast_keypose_review.json
-          --output build/anim/keypose_review
+          --output build/anim/canonical_review
+      - name: Validate public artifact
+        run: anim2sheet validate build/anim/canonical_review
       - name: Verify saved-blend and proxy authority
-        run: python tests/anim2sheet/e2e/verify_keypose_authority.py build/anim/keypose_review
+        run: python tests/anim2sheet/e2e/verify_keypose_authority.py build/anim/canonical_review
       - name: Verify key-pose architecture semantics
-        run: python tests/anim2sheet/e2e/verify_keypose_architecture.py build/anim/keypose_review
-      - name: Upload fast key-pose artifact
+        run: python tests/anim2sheet/e2e/verify_keypose_architecture.py build/anim/canonical_review
+      - name: Upload canonical artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: motion2sheet-fast-keypose-review
-          path: build/anim/keypose_review/
+          name: motion2sheet-anim2sheet-migration-review
+          path: build/anim/canonical_review/
           if-no-files-found: warn
           retention-days: 7
