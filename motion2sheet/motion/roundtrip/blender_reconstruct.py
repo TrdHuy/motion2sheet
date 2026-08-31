@@ -144,13 +144,10 @@ def export_fbx(armature, output_path: Path) -> None:
             object_types={"ARMATURE"},
             apply_unit_scale=True,
             apply_scale_options="FBX_SCALE_NONE",
-            # This round-trip targets Blender mathematical equivalence, not a
-            # Maya-oriented interchange preset. Leave object transforms intact
-            # and write Blender's native axis space into FBX metadata.
-            use_space_transform=False,
+            use_space_transform=True,
             bake_space_transform=False,
-            axis_forward="-Y",
-            axis_up="Z",
+            axis_forward="-Z",
+            axis_up="Y",
             primary_bone_axis="Y",
             secondary_bone_axis="X",
             add_leaf_bones=False,
