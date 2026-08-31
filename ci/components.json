@@ -43,8 +43,8 @@
     "vfx-splash-e2e": {"kind": "vfx-e2e", "target": "splash", "paths": ["tests/vfx2sheet/e2e/**", "tests/vfx2sheet/fixtures/splash/**", "tests/vfx2sheet/golden/splash/**"], "depends_on": ["vfx-splash"]},
     "anim-common-unit": {"kind": "unit", "path": "tests/anim2sheet/common", "paths": ["tests/anim2sheet/common/**"], "depends_on": ["anim-common"]},
     "anim-cli-unit": {"kind": "unit", "path": "tests/anim2sheet/cli", "paths": ["tests/anim2sheet/cli/**"], "depends_on": ["anim-core", "anim-gale-slash"]},
-    "anim-gale-slash-unit": {"kind": "unit", "path": "tests/anim2sheet/unit", "paths": ["tests/anim2sheet/unit/**", "tests/anim2sheet/animations/gale_slash/unit/**"], "depends_on": ["anim-gale-slash"]},
-    "anim-gale-slash-e2e": {"kind": "anim-e2e", "target": "gale_slash", "paths": ["tests/anim2sheet/e2e/**", "tests/anim2sheet/animations/gale_slash/e2e/**"], "depends_on": ["anim-gale-slash"]},
+    "anim-gale-slash-unit": {"kind": "unit", "path": "tests/anim2sheet/animations/gale_slash/unit", "paths": ["tests/anim2sheet/animations/gale_slash/unit/**"], "depends_on": ["anim-gale-slash"]},
+    "anim-gale-slash-e2e": {"kind": "anim-e2e", "target": "gale_slash", "paths": ["tests/anim2sheet/animations/gale_slash/e2e/**"], "depends_on": ["anim-gale-slash"]},
     "ci-affected-unit": {"kind": "unit", "path": "tests/ci/test_detect_affected.py", "paths": ["tests/ci/**"], "depends_on": []}
   }
 }
