@@ -3,184 +3,118 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageStat
+
+REQUIRED_JSON = (
+    "source.json",
+    "metadata.json",
+    "invocation.json",
+    "resolved_config.json",
+    "motion_debug.json",
+    "camera_debug.json",
+    "leg_ik_debug.json",
+    "reopen_debug.json",
+)
+REQUIRED_FILES = (*REQUIRED_JSON, "source.blend")
 
 
-def _validate_frame_set(
-    root: Path,
-    folder: str,
-    frames: int,
-    canvas: tuple[int, int],
-    *,
-    require_alpha_content: bool,
-) -> tuple[list[str], list[Path]]:
-    errors: list[str] = []
-    frame_paths = sorted((root / folder).glob("*.png"))
-    if len(frame_paths) != frames:
-        return [f"expected {frames} {folder} PNGs, got {len(frame_paths)}"], frame_paths
-
-    changed = 0
-    previous = None
-    for path in frame_paths:
-        with Image.open(path) as image:
-            rgba = image.convert("RGBA")
-            if rgba.size != canvas:
-                errors.append(
-                    f"{folder}/{path.name} has size {rgba.size}, expected {canvas}"
-                )
-            if require_alpha_content:
-                alpha = rgba.getchannel("A")
-                bbox = alpha.getbbox()
-                if bbox is None:
-                    errors.append(f"{folder}/{path.name} is fully transparent")
-                elif (
-                    bbox[0] <= 1
-                    or bbox[1] <= 1
-                    or bbox[2] >= canvas[0] - 1
-                    or bbox[3] >= canvas[1] - 1
-                ):
-                    errors.append(f"{folder}/{path.name} touches canvas edge")
-            if previous is not None:
-                diff = ImageChops.difference(previous, rgba)
-                if max(ImageStat.Stat(diff).sum) > 1.0:
-                    changed += 1
-            previous = rgba.copy()
-
-    if frames > 1 and changed < frames - 3:
-        errors.append(f"{folder} animation is too static")
-    return errors, frame_paths
-
-
-def _validate_sheet(
-    path: Path,
-    canvas: tuple[int, int],
-    frames: int,
-    columns: int,
-    label: str,
-) -> list[str]:
-    if not path.exists():
-        return [f"{label} is missing"]
-    rows = (frames + columns - 1) // columns
-    with Image.open(path) as image:
-        errors = []
-        if image.size != (canvas[0] * columns, canvas[1] * rows):
-            errors.append(f"{label} dimensions do not match source contract")
-        if image.mode != "RGBA":
-            errors.append(f"{label} must be RGBA")
-        return errors
-
-
-def _validate_rig_exports(root: Path, metadata: dict) -> list[str]:
-    errors = []
-    expected = {
-        "rig_default_overview.png": metadata.get("rigOverview"),
-        "rig_default_labeled.png": metadata.get("rigLabeled"),
-        "rig_bones.json": metadata.get("rigManifest"),
-        "rig_bones.txt": metadata.get("rigHierarchy"),
-    }
-    for filename, declared in expected.items():
-        if declared != filename:
-            errors.append(f"metadata must reference {filename}")
-        if not (root / filename).exists():
-            errors.append(f"{filename} is missing")
-
-    if errors:
-        return errors
-
+def _read_json(path: Path, errors: list[str]) -> dict:
     try:
-        manifest = json.loads((root / "rig_bones.json").read_text(encoding="utf-8"))
+        value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        return [f"rig_bones.json is invalid: {exc}"]
+        errors.append(f"{path.name} is invalid: {exc}")
+        return {}
+    if not isinstance(value, dict):
+        errors.append(f"{path.name} must contain a JSON object")
+        return {}
+    return value
 
-    if manifest.get("armature") != "GameHumanoidV2":
-        errors.append("rig_bones.json armature must be GameHumanoidV2")
-    bones = manifest.get("bones")
-    if not isinstance(bones, list) or not bones:
-        errors.append("rig_bones.json must contain bones")
-    elif int(manifest.get("boneCount", -1)) != len(bones):
-        errors.append("rig_bones.json boneCount mismatch")
 
-    for filename in ("rig_default_overview.png", "rig_default_labeled.png"):
-        try:
-            with Image.open(root / filename) as image:
-                if image.width < 512 or image.height < 512:
-                    errors.append(f"{filename} must be at least 512x512")
-        except OSError as exc:
-            errors.append(f"{filename} is invalid: {exc}")
-    return errors
+def _frames(values) -> list[int]:
+    return [int(value) for value in values]
 
 
 def validate_output(root: Path) -> list[str]:
     errors: list[str] = []
-    required = ["source.json", "metadata.json", "source.blend", "motion_debug.json"]
-    for name in required:
-        if not (root / name).exists():
-            errors.append(f"{name} is missing")
+    missing = [name for name in REQUIRED_FILES if not (root / name).exists()]
+    if missing:
+        return [f"{name} is missing" for name in missing]
+
+    data = {name: _read_json(root / name, errors) for name in REQUIRED_JSON}
     if errors:
         return errors
 
-    source = json.loads((root / "source.json").read_text(encoding="utf-8"))
-    metadata = json.loads((root / "metadata.json").read_text(encoding="utf-8"))
-    debug = json.loads((root / "motion_debug.json").read_text(encoding="utf-8"))
-    frames = int(source["frames"])
-    canvas = tuple(source["canvas"])
-    columns = int(source["sheetColumns"])
+    metadata = data["metadata.json"]
+    invocation = data["invocation.json"]
+    resolved = data["resolved_config.json"]
+    motion = data["motion_debug.json"]
+    camera = data["camera_debug.json"]
+    leg = data["leg_ik_debug.json"]
+    reopen = data["reopen_debug.json"]
 
-    object_errors, _ = _validate_frame_set(
-        root, "frames", frames, canvas, require_alpha_content=True
-    )
-    skeleton_errors, _ = _validate_frame_set(
-        root, "skeleton_frames", frames, canvas, require_alpha_content=False
-    )
-    errors.extend(object_errors)
-    errors.extend(skeleton_errors)
+    if metadata.get("tool") != "anim2sheet":
+        errors.append("metadata tool must be anim2sheet")
+    if invocation.get("tool") != "anim2sheet":
+        errors.append("invocation tool must be anim2sheet")
+    if invocation.get("command") not in {"build", "review"}:
+        errors.append("invocation command must be build or review")
+    if metadata.get("animation") != invocation.get("animation"):
+        errors.append("metadata animation does not match invocation")
+    if resolved.get("animation") != invocation.get("animation"):
+        errors.append("resolved animation does not match invocation")
 
-    errors.extend(
-        _validate_sheet(
-            root / "sprite_sheet.png",
-            canvas,
-            frames,
-            columns,
-            "sprite_sheet.png",
-        )
-    )
-    errors.extend(
-        _validate_sheet(
-            root / "object_sheet.png",
-            canvas,
-            frames,
-            columns,
-            "object_sheet.png",
-        )
-    )
-    errors.extend(
-        _validate_sheet(
-            root / "skeleton_sheet.png",
-            canvas,
-            frames,
-            columns,
-            "skeleton_sheet.png",
-        )
-    )
+    try:
+        contract_frames = _frames(invocation.get("contractFrames", []))
+        execution_frames = _frames(invocation.get("executionFrames", []))
+    except (TypeError, ValueError):
+        return errors + ["invocation frame lists must contain integers"]
+    if not contract_frames:
+        errors.append("invocation contractFrames is empty")
+    if not execution_frames:
+        errors.append("invocation executionFrames is empty")
+    if any(frame not in contract_frames for frame in execution_frames):
+        errors.append("executionFrames must be a subset of contractFrames")
 
-    if not (root / "preview.gif").exists():
-        errors.append("preview.gif is missing")
-    if metadata.get("visualPipeline") != "blender-native":
-        errors.append("metadata visualPipeline must be blender-native")
-    if metadata.get("blendSource") != "source.blend":
-        errors.append("metadata blendSource must reference source.blend")
-    if metadata.get("motionSolver") != "hybrid-fk-ik":
-        errors.append("metadata motionSolver must be hybrid-fk-ik")
-    if metadata.get("skeletonRenderer") != "blender-viewport-actual-armature":
-        errors.append(
-            "metadata skeletonRenderer must be blender-viewport-actual-armature"
-        )
-    if metadata.get("postRenderVisualProcessing") is not False:
-        errors.append("post-render visual processing must be disabled")
+    frame_sources = {
+        "metadata": metadata.get("reviewFrames", []),
+        "resolved_config": resolved.get("executionFrames", []),
+        "camera_debug": camera.get("reviewFrames", []),
+        "leg_ik_debug": leg.get("frames", []),
+        "reopen_debug": reopen.get("frames", []),
+        "motion_debug": [row.get("frame") for row in motion.get("samples", [])],
+    }
+    for label, values in frame_sources.items():
+        try:
+            actual = _frames(values)
+        except (TypeError, ValueError):
+            errors.append(f"{label} frame list is invalid")
+            continue
+        if actual != execution_frames:
+            errors.append(f"{label} frames do not match invocation executionFrames")
 
-    errors.extend(_validate_rig_exports(root, metadata))
+    if _frames(resolved.get("contractFrames", [])) != contract_frames:
+        errors.append("resolved_config contractFrames do not match invocation")
 
-    samples = debug.get("samples", [])
-    if len(samples) != frames:
-        errors.append("motion_debug sample count does not match frames")
+    cameras = list(invocation.get("cameras", []))
+    if not cameras:
+        errors.append("invocation cameras is empty")
+    if list(metadata.get("reviewCameras", [])) != cameras:
+        errors.append("metadata cameras do not match invocation")
+    if list(resolved.get("cameras", [])) != cameras:
+        errors.append("resolved_config cameras do not match invocation")
+    if list(camera.get("selectedCameras", [])) != cameras:
+        errors.append("camera_debug cameras do not match invocation")
+
+    for camera_name in cameras:
+        camera_root = root / "cameras" / camera_name
+        for frame in execution_frames:
+            for folder in ("frames", "skeleton_frames", "overlay_frames"):
+                if not (camera_root / folder / f"{frame:02d}.png").is_file():
+                    errors.append(f"missing {camera_name}/{folder}/F{frame}")
+        for name in ("object_keyposes.png", "skeleton_keyposes.png", "object_skeleton_overlay.png"):
+            if not (camera_root / name).is_file():
+                errors.append(f"missing {camera_name}/{name}")
+
+    for name in ("object_keyposes.png", "skeleton_keyposes.png", "object_skeleton_overlay.png"):
+        if not (root / name).is_file():
+            errors.append(f"{name} is missing")
     return errors
