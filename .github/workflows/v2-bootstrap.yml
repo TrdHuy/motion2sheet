@@ -24,6 +24,10 @@ jobs:
           set -euo pipefail
           cat .v2-bootstrap/payload.* | base64 -d > /tmp/v2payload.tar.gz
           tar -xzf /tmp/v2payload.tar.gz -C .
+          # GitHub Actions tokens cannot update workflow files. Keep the
+          # current debug workflow unchanged here; it is updated separately
+          # through the GitHub connector after the source migration lands.
+          git checkout HEAD -- .github/workflows/anim2sheet-debug.yml
           rm -f \
             profiles/anim2sheet/animations/gale_slash/pose_reference.json \
             profiles/anim2sheet/animations/gale_slash/joint_contract.json \
