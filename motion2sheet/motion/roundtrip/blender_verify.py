@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import bpy
-from mathutils import Quaternion
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[3]
 if str(PACKAGE_ROOT) not in sys.path:
@@ -44,12 +43,22 @@ def _scale_error(first: list[float], second: list[float]) -> float:
     return max(abs(float(a) - float(b)) for a, b in zip(first, second))
 
 
+def _normalized_quaternion(values: list[float]) -> list[float]:
+    result = [float(value) for value in values]
+    norm = math.sqrt(sum(value * value for value in result))
+    if norm <= 1e-15:
+        raise RuntimeError("Cannot compare a zero-length quaternion")
+    return [value / norm for value in result]
+
+
 def _angular_error(first: list[float], second: list[float]) -> float:
-    q1 = Quaternion(first)
-    q2 = Quaternion(second)
-    q1.normalize()
-    q2.normalize()
-    dot = abs(max(-1.0, min(1.0, float(q1.dot(q2)))))
+    # Do this in Python double precision. mathutils.Quaternion stores float32;
+    # its dot quantization alone can report about 0.03956 degrees for two
+    # effectively identical rotations, which is larger than the POC gate.
+    q1 = _normalized_quaternion(first)
+    q2 = _normalized_quaternion(second)
+    dot = abs(sum(a * b for a, b in zip(q1, q2)))
+    dot = max(-1.0, min(1.0, dot))
     return math.degrees(2.0 * math.acos(dot))
 
 
