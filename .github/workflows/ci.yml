@@ -121,7 +121,10 @@ jobs:
               motion2sheet validate "$ROOT/sheet"
               python tests/motion/e2e/verify_output_mode.py "$ROOT/frames" "$ROOT/sheet"
               ;;
-            *) echo "Unknown motion E2E target: $TARGET" >&2; exit 2 ;;
+            *)
+              echo "Unknown motion E2E target: $TARGET" >&2
+              exit 2
+              ;;
           esac
       - name: Upload affected motion output
         if: always()
@@ -158,7 +161,9 @@ jobs:
         run: blender --version
       - name: Reject unknown VFX target
         if: matrix.target != 'splash'
-        run: echo "Unknown VFX E2E target: ${{ matrix.target }}" >&2; exit 2
+        run: |
+          echo "Unknown VFX E2E target: ${{ matrix.target }}" >&2
+          exit 2
       - name: Build legacy JSON Blender-native baseline
         run: vfx2sheet build --profile tests/vfx2sheet/fixtures/splash/lightning_slash_legacy.json --output build/vfx/baseline_legacy
       - name: Build JSON5 dissolve-off Blender-native baseline
@@ -246,7 +251,9 @@ jobs:
         run: blender --version
       - name: Reject unknown animation target
         if: matrix.target != 'gale_slash'
-        run: echo "Unknown anim2sheet E2E target: ${{ matrix.target }}" >&2; exit 2
+        run: |
+          echo "Unknown anim2sheet E2E target: ${{ matrix.target }}" >&2
+          exit 2
       - name: Run canonical F1-F16 multi-camera review
         run: >-
           anim2sheet review
