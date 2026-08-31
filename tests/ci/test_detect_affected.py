@@ -17,6 +17,7 @@ def test_component_change_runs_only_dependent_targets():
     assert "motion-retarget-unit" not in targets
     assert "vfx-unit" not in targets
     assert "vfx-splash-e2e" not in targets
+    assert "anim-gale-slash-e2e" not in targets
     assert "sprite-workflow-contract" not in targets
 
 
@@ -32,6 +33,7 @@ def test_output_contract_change_runs_only_motion_dependents():
     assert "motion-mixamo-real" in targets
     assert "vfx-unit" not in targets
     assert "vfx-splash-e2e" not in targets
+    assert "anim-gale-slash-e2e" not in targets
     assert "sprite-workflow-contract" not in targets
 
 
@@ -47,13 +49,41 @@ def test_sprite_sample_change_runs_only_sprite_workflow_contract():
     assert targets == {"sprite-workflow-contract"}
 
 
-def test_vfx_effect_change_does_not_run_motion_or_sprite_workflow():
+def test_vfx_effect_change_does_not_run_motion_or_anim():
     components, targets = resolve("motion2sheet/vfx2sheet/effects/splash/config.py")
     assert "vfx-splash" in components
     assert "vfx-unit" in targets
     assert "vfx-splash-e2e" in targets
     assert not any(name.startswith("motion-") for name in targets)
+    assert not any(name.startswith("anim-") for name in targets)
     assert "sprite-workflow-contract" not in targets
+
+
+def test_anim_common_change_runs_gale_slash_dependents():
+    components, targets = resolve("motion2sheet/anim2sheet/common/camera/config.py")
+    assert "anim-common" in components
+    assert "anim-core" in components
+    assert "anim-gale-slash" in components
+    assert "anim-common-unit" in targets
+    assert "anim-cli-unit" in targets
+    assert "anim-gale-slash-unit" in targets
+    assert "anim-gale-slash-e2e" in targets
+    assert "vfx-splash-e2e" not in targets
+
+
+def test_gale_slash_change_runs_only_relevant_anim_targets():
+    components, targets = resolve("motion2sheet/anim2sheet/animations/gale_slash/contract.py")
+    assert components == {"anim-gale-slash"}
+    assert "anim-gale-slash-unit" in targets
+    assert "anim-gale-slash-e2e" in targets
+    assert "anim-common-unit" not in targets
+    assert "vfx-splash-e2e" not in targets
+
+
+def test_gale_slash_profile_change_runs_gale_slash_target():
+    components, targets = resolve("profiles/anim2sheet/animations/gale_slash/joint_contract.json")
+    assert components == {"anim-gale-slash"}
+    assert "anim-gale-slash-e2e" in targets
 
 
 def test_direct_mixamo_test_change_runs_only_mixamo_target():
