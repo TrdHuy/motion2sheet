@@ -249,17 +249,11 @@ jobs:
           version: "4.5.12"
       - name: Verify Blender
         run: blender --version
-      - name: Reject unknown animation target
-        if: matrix.target != 'gale_slash' && matrix.target != 'sword_idle'
-        run: |
-          echo "Unknown anim2sheet E2E target: ${{ matrix.target }}" >&2
-          exit 2
       - name: Run canonical profile-driven multi-camera review
         env:
           TARGET: ${{ matrix.target }}
         run: >-
           anim2sheet review
-          --animation "$TARGET"
           --profile "profiles/anim2sheet/animations/$TARGET/animation.json5"
           --camera-profile profiles/anim2sheet/cameras/fast_keypose_review.json
           --gif
