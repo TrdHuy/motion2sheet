@@ -180,6 +180,25 @@ def bone_properties(bone: bpy.types.Bone) -> dict[str, Any]:
     return result
 
 
+def capture_edit_geometry(armature: bpy.types.Object) -> dict[str, dict[str, Any]]:
+    bpy.ops.object.mode_set(mode="OBJECT") if armature.mode != "OBJECT" else None
+    bpy.ops.object.select_all(action="DESELECT")
+    armature.select_set(True)
+    bpy.context.view_layer.objects.active = armature
+    bpy.ops.object.mode_set(mode="EDIT")
+    try:
+        return {
+            edit_bone.name: {
+                "head": [_clean_float(value) for value in edit_bone.head],
+                "tail": [_clean_float(value) for value in edit_bone.tail],
+                "roll": _clean_float(edit_bone.roll),
+            }
+            for edit_bone in armature.data.edit_bones
+        }
+    finally:
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+
 def capture_rig_document(input_path: Path, armature: bpy.types.Object) -> dict[str, Any]:
     bones: list[dict[str, Any]] = []
     for bone in ordered_bones(armature):
@@ -195,6 +214,9 @@ def capture_rig_document(input_path: Path, armature: bpy.types.Object) -> dict[s
                 "properties": bone_properties(bone),
             }
         )
+    edit_geometry = capture_edit_geometry(armature)
+    for bone in bones:
+        bone["editGeometry"] = edit_geometry[bone["name"]]
     scene = bpy.context.scene
     sha = source_sha256(input_path)
     return {
@@ -218,6 +240,7 @@ def capture_rig_document(input_path: Path, armature: bpy.types.Object) -> dict[s
             "system": str(scene.unit_settings.system),
             "metersPerBlenderUnit": _clean_float(scene.unit_settings.scale_length or 1.0),
         },
+        "editGeometrySpace": "armature-local",
         "armatureObject": {
             "name": armature.name,
             "dataName": armature.data.name,
