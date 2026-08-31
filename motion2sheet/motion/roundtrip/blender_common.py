@@ -46,6 +46,20 @@ def canonical_quaternion(rotation: Quaternion) -> Quaternion:
     return result
 
 
+def canonical_quaternion_values(rotation: Quaternion) -> list[float]:
+    values = [float(rotation.w), float(rotation.x), float(rotation.y), float(rotation.z)]
+    norm = math.sqrt(sum(value * value for value in values))
+    if norm <= 1e-15:
+        raise RuntimeError("Cannot serialize a zero-length quaternion")
+    values = [value / norm for value in values]
+    for value in values:
+        if abs(value) > 1e-15:
+            if value < 0:
+                values = [-component for component in values]
+            break
+    return [_clean_float(value) for value in values]
+
+
 def matrix_residual(first: Matrix, second: Matrix) -> float:
     return max(abs(float(first[row][column]) - float(second[row][column])) for row in range(4) for column in range(4))
 
@@ -84,7 +98,7 @@ def matrix_to_trs(
         )
     return {
         "translation": [_clean_float(value) for value in translation],
-        "rotationQuaternion": [_clean_float(value) for value in (rotation.w, rotation.x, rotation.y, rotation.z)],
+        "rotationQuaternion": canonical_quaternion_values(rotation),
         "scale": [_clean_float(value) for value in scale],
     }
 
