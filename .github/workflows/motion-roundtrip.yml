@@ -1,0 +1,78 @@
+name: Motion JSON Round-trip POC
+
+on:
+  pull_request:
+    paths:
+      - 'motion2sheet/motion/**'
+      - 'tests/motion/roundtrip/**'
+      - 'sample/walk_mixamo.fbx'
+      - '.github/workflows/motion-roundtrip.yml'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mixamo-roundtrip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install package
+        run: python -m pip install -e '.[dev]'
+      - name: Run round-trip contract unit tests
+        run: pytest tests/motion/roundtrip
+      - name: Install Blender headless runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1
+      - name: Setup Blender 4.5 LTS
+        uses: bradyajohnston/setup-blender@v5
+        with:
+          version: '4.5.12'
+      - name: Verify Blender
+        run: blender --version
+      - name: Extract canonical source-authority JSON twice
+        run: |
+          set -euo pipefail
+          ROOT=build/motion_roundtrip/walk_mixamo
+          SECOND="$RUNNER_TEMP/motion-roundtrip-second"
+          motion2sheet export-animation-json sample/walk_mixamo.fbx --output "$ROOT"
+          motion2sheet export-animation-json sample/walk_mixamo.fbx --output "$SECOND"
+          cmp "$ROOT/rig.json" "$SECOND/rig.json"
+          cmp "$ROOT/animation.json" "$SECOND/animation.json"
+      - name: Reconstruct from JSON only and export FBX
+        run: |
+          set -euo pipefail
+          ROOT=build/motion_roundtrip/walk_mixamo
+          motion2sheet reconstruct-animation \
+            --rig "$ROOT/rig.json" \
+            --animation "$ROOT/animation.json" \
+            --output "$ROOT/reconstructed.blend" \
+            --fbx-output "$ROOT/reconstructed.fbx"
+      - name: Verify source, Blender reconstruction, FBX re-import and visuals
+        run: |
+          set -euo pipefail
+          ROOT=build/motion_roundtrip/walk_mixamo
+          SECOND="$RUNNER_TEMP/motion-roundtrip-second"
+          motion2sheet verify-animation-roundtrip \
+            --source sample/walk_mixamo.fbx \
+            --rig "$ROOT/rig.json" \
+            --animation "$ROOT/animation.json" \
+            --blend "$ROOT/reconstructed.blend" \
+            --fbx "$ROOT/reconstructed.fbx" \
+            --determinism-rig "$SECOND/rig.json" \
+            --determinism-animation "$SECOND/animation.json" \
+            --output "$ROOT"
+          python tests/motion/roundtrip/e2e/verify_roundtrip.py "$ROOT"
+      - name: Upload round-trip proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion2sheet-mixamo-json-roundtrip
+          path: build/motion_roundtrip/walk_mixamo/
+          if-no-files-found: error
+          retention-days: 7
