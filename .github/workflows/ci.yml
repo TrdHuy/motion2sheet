@@ -265,9 +265,9 @@ jobs:
       - name: Validate canonical artifact
         run: anim2sheet validate build/anim/gale_slash
       - name: Verify saved-blend and proxy authority
-        run: python tests/anim2sheet/e2e/verify_keypose_authority.py build/anim/gale_slash
+        run: python tests/anim2sheet/common/authority/verify_keypose_authority.py build/anim/gale_slash
       - name: Verify Gale Slash semantics
-        run: python tests/anim2sheet/e2e/verify_keypose_architecture.py build/anim/gale_slash
+        run: python tests/anim2sheet/animations/gale_slash/e2e/verify_keypose_architecture.py build/anim/gale_slash
       - name: Upload canonical animation artifact
         if: always()
         uses: actions/upload-artifact@v4
