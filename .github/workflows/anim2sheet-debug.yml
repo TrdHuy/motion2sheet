@@ -1,0 +1,95 @@
+name: Anim2sheet Debug
+
+on:
+  workflow_dispatch:
+    inputs:
+      animation:
+        description: Animation registry name
+        required: true
+        default: gale_slash
+        type: string
+      profile:
+        description: Animation profile path
+        required: true
+        default: profiles/anim2sheet/animations/gale_slash/animation.json5
+        type: string
+      joint_contract:
+        description: Joint contract path
+        required: true
+        default: profiles/anim2sheet/animations/gale_slash/joint_contract.json
+        type: string
+      camera_profile:
+        description: Camera profile path
+        required: true
+        default: profiles/anim2sheet/cameras/fast_keypose_review.json
+        type: string
+      frames:
+        description: Optional comma-separated execution frame subset
+        required: false
+        default: ''
+        type: string
+      cameras:
+        description: Optional comma-separated camera subset
+        required: false
+        default: ''
+        type: string
+      blender:
+        description: Blender executable
+        required: true
+        default: blender
+        type: string
+      output:
+        description: Artifact output directory
+        required: true
+        default: build/anim/debug
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install package
+        run: python -m pip install -e '.[dev]'
+      - name: Install Blender runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 xvfb libx11-6 libxext6 libxrender1 libxi6 libxkbcommon0 libgl1-mesa-dri
+      - name: Setup Blender 4.5.12
+        uses: bradyajohnston/setup-blender@v5
+        with:
+          version: '4.5.12'
+      - name: Execute public review CLI
+        env:
+          ANIMATION: ${{ inputs.animation }}
+          PROFILE: ${{ inputs.profile }}
+          JOINT_CONTRACT: ${{ inputs.joint_contract }}
+          CAMERA_PROFILE: ${{ inputs.camera_profile }}
+          FRAMES: ${{ inputs.frames }}
+          CAMERAS: ${{ inputs.cameras }}
+          BLENDER: ${{ inputs.blender }}
+          OUTPUT: ${{ inputs.output }}
+        run: |
+          set -euo pipefail
+          args=(anim2sheet review --animation "$ANIMATION" --profile "$PROFILE" --joint-contract "$JOINT_CONTRACT" --camera-profile "$CAMERA_PROFILE" --blender "$BLENDER" --output "$OUTPUT")
+          if [[ -n "$FRAMES" ]]; then args+=(--frames "$FRAMES"); fi
+          if [[ -n "$CAMERAS" ]]; then args+=(--cameras "$CAMERAS"); fi
+          "${args[@]}"
+      - name: Validate artifact
+        env:
+          OUTPUT: ${{ inputs.output }}
+        run: anim2sheet validate "$OUTPUT"
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion2sheet-anim2sheet-debug
+          path: ${{ inputs.output }}/
+          if-no-files-found: warn
+          retention-days: 7
