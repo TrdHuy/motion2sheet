@@ -44,7 +44,7 @@
     "anim-common-unit": {"kind": "unit", "path": "tests/anim2sheet/common", "paths": ["tests/anim2sheet/common/**"], "depends_on": ["anim-common"]},
     "anim-cli-unit": {"kind": "unit", "path": "tests/anim2sheet/cli", "paths": ["tests/anim2sheet/cli/**"], "depends_on": ["anim-core", "anim-gale-slash"]},
     "anim-gale-slash-unit": {"kind": "unit", "path": "tests/anim2sheet/animations/gale_slash/unit", "paths": ["tests/anim2sheet/animations/gale_slash/unit/**"], "depends_on": ["anim-gale-slash"]},
-    "anim-gale-slash-e2e": {"kind": "anim-e2e", "target": "gale_slash", "paths": ["tests/anim2sheet/animations/gale_slash/e2e/**"], "depends_on": ["anim-gale-slash"]},
+    "anim-gale-slash-e2e": {"kind": "anim-e2e", "target": "gale_slash", "paths": ["tests/anim2sheet/animations/gale_slash/e2e/**", "tests/anim2sheet/common/authority/**"], "depends_on": ["anim-gale-slash"]},
     "ci-affected-unit": {"kind": "unit", "path": "tests/ci/test_detect_affected.py", "paths": ["tests/ci/**"], "depends_on": []}
   }
 }
