@@ -34,7 +34,9 @@ def _visible_mesh_args(resolved: dict) -> list[str]:
     return ["--visible-meshes", ",".join(names)] if names else []
 
 
-def run_review(args) -> int:
+def run_review(args, *, command: str = "review") -> int:
+    if command not in {"build", "review"}:
+        raise ValueError(f"unsupported anim2sheet command: {command}")
     _definition, runtime = _runtime(args.animation)
     resolved = runtime.resolve_review_request(
         profile_path=Path(args.profile),
@@ -68,7 +70,7 @@ def run_review(args) -> int:
     _write_json(camera_config_path, camera_config)
     invocation = {
         "tool": "anim2sheet",
-        "command": "review",
+        "command": command,
         "animation": args.animation,
         "profile": str(resolved["profilePath"]),
         "jointContract": str(resolved["jointContractPath"]),
@@ -122,7 +124,7 @@ def run_review(args) -> int:
             if not path.is_file():
                 raise RuntimeError(f"camera object output missing: {path}")
         compose_sheet(object_frames, camera_root / "object_keyposes.png", columns=4)
-        command = [
+        command_args = [
             blender, str(blend_path), "--python", str(skeleton_entry), "--",
             "--output", str(camera_root / "skeleton_frames"), "--rig-output", str(output),
             "--frames", ",".join(map(str, frames)), "--skip-rig-docs",
@@ -130,8 +132,8 @@ def run_review(args) -> int:
             *_visible_mesh_args(resolved),
         ]
         if xvfb:
-            command = [xvfb, "-a", *command]
-        subprocess.run(command, check=True, timeout=180)
+            command_args = [xvfb, "-a", *command_args]
+        subprocess.run(command_args, check=True, timeout=180)
         skeleton_frames = [camera_root / "skeleton_frames" / f"{frame:02d}.png" for frame in frames]
         for path in skeleton_frames:
             if not path.is_file():
@@ -141,7 +143,7 @@ def run_review(args) -> int:
     copy_camera_aliases(output, alias_name)
     _write_json(output / "metadata.json", {
         "tool": "anim2sheet",
-        "mode": "review",
+        "mode": command,
         "animation": args.animation,
         "contractFrames": resolved["contractFrames"],
         "reviewFrames": frames,
@@ -159,5 +161,5 @@ def run_review(args) -> int:
         "invocation": "invocation.json",
         "resolvedConfig": "resolved_config.json",
     })
-    print(f"anim2sheet review OK -> {output}; frames={frames}; cameras={camera_names}", flush=True)
+    print(f"anim2sheet {command} OK -> {output}; frames={frames}; cameras={camera_names}", flush=True)
     return 0
