@@ -10,17 +10,39 @@ from pathlib import Path
 import bpy
 from mathutils import Vector
 
-LEGS = {
-    "left": {"thigh": "LeftThigh", "shin": "LeftShin", "guide": "LeftKneeGuideTarget", "constraint": "ReferenceIK_LeftShin"},
-    "right": {"thigh": "RightThigh", "shin": "RightShin", "guide": "RightKneeGuideTarget", "constraint": "ReferenceIK_RightShin"},
+
+def _target_object_name(rig_profile: dict, semantic: str) -> str:
+    for row in rig_profile.get("targets", []):
+        if str(row.get("semantic")) == semantic:
+            return str(row["object"])
+    raise RuntimeError(f"rig target semantic not found: {semantic}")
+
+
+DEFAULT_LEGS = {
+    "left": {"thigh": "LeftThigh", "shin": "LeftShin", "guide": "LeftKneeGuideTarget", "constraint": "ReferenceIK_LeftShin", "poleAngleDeg": 0.0},
+    "right": {"thigh": "RightThigh", "shin": "RightShin", "guide": "RightKneeGuideTarget", "constraint": "ReferenceIK_RightShin", "poleAngleDeg": 180.0},
 }
 
 
-def configure_mirrored_poles(arm) -> None:
-    left = arm.pose.bones["LeftShin"].constraints["ReferenceIK_LeftShin"]
-    right = arm.pose.bones["RightShin"].constraints["ReferenceIK_RightShin"]
-    left.pole_angle = 0.0
-    right.pole_angle = math.pi
+def leg_config(rig_profile: dict | None = None) -> dict[str, dict]:
+    if rig_profile is None:
+        return DEFAULT_LEGS
+    result = {}
+    for side, cfg in rig_profile["solvers"]["legs"]["sides"].items():
+        result[side] = {
+            "thigh": str(cfg["thighBone"]),
+            "shin": str(cfg["shinBone"]),
+            "guide": _target_object_name(rig_profile, str(cfg["kneeGuideTarget"])),
+            "constraint": str(cfg["ikConstraint"]),
+            "poleAngleDeg": float(cfg["poleAngleDeg"]),
+        }
+    return result
+
+
+def configure_mirrored_poles(arm, rig_profile: dict | None = None) -> None:
+    for cfg in leg_config(rig_profile).values():
+        constraint = arm.pose.bones[cfg["shin"]].constraints[cfg["constraint"]]
+        constraint.pole_angle = math.radians(float(cfg["poleAngleDeg"]))
 
 
 def argv() -> list[str]:
@@ -36,6 +58,16 @@ def find_armature():
     if len(values) != 1:
         raise RuntimeError(f"expected exactly one armature, got {len(values)}")
     return values[0]
+
+
+def _saved_rig_profile(arm) -> dict | None:
+    raw = arm.get("anim2sheetRigProfileJson")
+    if not raw:
+        return None
+    data = json.loads(str(raw))
+    if not isinstance(data, dict):
+        raise RuntimeError("saved anim2sheet rig profile is invalid")
+    return data
 
 
 def bone_world_point(arm, name: str, endpoint: str) -> Vector:
@@ -105,19 +137,20 @@ def main() -> int:
     if not frames:
         raise RuntimeError("--frames did not contain frame numbers")
     arm = find_armature()
+    legs = leg_config(_saved_rig_profile(arm))
     setup = {side: {"thigh": rest_bone_debug(arm, cfg["thigh"]), "shin": rest_bone_debug(arm, cfg["shin"]),
-                    "ik": constraint_debug(arm, cfg)} for side, cfg in LEGS.items()}
+                    "ik": constraint_debug(arm, cfg)} for side, cfg in legs.items()}
     rows = []
     for frame in frames:
         bpy.context.scene.frame_set(frame)
         bpy.context.view_layer.update()
-        rows.append({"frame": frame, "legs": {side: frame_leg_debug(arm, frame, side, cfg) for side, cfg in LEGS.items()}})
+        rows.append({"frame": frame, "legs": {side: frame_leg_debug(arm, frame, side, cfg) for side, cfg in legs.items()}})
     payload = {"mode": "leg-ik-bend-plane-diagnostic", "sourceBlend": bpy.data.filepath,
                "frames": frames, "rigSetup": setup, "framesData": rows}
     path = Path(args.output).resolve() / "leg_ik_debug.json"
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"poleAngles": {side: setup[side]["ik"]["poleAngleDeg"] for side in LEGS},
-                      "matches": {str(row["frame"]): {side: row["legs"][side]["match"] for side in LEGS} for row in rows}}, indent=2), flush=True)
+    print(json.dumps({"poleAngles": {side: setup[side]["ik"]["poleAngleDeg"] for side in legs},
+                      "matches": {str(row["frame"]): {side: row["legs"][side]["match"] for side in legs} for row in rows}}, indent=2), flush=True)
     return 0
 
 

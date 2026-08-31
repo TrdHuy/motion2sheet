@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import importlib
 import json
 import shutil
 import subprocess
 from pathlib import Path
 
-from motion2sheet.anim2sheet.registry import get_animation
 from motion2sheet.anim2sheet.common.camera.config import final_camera_name
 from motion2sheet.anim2sheet.common.output.packer import compose_sheet, write_camera_previews
+from motion2sheet.anim2sheet.common.profile import resolve_review_request
 from .overlay import write_camera_overlays, copy_camera_aliases
 
 
@@ -19,9 +18,8 @@ def blender_executable(name: str) -> str:
     return str(value)
 
 
-def _runtime(animation: str):
-    definition = get_animation(animation)
-    return definition, importlib.import_module(definition.runtime_module)
+def _optional_path(value: str | None) -> Path | None:
+    return Path(value) if value else None
 
 
 def _write_json(path: Path, data: dict) -> None:
@@ -37,13 +35,15 @@ def _visible_mesh_args(resolved: dict) -> list[str]:
 def run_review(args, *, command: str = "review") -> int:
     if command not in {"build", "review"}:
         raise ValueError(f"unsupported anim2sheet command: {command}")
-    _definition, runtime = _runtime(args.animation)
-    resolved = runtime.resolve_review_request(
+    resolved = resolve_review_request(
         profile_path=Path(args.profile),
-        joint_contract_path=Path(args.joint_contract),
+        joint_contract_path=_optional_path(getattr(args, "joint_contract", None)),
+        rig_profile_path=_optional_path(getattr(args, "rig_profile", None)),
+        character_profile_path=_optional_path(getattr(args, "character_profile", None)),
         camera_profile_path=Path(args.camera_profile),
         frames=args.frames,
         cameras=args.cameras,
+        animation=getattr(args, "animation", None),
     )
     output = Path(args.output).resolve()
     if output.exists():
@@ -65,7 +65,6 @@ def run_review(args, *, command: str = "review") -> int:
         "cameras": {name: camera_profile["cameras"][name] for name in camera_names},
     }
     source = dict(resolved["source"])
-    source["blenderAuthorArgs"] = ["--joint-contract", str(resolved["jointContractPath"])]
     source_path = output / "source.json"
     camera_config_path = output / "camera_config.json"
     _write_json(source_path, source)
@@ -73,8 +72,11 @@ def run_review(args, *, command: str = "review") -> int:
     invocation = {
         "tool": "anim2sheet",
         "command": command,
-        "animation": args.animation,
+        "animation": resolved["animation"],
+        "authoringCapability": resolved["authoringCapability"],
         "profile": str(resolved["profilePath"]),
+        "rigProfile": str(resolved["rigProfilePath"]),
+        "characterProfile": str(resolved["characterProfilePath"]),
         "jointContract": str(resolved["jointContractPath"]),
         "cameraProfile": str(resolved["cameraProfilePath"]),
         "contractFrames": resolved["contractFrames"],
@@ -86,8 +88,11 @@ def run_review(args, *, command: str = "review") -> int:
     }
     _write_json(output / "invocation.json", invocation)
     _write_json(output / "resolved_config.json", {
-        "animation": args.animation,
+        "animation": resolved["animation"],
+        "authoringCapability": resolved["authoringCapability"],
         "profile": resolved["profile"],
+        "rigProfile": resolved["rigProfile"],
+        "characterProfile": resolved["characterProfile"],
         "jointContract": resolved["contract"],
         "cameraConfig": camera_config,
         "contractFrames": resolved["contractFrames"],
@@ -121,13 +126,14 @@ def run_review(args, *, command: str = "review") -> int:
     ], check=True, timeout=120)
     skeleton_entry = root / "common/rig/skeleton_viewport.py"
     xvfb = shutil.which("xvfb-run")
+    columns = int(resolved["profile"].get("sheetColumns", 4))
     for name in camera_names:
         camera_root = output / "cameras" / name
         object_frames = [camera_root / "frames" / f"{frame:02d}.png" for frame in frames]
         for path in object_frames:
             if not path.is_file():
                 raise RuntimeError(f"camera object output missing: {path}")
-        compose_sheet(object_frames, camera_root / "object_keyposes.png", columns=4)
+        compose_sheet(object_frames, camera_root / "object_keyposes.png", columns=columns)
         command_args = [
             blender, str(blend_path), "--python", str(skeleton_entry), "--",
             "--output", str(camera_root / "skeleton_frames"), "--rig-output", str(output),
@@ -142,7 +148,7 @@ def run_review(args, *, command: str = "review") -> int:
         for path in skeleton_frames:
             if not path.is_file():
                 raise RuntimeError(f"camera skeleton output missing: {path}")
-        compose_sheet(skeleton_frames, camera_root / "skeleton_keyposes.png", columns=4)
+        compose_sheet(skeleton_frames, camera_root / "skeleton_keyposes.png", columns=columns)
     write_camera_overlays(output, camera_debug, camera_names, frames)
     copy_camera_aliases(output, alias_name)
     write_camera_previews(
@@ -156,11 +162,14 @@ def run_review(args, *, command: str = "review") -> int:
     _write_json(output / "metadata.json", {
         "tool": "anim2sheet",
         "mode": command,
-        "animation": args.animation,
+        "animation": resolved["animation"],
+        "authoringCapability": resolved["authoringCapability"],
+        "rigProfile": str(resolved["rigProfilePath"]),
+        "characterProfile": str(resolved["characterProfilePath"]),
         "contractFrames": resolved["contractFrames"],
         "reviewFrames": frames,
-        "armControl": resolved["contract"].get("armControl"),
-        "legControl": "ik_with_explicit_knee_poles",
+        "armControl": resolved["rigProfile"]["solvers"]["arms"]["mode"],
+        "legControl": resolved["rigProfile"]["solvers"]["legs"]["mode"],
         "cameraProfile": str(resolved["cameraProfilePath"]),
         "reviewCameras": camera_names,
         "finalCamera": final_name,
@@ -177,7 +186,7 @@ def run_review(args, *, command: str = "review") -> int:
         "resolvedConfig": "resolved_config.json",
     })
     print(
-        f"anim2sheet {command} OK -> {output}; frames={frames}; cameras={camera_names}; gif={gif_enabled}",
+        f"anim2sheet {command} OK -> {output}; action={resolved['animation']}; capability={resolved['authoringCapability']}; frames={frames}; cameras={camera_names}; gif={gif_enabled}",
         flush=True,
     )
     return 0

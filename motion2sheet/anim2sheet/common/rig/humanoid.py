@@ -1,16 +1,10 @@
-"""Reusable GameHumanoidV2 construction and Blender helpers."""
+"""Reusable profile-driven humanoid construction and Blender helpers."""
 from __future__ import annotations
 
 import math
 
 import bpy
 from mathutils import Vector
-
-
-TARGET_NAMES = (
-    "leftWrist", "rightWrist", "leftAnkle", "rightAnkle",
-    "leftElbowGuide", "rightElbowGuide", "leftKneeGuide", "rightKneeGuide",
-)
 
 
 def add_bone(edit_bones, name, head, tail, parent=None, *, connected=False, deform=True):
@@ -81,130 +75,154 @@ def empty(name):
     return obj
 
 
-def build_root_and_rig():
-    motion_root = bpy.data.objects.new("MotionRoot", None)
+def target_rows(rig_profile: dict) -> list[dict]:
+    rows = rig_profile.get("targets", [])
+    if not isinstance(rows, list) or not rows:
+        raise RuntimeError("rig profile targets missing")
+    return rows
+
+
+def target_object_name(rig_profile: dict, semantic: str) -> str:
+    for row in target_rows(rig_profile):
+        if row.get("semantic") == semantic:
+            return str(row["object"])
+    raise RuntimeError(f"rig profile target semantic not found: {semantic}")
+
+
+def build_root_and_rig(rig_profile: dict):
+    root_name = str(rig_profile.get("rootObject", "MotionRoot"))
+    armature_name = str(rig_profile["name"])
+    motion_root = bpy.data.objects.new(root_name, None)
     bpy.context.collection.objects.link(motion_root)
-    data = bpy.data.armatures.new("GameHumanoidV2")
-    arm = bpy.data.objects.new("GameHumanoidV2", data)
+    data = bpy.data.armatures.new(armature_name)
+    arm = bpy.data.objects.new(armature_name, data)
     bpy.context.collection.objects.link(arm)
     arm.parent = motion_root
     bpy.context.view_layer.objects.active = arm
     arm.select_set(True)
     bpy.ops.object.mode_set(mode="EDIT")
     eb = data.edit_bones
-    root = add_bone(eb, "Root", (0, 0, 0.84), (0, 0, 0.96), deform=False)
-    pelvis = add_bone(eb, "Pelvis", (0, 0, 0.96), (0, 0, 1.12), root, connected=True)
-    spine = add_bone(eb, "Spine", (0, 0, 1.12), (0, 0, 1.34), pelvis, connected=True)
-    chest = add_bone(eb, "Chest", (0, 0, 1.34), (0, 0, 1.56), spine, connected=True)
-    neck = add_bone(eb, "Neck", (0, 0, 1.56), (0, 0, 1.70), chest, connected=True)
-    add_bone(eb, "Head", (0, 0, 1.70), (0, 0, 1.94), neck, connected=True)
-    left_clav = add_bone(eb, "LeftClavicle", (0, 0, 1.53), (-0.18, 0, 1.53), chest)
-    left_upper = add_bone(eb, "LeftUpperArm", (-0.18, 0, 1.53), (-0.48, 0, 1.42), left_clav, connected=True)
-    left_fore = add_bone(eb, "LeftForeArm", (-0.48, 0, 1.42), (-0.72, 0, 1.24), left_upper, connected=True)
-    add_bone(eb, "LeftHand", (-0.72, 0, 1.24), (-0.82, 0, 1.17), left_fore, connected=True)
-    right_clav = add_bone(eb, "RightClavicle", (0, 0, 1.53), (0.18, 0, 1.53), chest)
-    right_upper = add_bone(eb, "RightUpperArm", (0.18, 0, 1.53), (0.48, 0, 1.42), right_clav, connected=True)
-    right_fore = add_bone(eb, "RightForeArm", (0.48, 0, 1.42), (0.72, 0, 1.24), right_upper, connected=True)
-    add_bone(eb, "RightHand", (0.72, 0, 1.24), (0.82, 0, 1.17), right_fore, connected=True)
-    left_hip = add_bone(eb, "LeftHip", (0, 0, 1.03), (-0.17, 0, 0.96), pelvis, deform=False)
-    left_thigh = add_bone(eb, "LeftThigh", (-0.17, 0, 0.96), (-0.23, 0, 0.56), left_hip, connected=True)
-    left_shin = add_bone(eb, "LeftShin", (-0.23, 0, 0.56), (-0.30, 0, 0.14), left_thigh, connected=True)
-    add_bone(eb, "LeftFoot", (-0.30, 0, 0.14), (-0.30, -0.24, 0.07), left_shin, connected=True)
-    right_hip = add_bone(eb, "RightHip", (0, 0, 1.03), (0.17, 0, 0.96), pelvis, deform=False)
-    right_thigh = add_bone(eb, "RightThigh", (0.17, 0, 0.96), (0.23, 0, 0.56), right_hip, connected=True)
-    right_shin = add_bone(eb, "RightShin", (0.23, 0, 0.56), (0.30, 0, 0.14), right_thigh, connected=True)
-    add_bone(eb, "RightFoot", (0.30, 0, 0.14), (0.30, -0.24, 0.07), right_shin, connected=True)
+    created = {}
+    for row in rig_profile["restPose"]["bones"]:
+        name = str(row["name"])
+        parent_name = row.get("parent")
+        parent = created.get(str(parent_name)) if parent_name else None
+        if parent_name and parent is None:
+            raise RuntimeError(f"rig profile bone {name} references unknown parent {parent_name}")
+        created[name] = add_bone(
+            eb,
+            name,
+            row["head"],
+            row["tail"],
+            parent,
+            connected=bool(row.get("connected", False)),
+            deform=bool(row.get("deform", True)),
+        )
     bpy.ops.object.mode_set(mode="POSE")
+    rotation_mode = str(rig_profile.get("rotationMode", "XYZ"))
     for bone in arm.pose.bones:
-        bone.rotation_mode = "XYZ"
+        bone.rotation_mode = rotation_mode
     bpy.ops.object.mode_set(mode="OBJECT")
     return motion_root, arm
 
 
-def build_character(arm):
-    cloth = material("Cloth", (0.07, 0.15, 0.30))
-    skin = material("Skin", (0.72, 0.48, 0.32))
-    boots = material("Boots", (0.055, 0.04, 0.035))
-    bones = arm.data.bones
-    segments = [
-        ("Spine", 0.15, cloth), ("Chest", 0.18, cloth),
-        ("LeftUpperArm", 0.08, cloth), ("LeftForeArm", 0.07, skin),
-        ("RightUpperArm", 0.08, cloth), ("RightForeArm", 0.07, skin),
-        ("LeftThigh", 0.11, cloth), ("LeftShin", 0.09, boots),
-        ("RightThigh", 0.11, cloth), ("RightShin", 0.09, boots),
-    ]
-    for name, radius, mat in segments:
-        bone = bones[name]
-        weighted_cylinder(arm, "Body_" + name, name, bone.head_local, bone.tail_local, radius, mat)
-    weighted_sphere(arm, "HeadMesh", "Head", (0, 0, 1.82), 0.15, skin)
-    weighted_sphere(arm, "PelvisMesh", "Pelvis", (0, 0, 1.04), 0.20, cloth)
-    joints = [
-        ("LeftUpperArm", (-0.18, 0, 1.53), 0.085, skin),
-        ("RightUpperArm", (0.18, 0, 1.53), 0.085, skin),
-        ("LeftForeArm", (-0.48, 0, 1.42), 0.075, skin),
-        ("RightForeArm", (0.48, 0, 1.42), 0.075, skin),
-        ("LeftHand", (-0.77, 0, 1.205), 0.075, skin),
-        ("RightHand", (0.77, 0, 1.205), 0.075, skin),
-        ("LeftShin", (-0.23, 0, 0.56), 0.095, cloth),
-        ("RightShin", (0.23, 0, 0.56), 0.095, cloth),
-    ]
-    for name, center, radius, mat in joints:
-        weighted_sphere(arm, "Joint_" + name, name, center, radius, mat)
+def _build_materials(rows: list[dict]) -> dict[str, object]:
+    values = {}
+    for row in rows:
+        values[str(row["name"])] = material(
+            str(row["name"]),
+            tuple(float(v) for v in row["color"]),
+            float(row.get("metallic", 0.0)),
+        )
+    return values
 
 
-def add_review_connectors(arm) -> None:
-    cloth = bpy.data.materials.get("Cloth")
-    skin = bpy.data.materials.get("Skin")
-    boots = bpy.data.materials.get("Boots")
-    if cloth is None or skin is None or boots is None:
-        raise RuntimeError("proxy materials missing before review connectors")
+def build_character(arm, character_profile: dict):
+    body = character_profile["body"]
+    materials = _build_materials(list(body["materials"]))
     bones = arm.data.bones
-    for name, radius, mat in [
-        ("Neck", 0.065, skin), ("LeftClavicle", 0.055, cloth),
-        ("RightClavicle", 0.055, cloth), ("LeftHand", 0.055, skin),
-        ("RightHand", 0.055, skin), ("LeftFoot", 0.075, boots),
-        ("RightFoot", 0.075, boots),
-    ]:
-        bone = bones[name]
-        weighted_cylinder(arm, "Review_" + name, name, bone.head_local, bone.tail_local, radius, mat)
+    for row in body["segments"]:
+        bone_name = str(row["bone"])
+        bone = bones[bone_name]
+        weighted_cylinder(
+            arm,
+            str(row["object"]),
+            bone_name,
+            bone.head_local,
+            bone.tail_local,
+            float(row["radius"]),
+            materials[str(row["material"])],
+        )
+    for row in body["spheres"]:
+        weighted_sphere(
+            arm,
+            str(row["object"]),
+            str(row["bone"]),
+            row["center"],
+            float(row["radius"]),
+            materials[str(row["material"])],
+        )
+    return materials
+
+
+def add_review_connectors(arm, character_profile: dict) -> None:
+    body = character_profile["body"]
+    bones = arm.data.bones
+    for row in body.get("reviewConnectors", []):
+        mat = bpy.data.materials.get(str(row["material"]))
+        if mat is None:
+            raise RuntimeError(f"proxy material missing before review connector: {row['material']}")
+        bone_name = str(row["bone"])
+        bone = bones[bone_name]
+        weighted_cylinder(
+            arm,
+            str(row["object"]),
+            bone_name,
+            bone.head_local,
+            bone.tail_local,
+            float(row["radius"]),
+            mat,
+        )
     motion_root = arm.parent
     if motion_root is None:
-        raise RuntimeError("review armature must be parented to MotionRoot")
+        raise RuntimeError("review armature must be parented to motion root")
     for obj in bpy.context.scene.objects:
         if obj.type == "MESH":
             obj.parent = motion_root
 
 
-def build_pose_targets(arm):
-    targets = {name: empty(name[0].upper() + name[1:] + "Target") for name in TARGET_NAMES}
-    chains = [
-        ("LeftForeArm", "leftWrist", "leftElbowGuide"),
-        ("RightForeArm", "rightWrist", "rightElbowGuide"),
-        ("LeftShin", "leftAnkle", "leftKneeGuide"),
-        ("RightShin", "rightAnkle", "rightKneeGuide"),
-    ]
-    for bone_name, target_name, guide_name in chains:
+def build_pose_targets(arm, rig_profile: dict):
+    targets = {str(row["semantic"]): empty(str(row["object"])) for row in target_rows(rig_profile)}
+    for row in rig_profile["solvers"]["ikChains"]:
+        bone_name = str(row["bone"])
+        target_name = str(row["target"])
+        guide_name = str(row["guide"])
         ik = arm.pose.bones[bone_name].constraints.new("IK")
-        ik.name = "ReferenceIK_" + bone_name
+        ik.name = str(row["constraint"])
         ik.target = targets[target_name]
         ik.pole_target = targets[guide_name]
-        ik.chain_count = 2
-        ik.iterations = 64
+        ik.chain_count = int(row.get("chainCount", 2))
+        ik.iterations = int(row.get("iterations", 64))
     return targets
 
 
-def set_trunk_rotation(pose_bone, yaw_deg, lean_deg):
-    pose_bone.rotation_euler = (0.0, math.radians(float(yaw_deg)), math.radians(-float(lean_deg)))
+def set_trunk_rotation(pose_bone, yaw_deg, lean_deg, solver_profile: dict | None = None):
+    cfg = solver_profile or {"yawAxis": "Y", "leanAxis": "Z", "leanSign": -1.0}
+    values = {"X": 0.0, "Y": 0.0, "Z": 0.0}
+    values[str(cfg.get("yawAxis", "Y"))] = math.radians(float(yaw_deg))
+    values[str(cfg.get("leanAxis", "Z"))] = math.radians(float(lean_deg)) * float(cfg.get("leanSign", -1.0))
+    pose_bone.rotation_euler = (values["X"], values["Y"], values["Z"])
 
 
-def configure_interpolation(owner, strike_frames):
+def configure_interpolation(owner, authored_frames, interpolation: str = "LINEAR"):
     action = owner.animation_data.action if owner.animation_data else None
     if not action:
         return
+    frame_set = set(int(v) for v in authored_frames)
     for curve in action.fcurves:
         for point in curve.keyframe_points:
             frame = int(round(point.co.x))
-            point.interpolation = "LINEAR" if frame in strike_frames else "BEZIER"
+            point.interpolation = interpolation if frame in frame_set else "BEZIER"
             point.handle_left_type = "AUTO_CLAMPED"
             point.handle_right_type = "AUTO_CLAMPED"
 

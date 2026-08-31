@@ -7,7 +7,6 @@ from pathlib import Path
 
 from .common.output.validator import validate_output
 from .common.review.runner import run_review
-from .registry import DEFAULT_ANIMATION, animation_names
 
 
 def build(args) -> int:
@@ -28,9 +27,11 @@ def validate(args) -> int:
 
 
 def _execution_args(parser: argparse.ArgumentParser, *, frames: bool) -> None:
-    parser.add_argument("--animation", choices=animation_names(), default=DEFAULT_ANIMATION)
+    parser.add_argument("--animation", default=None, help="Optional action-name assertion; implementation is resolved from rig profile")
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--joint-contract", required=True)
+    parser.add_argument("--rig-profile", default=None, help="Optional override for animation profile rigProfile")
+    parser.add_argument("--character-profile", default=None, help="Optional override for animation profile characterProfile")
+    parser.add_argument("--joint-contract", default=None, help="Optional override for animation profile jointContract")
     parser.add_argument("--camera-profile", required=True)
     if frames:
         parser.add_argument("--frames", default=None)

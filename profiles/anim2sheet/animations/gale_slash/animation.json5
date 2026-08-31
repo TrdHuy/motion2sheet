@@ -1,12 +1,15 @@
 {
   action: "gale_slash",
-  characterClass: "swordsman",
+  rigProfile: "../../rigs/game_humanoid_v2.json5",
+  characterProfile: "../../characters/swordsman_v1.json5",
+  jointContract: "joint_contract.json",
   frames: 16,
   fps: 16,
   canvas: [320, 320],
   sheetColumns: 4,
   background: "transparent",
   poseReference: "pose_reference.json",
+  interpolation: "LINEAR",
   phases: [
     { name: "ready_and_load", start: 1, end: 2 },
     { name: "chamber_and_windup", start: 3, end: 5 },

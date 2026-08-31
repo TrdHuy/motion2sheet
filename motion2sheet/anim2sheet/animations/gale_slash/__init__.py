@@ -1,1 +1,0 @@
-"""Gale Slash animation implementation."""

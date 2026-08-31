@@ -1,4 +1,4 @@
-"""Generic Blender bootstrap for all anim2sheet animations."""
+"""Generic Blender bootstrap for all anim2sheet authoring capabilities."""
 from __future__ import annotations
 
 import argparse
@@ -30,17 +30,16 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     args, unknown = parser.parse_known_args(argv())
     source = json.loads(Path(args.spec).read_text(encoding="utf-8"))
+    capability = source.get("authoringCapability")
+    if not isinstance(capability, str) or not capability:
+        raise RuntimeError("source spec missing authoringCapability")
     registry = _load_module("motion2sheet_anim2sheet_registry", ROOT / "registry.py")
-    animation_name = str(source.get("animation", registry.DEFAULT_ANIMATION))
-    animation = registry.get_animation(animation_name)
+    definition = registry.get_authoring_capability(capability)
     author = _load_module(
-        f"motion2sheet_anim2sheet_{animation_name}_author",
-        ROOT / animation.blender_author,
+        f"motion2sheet_anim2sheet_author_{capability}",
+        ROOT / definition.blender_author,
     )
-    author_args = source.get("blenderAuthorArgs", [])
-    if not isinstance(author_args, list) or any(not isinstance(value, str) for value in author_args):
-        raise RuntimeError("source blenderAuthorArgs must be a string array")
-    forwarded = ["--spec", args.spec, *author_args, "--output", args.output, *unknown]
+    forwarded = ["--spec", args.spec, "--output", args.output, *unknown]
     old_argv = sys.argv
     try:
         sys.argv = [str(ROOT / "blender_entry.py"), "--", *forwarded]

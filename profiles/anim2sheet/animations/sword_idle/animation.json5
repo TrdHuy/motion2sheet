@@ -1,0 +1,16 @@
+{
+  action: "sword_idle",
+  rigProfile: "../../rigs/game_humanoid_v2.json5",
+  characterProfile: "../../characters/swordsman_v1.json5",
+  jointContract: "joint_contract.json",
+  frames: 4,
+  fps: 8,
+  canvas: [320, 320],
+  sheetColumns: 4,
+  background: "transparent",
+  poseReference: "pose_reference.json",
+  interpolation: "LINEAR",
+  phases: [
+    { name: "guard_idle", start: 1, end: 4 },
+  ],
+}

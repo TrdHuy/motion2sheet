@@ -4,29 +4,27 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class AnimationDefinition:
-    name: str
-    runtime_module: str
+class AuthoringDefinition:
+    capability: str
     blender_author: str
 
 
-DEFAULT_ANIMATION = "gale_slash"
+DEFAULT_AUTHORING_CAPABILITY = "humanoid_v2"
 
-_ANIMATIONS = {
-    "gale_slash": AnimationDefinition(
-        name="gale_slash",
-        runtime_module="motion2sheet.anim2sheet.animations.gale_slash.animation",
-        blender_author="animations/gale_slash/blender/author.py",
+_AUTHORS = {
+    "humanoid_v2": AuthoringDefinition(
+        capability="humanoid_v2",
+        blender_author="common/authoring/humanoid.py",
     ),
 }
 
 
-def animation_names() -> tuple[str, ...]:
-    return tuple(sorted(_ANIMATIONS))
+def authoring_capabilities() -> tuple[str, ...]:
+    return tuple(sorted(_AUTHORS))
 
 
-def get_animation(name: str) -> AnimationDefinition:
+def get_authoring_capability(name: str) -> AuthoringDefinition:
     try:
-        return _ANIMATIONS[name]
+        return _AUTHORS[name]
     except KeyError as exc:
-        raise ValueError(f"Unsupported animation: {name}") from exc
+        raise ValueError(f"Unsupported anim2sheet authoring capability: {name}") from exc
