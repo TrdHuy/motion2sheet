@@ -22,7 +22,17 @@ def blender_executable(value: str) -> str:
 
 
 def run_blender(script: str, blender: str, arguments: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
-    command = [blender_executable(blender), "--background", "--factory-startup", "--python", str(package_root() / script), "--", *arguments]
+    command = [
+        blender_executable(blender),
+        "--background",
+        "--factory-startup",
+        "--python-exit-code",
+        "1",
+        "--python",
+        str(package_root() / script),
+        "--",
+        *arguments,
+    ]
     return subprocess.run(command, check=check)
 
 
