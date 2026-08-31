@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from motion2sheet.motion.roundtrip.schema import canonical_json_text, validate_animation_document, validate_rig_document
@@ -9,13 +7,24 @@ def transform():
     return {"translation": [0.0, 0.0, 0.0], "rotationQuaternion": [1.0, 0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0]}
 
 
+def geometry(head, tail, roll=0.0):
+    return {"head": list(head), "tail": list(tail), "roll": roll}
+
+
 def rig():
     return {
         "schema": "motion2sheet.source-rig", "version": 1, "id": "fixture-rig-v1",
+        "editGeometrySpace": "armature-local",
         "armatureObject": {"transform": transform()},
         "bones": [
-            {"name": "Root", "parent": None, "rest": transform(), "length": 1.0, "properties": {}},
-            {"name": "Child", "parent": "Root", "rest": transform(), "length": 0.5, "properties": {}},
+            {
+                "name": "Root", "parent": None, "rest": transform(), "length": 1.0,
+                "editGeometry": geometry((0.0, 0.0, 0.0), (0.0, 1.0, 0.0)), "properties": {},
+            },
+            {
+                "name": "Child", "parent": "Root", "rest": transform(), "length": 0.5,
+                "editGeometry": geometry((0.0, 1.0, 0.0), (0.0, 1.5, 0.0), 0.125), "properties": {},
+            },
         ],
     }
 
@@ -41,6 +50,20 @@ def test_contract_is_deterministic_and_human_readable():
 def test_rig_and_animation_validate():
     validated_rig = validate_rig_document(rig())
     validate_animation_document(animation(), validated_rig)
+
+
+def test_rig_requires_explicit_edit_geometry():
+    data = rig()
+    del data["bones"][0]["editGeometry"]
+    with pytest.raises(ValueError, match="editGeometry"):
+        validate_rig_document(data)
+
+
+def test_edit_geometry_must_define_nonzero_bone():
+    data = rig()
+    data["bones"][0]["editGeometry"]["tail"] = [0.0, 0.0, 0.0]
+    with pytest.raises(ValueError, match="non-zero"):
+        validate_rig_document(data)
 
 
 def test_animation_frames_must_be_contiguous():
