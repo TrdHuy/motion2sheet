@@ -45,5 +45,6 @@ def resolve_review_request(*, profile_path: Path, joint_contract_path: Path, cam
         "executionFrames": execution_frames,
         "cameraProfile": camera_profile,
         "cameraNames": camera_names,
+        "visibleReviewMeshes": ["SwordGrip", "SwordBlade"],
         "source": source,
     }
