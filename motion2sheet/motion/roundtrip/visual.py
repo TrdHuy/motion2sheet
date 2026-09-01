@@ -18,8 +18,9 @@ from .visual_contract import (
     sheet_size,
 )
 
-CELL_CONTENT_LUMA_MAX = 245
 MIN_CELL_CONTENT_PIXELS = 16
+CELL_FOREGROUND_CONTRAST = 48
+MIN_BACKGROUND_LUMA = 128
 
 
 def render_panel(frame: dict[str, Any], config: ProjectionConfig) -> Image.Image:
@@ -100,17 +101,24 @@ def _frame_diff_summary(
     return worst_frame, max(0, worst_changed)
 
 
-def _cell_content_pixels(image: Image.Image) -> int:
-    """Count foreground-like pixels in one expected visual cell.
+def _cell_content_metrics(image: Image.Image) -> tuple[int, int, int]:
+    """Return foreground pixels, dominant background luma and cutoff.
 
-    Native Blender proof sheets contain only a white background plus dark
-    skeleton geometry. Requiring a minimum number of non-background pixels in
-    every expected cell makes framing/camera crops fail independently from the
-    source-vs-reconstructed equality check.
+    Blender color management does not guarantee a literal white RGB background;
+    the current Eevee proof commonly resolves the flat background around luma
+    196-197. Estimate each cell's dominant background from its grayscale mode
+    and count only pixels substantially darker than that background. A cropped
+    blank cell therefore remains empty regardless of the renderer's background
+    tone, while the dark skeleton remains strongly separated.
     """
 
-    gray = image.convert("L")
-    return sum(1 for value in gray.getdata() if value <= CELL_CONTENT_LUMA_MAX)
+    histogram = image.convert("L").histogram()
+    background_luma = max(range(256), key=histogram.__getitem__)
+    if background_luma < MIN_BACKGROUND_LUMA:
+        return 0, background_luma, 0
+    foreground_cutoff = max(0, background_luma - CELL_FOREGROUND_CONTRAST)
+    content_pixels = sum(histogram[: foreground_cutoff + 1])
+    return content_pixels, background_luma, foreground_cutoff
 
 
 def sheet_layout_metrics(sheet: Image.Image, frames: tuple[int, ...]) -> dict[str, Any]:
@@ -119,10 +127,14 @@ def sheet_layout_metrics(sheet: Image.Image, frames: tuple[int, ...]) -> dict[st
         raise ValueError(f"visual sheet size must be {expected_size}; actual={sheet.size}")
 
     content_counts: list[int] = []
+    background_lumas: list[int] = []
+    foreground_cutoffs: list[int] = []
     empty_cells: list[dict[str, int]] = []
     for index, frame in enumerate(frames):
-        content_pixels = _cell_content_pixels(sheet.crop(panel_box(index)))
+        content_pixels, background_luma, foreground_cutoff = _cell_content_metrics(sheet.crop(panel_box(index)))
         content_counts.append(content_pixels)
+        background_lumas.append(background_luma)
+        foreground_cutoffs.append(foreground_cutoff)
         if content_pixels < MIN_CELL_CONTENT_PIXELS:
             empty_cells.append({"index": index, "frame": frame})
 
@@ -133,7 +145,9 @@ def sheet_layout_metrics(sheet: Image.Image, frames: tuple[int, ...]) -> dict[st
         "occupiedCells": occupied,
         "emptyCells": empty_cells,
         "minContentPixels": min(content_counts),
-        "contentLumaMax": CELL_CONTENT_LUMA_MAX,
+        "minBackgroundLuma": min(background_lumas),
+        "maxForegroundCutoff": max(foreground_cutoffs),
+        "foregroundContrast": CELL_FOREGROUND_CONTRAST,
         "minRequiredContentPixels": MIN_CELL_CONTENT_PIXELS,
     }
 
