@@ -178,8 +178,8 @@ jobs:
             --animation "$ROOT/animation.json" \
             --blend "$ROOT/reconstructed.blend" \
             --fbx "$ROOT/reconstructed.fbx" \
-            --output "$ROOT/verify"
-          python tests/motion/roundtrip/e2e/verify_roundtrip.py "$ROOT/verify"
+            --output "$ROOT"
+          python tests/motion/roundtrip/e2e/verify_roundtrip.py "$ROOT"
 
       # Full mode is the pull-request acceptance path and the workflow_dispatch
       # full path. It preserves the existing A/B/C fidelity proof and adds both
@@ -287,8 +287,8 @@ jobs:
             --fbx "$ROOT/reconstructed.fbx" \
             --determinism-rig "$SECOND/rig.json" \
             --determinism-animation "$SECOND/animation.json" \
-            --output "$ROOT/verify"
-          python tests/motion/roundtrip/e2e/verify_roundtrip.py "$ROOT/verify"
+            --output "$ROOT"
+          python tests/motion/roundtrip/e2e/verify_roundtrip.py "$ROOT"
 
       - name: Verify optional Blender-native source/reconstructed visual renderer
         if: env.MODE == 'full'
