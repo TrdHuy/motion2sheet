@@ -110,16 +110,34 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
+          from PIL import Image
+
           root = Path('build/motion_roundtrip/walk_mixamo/blender_native')
           verification = json.loads((root / 'verification.json').read_text())
           visual = verification['visual']
+          layout = visual['layout']
+
           assert verification['pass'] is True
           assert visual['pass'] is True
           assert visual['renderer'] == 'blender-native-eevee-skeleton-v1'
           assert visual['changedPixels'] == 0
+          assert visual['frameCount'] == 32
+          assert visual['columns'] == 8
+          assert visual['rows'] == 4
+          assert visual['canvasPerFrame'] == [256, 256]
+          assert layout['pass'] is True
+          for branch in ('source', 'reconstructed'):
+              assert layout[branch]['expectedCells'] == 32
+              assert layout[branch]['occupiedCells'] == 32
+              assert layout[branch]['emptyCells'] == []
+
           for name in ('source_sheet.png', 'reconstructed_sheet.png', 'diff_sheet.png', 'overlay_sheet.png'):
-              assert (root / 'visual' / name).is_file(), name
-          print('Blender-native visual proof PASS')
+              path = root / 'visual' / name
+              assert path.is_file(), name
+              with Image.open(path) as image:
+                  assert image.size == (2048, 1024), (name, image.size)
+
+          print('Blender-native visual proof PASS: full 8x4 layout occupied')
           PY
       - name: Upload round-trip proof
         if: always()
