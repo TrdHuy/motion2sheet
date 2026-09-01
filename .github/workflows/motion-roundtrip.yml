@@ -44,7 +44,17 @@ jobs:
           motion2sheet export-animation-json sample/walk_mixamo.fbx --output "$SECOND"
           cmp "$ROOT/rig.json" "$SECOND/rig.json"
           cmp "$ROOT/animation.json" "$SECOND/animation.json"
-      - name: Reconstruct from JSON only and export FBX
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('build/motion_roundtrip/walk_mixamo')
+          animation = json.loads((root / 'animation.json').read_text())
+          fbx = animation['sourceFormat']['fbx']
+          assert 'curves' not in fbx, 'canonical animation.json must not contain FBX motion curves'
+          assert (root / 'diagnostics/original_fbx_curves.json').is_file()
+          print('canonical authority check PASS: animation.frames is sole motion data')
+          PY
+      - name: Reconstruct from frames and encode FBX from static metadata
         run: |
           set -euo pipefail
           ROOT=build/motion_roundtrip/walk_mixamo
@@ -53,7 +63,20 @@ jobs:
             --animation "$ROOT/animation.json" \
             --output "$ROOT/reconstructed.blend" \
             --fbx-output "$ROOT/reconstructed.fbx"
-      - name: Verify source, Blender reconstruction, FBX re-import and visuals
+      - name: Record A/B/C transform fidelity
+        run: |
+          set -euo pipefail
+          ROOT=build/motion_roundtrip/walk_mixamo
+          blender --background --factory-startup --python-exit-code 1 \
+            --python motion2sheet/motion/roundtrip/blender_ab_report.py -- \
+            --source sample/walk_mixamo.fbx \
+            --rig "$ROOT/rig.json" \
+            --animation "$ROOT/animation.json" \
+            --blend "$ROOT/reconstructed.blend" \
+            --generic-fbx "$ROOT/reconstructed.generic.fbx" \
+            --encoded-fbx "$ROOT/reconstructed.fbx" \
+            --output "$ROOT/ab_metrics.json"
+      - name: Verify canonical reconstruction acceptance
         run: |
           set -euo pipefail
           ROOT=build/motion_roundtrip/walk_mixamo
