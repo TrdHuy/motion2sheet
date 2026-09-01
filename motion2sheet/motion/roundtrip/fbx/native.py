@@ -28,6 +28,7 @@ ANIM_PROPERTIES = {
     b"Lcl Scaling": "scale",
 }
 AXIS_BY_CONNECTION = {b"d|X": "x", b"d|Y": "y", b"d|Z": "z"}
+STACK_TIMING_FIELDS = ("LocalStart", "LocalStop", "ReferenceStart", "ReferenceStop")
 
 
 def _find_first(elem, elem_id: bytes):
@@ -351,9 +352,22 @@ def extract_fbx_authority(
             for name in sorted(bone_stacks)
         },
     }
+    stack_properties = _properties70(stacks[0])
+    missing_stack_timing = [field for field in STACK_TIMING_FIELDS if field not in stack_properties]
+    if missing_stack_timing:
+        raise RuntimeError(
+            "FBX AnimationStack is missing required timeline properties: "
+            + ", ".join(missing_stack_timing)
+        )
+    stack_timing = {
+        field: int(stack_properties[field])
+        for field in STACK_TIMING_FIELDS
+    }
+
     animation_authority = {
         "stack": _name(stacks[0]),
         "layer": _name(layers[0]),
+        "stackTiming": stack_timing,
         "sampling": "all-integer-source-frames",
         "sampleKeyTimes": sample_key_times,
         "curves": sorted(curves, key=lambda item: (item["bone"], item["property"], item["axis"])),
@@ -446,6 +460,23 @@ def _patch_model_transform(model, transform_stack: dict[str, Any]) -> None:
     for name in ("RotationOrder", "RotationActive", "InheritType"):
         if name in transform_stack:
             _set_scalar_property(props70, name, transform_stack[name])
+
+
+def _patch_stack_timing(root, stack_timing: dict[str, int]) -> None:
+    table = _node_table(root)
+    stacks = [elem for elem in table.values() if elem.id == b"AnimationStack"]
+    if len(stacks) != 1:
+        raise RuntimeError(
+            f"Generated FBX must contain exactly one AnimationStack; found {len(stacks)}"
+        )
+    props70 = _find_first(stacks[0], b"Properties70")
+    if props70 is None:
+        raise RuntimeError("Generated FBX AnimationStack lacks Properties70")
+    for field in STACK_TIMING_FIELDS:
+        prop = _parsed_property(props70, field)
+        if prop is None or len(prop.props) < 5:
+            raise RuntimeError(f"Generated FBX AnimationStack lacks {field}")
+        prop.props[-1] = int(stack_timing[field])
 
 
 def _target_curve_map(root) -> dict[tuple[str, str, str], Any]:
@@ -564,6 +595,8 @@ def patch_generated_fbx(
         raise RuntimeError(f"Generated FBX is missing rig bone Models required by JSON: {missing}")
     for bone_name, payload in rig_fbx["bones"].items():
         _patch_model_transform(models[bone_name], payload["transformStack"])
+
+    _patch_stack_timing(root, animation_fbx["stackTiming"])
 
     target_curves = _target_curve_map(root)
     for curve in animation_fbx["curves"]:
