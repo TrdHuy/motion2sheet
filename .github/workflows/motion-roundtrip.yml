@@ -53,26 +53,6 @@ jobs:
             --animation "$ROOT/animation.json" \
             --output "$ROOT/reconstructed.blend" \
             --fbx-output "$ROOT/reconstructed.fbx"
-      - name: Probe FBX bone-axis round-trip fidelity
-        run: |
-          set -euo pipefail
-          ROOT=build/motion_roundtrip/walk_mixamo
-          blender --background --factory-startup --python-exit-code 1 \
-            --python motion2sheet/motion/roundtrip/blender_fbx_axis_probe.py -- \
-            --source sample/walk_mixamo.fbx \
-            --rig "$ROOT/rig.json" \
-            --animation "$ROOT/animation.json" \
-            --blend "$ROOT/reconstructed.blend" \
-            --output "$ROOT/fbx_axis_probe.json"
-      - name: Capture FBX transform-stack metadata
-        run: |
-          set -euo pipefail
-          ROOT=build/motion_roundtrip/walk_mixamo
-          blender --background --factory-startup --python-exit-code 1 \
-            --python motion2sheet/motion/roundtrip/blender_fbx_metadata_probe.py -- \
-            --source sample/walk_mixamo.fbx \
-            --reconstructed "$ROOT/reconstructed.fbx" \
-            --output "$ROOT/fbx_transform_stack_probe.json"
       - name: Verify source, Blender reconstruction, FBX re-import and visuals
         run: |
           set -euo pipefail
