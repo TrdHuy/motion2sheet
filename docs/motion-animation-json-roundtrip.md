@@ -8,11 +8,15 @@ This POC defines a **source-authority** text representation for skeleton + sampl
 Mixamo FBX
   -> export-animation-json
   -> rig.json + animation.json
-  -> reconstruct-animation (JSON only)
-       -> reconstructed.blend
-       -> generic Blender FBX container
-       -> deterministic FBX inverse transform-stack encoder
-       -> reconstructed.fbx
+       |-> render-animation-json (JSON only)
+       |    -> pose_sheet.png
+       |    -> preview.gif (optional)
+       |
+       -> reconstruct-animation (JSON only)
+            -> reconstructed.blend
+            -> generic Blender FBX container
+            -> deterministic FBX inverse transform-stack encoder
+            -> reconstructed.fbx
   -> clean Blender re-import
   -> verify-animation-roundtrip
   -> numerical + selectable visual proof
@@ -46,6 +50,8 @@ Canonical `rig.json` and `animation.json` are closed contracts rather than exten
 
 JSON scalar types are strict: integer fields reject booleans and float equivalents, while boolean fields reject numeric `0/1`.
 
+All public JSON-consuming commands validate this canonical schema before renderer/reconstructor work starts.
+
 ## FBX encoding metadata
 
 FBX needs additional **static encoding metadata** because FBX local T/R/S channels are not the same parameterization as Blender `PoseBone.matrix_basis`.
@@ -57,6 +63,43 @@ For every canonical frame the FBX inverse encoder removes the static importer/tr
 ## Diagnostic oracle
 
 Original source FBX curve values may be written to `diagnostics/original_fbx_curves.json`; derived encoder values may be written to `diagnostics/derived_fbx_curves.json`. These are diagnostics only and never canonical reconstruction inputs.
+
+## Standalone JSON rendering
+
+`render-animation-json` is a public command independent from `verify-animation-roundtrip`. Its only motion/rest inputs are canonical `rig.json + animation.json`; it has no source-FBX argument and does not read diagnostic source curves.
+
+```bash
+motion2sheet render-animation-json \
+  --rig build/motion_roundtrip/walk_mixamo/rig.json \
+  --animation build/motion_roundtrip/walk_mixamo/animation.json \
+  --renderer blender \
+  --gif \
+  --output build/render/walk_mixamo
+```
+
+Renderer choices are `pillow` and `blender`. Both consume the same `visual_contract.py` projection, canonical integer pixel snap, 256x256 cell size and 8-column sheet layout. The command first validates both canonical documents, materializes world-space pose geometry from `editGeometry + animation.frames`, and then delegates rasterization to the selected renderer. It does not invoke the round-trip verifier.
+
+The canonical output is:
+
+```text
+output/
+├── pose_sheet.png
+├── preview.gif      # only with --gif
+└── render.json
+```
+
+Per-frame PNGs are intentionally not required because `pose_sheet.png` is the canonical visual artifact. `preview.gif` is derived by cropping the canonical 256x256 sheet cells in frame order.
+
+The 32-frame Mixamo contract remains:
+
+```text
+32 expected frame cells
+8 columns x 4 rows
+256 x 256 pixels per cell
+2048 x 1024 pose_sheet.png
+```
+
+The command applies the same per-cell foreground/layout gate used by round-trip visual verification. Every expected cell must contain skeleton foreground.
 
 ## Visual proof renderers
 
@@ -107,7 +150,7 @@ The orthographic camera is framed from the full sheet width and verifies that re
 
 Visual acceptance is not based only on `source_sheet == reconstructed_sheet`. Each expected cell must independently contain skeleton foreground. The validator estimates each cell's dominant background luma and requires a minimum number of pixels with strong foreground contrast, so two identically cropped or blank Blender renders fail even if their pixel diff is zero. Regression tests explicitly cover the old centered-crop shape and Eevee's color-managed gray background.
 
-Both modes emit:
+Both verification modes emit:
 
 ```text
 visual/
@@ -117,7 +160,37 @@ visual/
 └── overlay_sheet.png
 ```
 
-The dedicated real-Mixamo workflow exercises both modes and asserts the native 8x4/2048x1024 contract plus all 32 occupied cells.
+The dedicated real-Mixamo workflow exercises both verification modes and asserts the native 8x4/2048x1024 contract plus all 32 occupied cells.
+
+## Public-command workflow dispatch
+
+`.github/workflows/motion-roundtrip.yml` exposes a `workflow_dispatch` choice input named `command`:
+
+```text
+export
+reconstruct
+render-pillow
+render-blender
+verify
+full
+```
+
+Each standalone mode invokes only the selected **public** command. Required fixtures are prepared with internal implementation scripts so a reconstruct/render/verify dispatch does not silently test another public command first.
+
+For `render-pillow` and `render-blender`, the workflow internally prepares canonical JSON and then deletes `sample/walk_mixamo.fbx` before calling `render-animation-json`. The successful render therefore proves the public command does not consult the original source file.
+
+Artifacts are mode-scoped:
+
+```text
+motion-json-export
+motion-json-reconstruct
+motion-json-render-pillow
+motion-json-render-blender
+motion-json-verify
+motion-json-full
+```
+
+Render artifacts contain `pose_sheet.png`, `render.json`, and `preview.gif`. `full` remains the pull-request acceptance path and retains deterministic extraction, reconstruction, A/B/C fidelity, Pillow verification, Blender-native source/reconstructed verification, and both standalone render commands.
 
 ## A/B/C proof
 
