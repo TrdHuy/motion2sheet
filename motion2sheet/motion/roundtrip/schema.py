@@ -117,13 +117,28 @@ def _validate_fbx_rig_authority(data: Any, rig_bones: set[str]) -> None:
                 raise ValueError(f"FBX {bone_name}.InheritType must be an integer")
 
 
-def _validate_fbx_animation_authority(data: Any, rig_bones: set[str]) -> None:
+def _validate_fbx_animation_authority(
+    data: Any, rig_bones: set[str], expected_frame_count: int
+) -> None:
     if not isinstance(data, dict):
         raise ValueError("animation.sourceFormat.fbx must be an object")
     if not isinstance(data.get("stack"), str) or not data["stack"]:
         raise ValueError("animation.sourceFormat.fbx.stack must be non-empty")
     if not isinstance(data.get("layer"), str) or not data["layer"]:
         raise ValueError("animation.sourceFormat.fbx.layer must be non-empty")
+    if data.get("sampling") != "all-integer-source-frames":
+        raise ValueError("animation.sourceFormat.fbx.sampling must be 'all-integer-source-frames'")
+    sample_key_times = data.get("sampleKeyTimes")
+    if (
+        not isinstance(sample_key_times, list)
+        or len(sample_key_times) != expected_frame_count
+        or not all(isinstance(value, int) and not isinstance(value, bool) for value in sample_key_times)
+    ):
+        raise ValueError(
+            "animation.sourceFormat.fbx.sampleKeyTimes must contain one integer KTime per source frame"
+        )
+    if any(right <= left for left, right in zip(sample_key_times, sample_key_times[1:])):
+        raise ValueError("animation.sourceFormat.fbx.sampleKeyTimes must be strictly increasing")
     curves = data.get("curves")
     if not isinstance(curves, list) or not curves:
         raise ValueError("animation.sourceFormat.fbx.curves must be non-empty")
@@ -157,6 +172,10 @@ def _validate_fbx_animation_authority(data: Any, rig_bones: set[str]) -> None:
             raise ValueError(f"FBX animation curve {key}.keyTimes must be non-empty integers")
         if any(right <= left for left, right in zip(times, times[1:])):
             raise ValueError(f"FBX animation curve {key}.keyTimes must be strictly increasing")
+        if times != sample_key_times:
+            raise ValueError(
+                f"FBX animation curve {key}.keyTimes must equal the canonical integer-frame sample timeline"
+            )
         if not isinstance(values, list) or len(values) != len(times):
             raise ValueError(f"FBX animation curve {key}.keyValues must match keyTimes")
         for value_index, value in enumerate(values):
@@ -247,7 +266,7 @@ def validate_animation_document(data: Any, rig: dict) -> dict:
         source_format = data.get("sourceFormat")
         if not isinstance(source_format, dict) or set(source_format) != {"fbx"}:
             raise ValueError("FBX animation must contain sourceFormat.fbx")
-        _validate_fbx_animation_authority(source_format["fbx"], rig_bones)
+        _validate_fbx_animation_authority(source_format["fbx"], rig_bones, len(expected_frames))
     return data
 
 
