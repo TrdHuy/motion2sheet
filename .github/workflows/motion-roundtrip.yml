@@ -10,6 +10,19 @@ on:
       - '.github/workflows/motion-roundtrip.yml'
       - 'pyproject.toml'
   workflow_dispatch:
+    inputs:
+      command:
+        description: Public command path to exercise independently
+        required: true
+        default: full
+        type: choice
+        options:
+          - export
+          - reconstruct
+          - render-pillow
+          - render-blender
+          - verify
+          - full
 
 permissions:
   contents: read
@@ -17,7 +30,10 @@ permissions:
 jobs:
   mixamo-roundtrip:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.command || 'full' }}
+      ROOT: build/motion_json_command/walk_mixamo
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -27,6 +43,7 @@ jobs:
       - name: Install package
         run: python -m pip install -e '.[dev]'
       - name: Run round-trip contract unit tests
+        if: env.MODE == 'full'
         run: pytest tests/motion/roundtrip
       - name: Install Blender headless runtime libraries
         run: sudo apt-get update && sudo apt-get install -y libegl1
@@ -36,10 +53,141 @@ jobs:
           version: '4.5.12'
       - name: Verify Blender
         run: blender --version
-      - name: Extract canonical source-authority JSON twice
+
+      # Standalone command modes intentionally prepare required inputs through
+      # implementation scripts, not through another public motion2sheet command.
+      # This makes the selected public command the only public API under test.
+      - name: Prepare canonical JSON fixture internally
+        if: env.MODE == 'reconstruct' || env.MODE == 'render-pillow' || env.MODE == 'render-blender' || env.MODE == 'verify'
         run: |
           set -euo pipefail
-          ROOT=build/motion_roundtrip/walk_mixamo
+          mkdir -p "$ROOT"
+          blender --background --factory-startup --python-exit-code 1 \
+            --python motion2sheet/motion/roundtrip/blender_export.py -- \
+            --input sample/walk_mixamo.fbx \
+            --output "$ROOT"
+
+      - name: Public command - export-animation-json
+        if: env.MODE == 'export'
+        run: |
+          set -euo pipefail
+          motion2sheet export-animation-json sample/walk_mixamo.fbx --output "$ROOT"
+          test -f "$ROOT/rig.json"
+          test -f "$ROOT/animation.json"
+          test -f "$ROOT/diagnostics/original_fbx_curves.json"
+
+      - name: Public command - reconstruct-animation
+        if: env.MODE == 'reconstruct'
+        run: |
+          set -euo pipefail
+          motion2sheet reconstruct-animation \
+            --rig "$ROOT/rig.json" \
+            --animation "$ROOT/animation.json" \
+            --output "$ROOT/reconstructed.blend" \
+            --fbx-output "$ROOT/reconstructed.fbx"
+          test -f "$ROOT/reconstructed.blend"
+          test -f "$ROOT/reconstructed.fbx"
+
+      - name: Prove standalone render does not have source FBX
+        if: env.MODE == 'render-pillow' || env.MODE == 'render-blender'
+        run: |
+          set -euo pipefail
+          rm sample/walk_mixamo.fbx
+          test ! -e sample/walk_mixamo.fbx
+
+      - name: Public command - render-animation-json (Pillow)
+        if: env.MODE == 'render-pillow'
+        run: |
+          set -euo pipefail
+          motion2sheet render-animation-json \
+            --rig "$ROOT/rig.json" \
+            --animation "$ROOT/animation.json" \
+            --renderer pillow \
+            --gif \
+            --output "$ROOT/render-pillow"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root = Path('build/motion_json_command/walk_mixamo/render-pillow')
+          report = json.loads((root / 'render.json').read_text())
+          visual = report['visual']
+          assert report['pass'] is True
+          assert report['sourceMotionFileRequired'] is False
+          assert report['frameCount'] == 32
+          assert visual['frameCount'] == 32
+          assert visual['columns'] == 8 and visual['rows'] == 4
+          assert visual['canvasPerFrame'] == [256, 256]
+          assert visual['layout']['occupiedCells'] == 32
+          assert visual['layout']['emptyCells'] == []
+          with Image.open(root / 'pose_sheet.png') as image:
+              assert image.size == (2048, 1024)
+          assert (root / 'preview.gif').is_file()
+          print('standalone Pillow render PASS: 32 cells, source FBX absent')
+          PY
+
+      - name: Public command - render-animation-json (Blender)
+        if: env.MODE == 'render-blender'
+        run: |
+          set -euo pipefail
+          motion2sheet render-animation-json \
+            --rig "$ROOT/rig.json" \
+            --animation "$ROOT/animation.json" \
+            --renderer blender \
+            --gif \
+            --output "$ROOT/render-blender"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root = Path('build/motion_json_command/walk_mixamo/render-blender')
+          report = json.loads((root / 'render.json').read_text())
+          visual = report['visual']
+          assert report['pass'] is True
+          assert report['sourceMotionFileRequired'] is False
+          assert report['frameCount'] == 32
+          assert visual['frameCount'] == 32
+          assert visual['columns'] == 8 and visual['rows'] == 4
+          assert visual['canvasPerFrame'] == [256, 256]
+          assert visual['layout']['occupiedCells'] == 32
+          assert visual['layout']['emptyCells'] == []
+          with Image.open(root / 'pose_sheet.png') as image:
+              assert image.size == (2048, 1024)
+          assert (root / 'preview.gif').is_file()
+          print('standalone Blender render PASS: 32 cells, source FBX absent')
+          PY
+
+      - name: Prepare reconstruction fixture internally for verify
+        if: env.MODE == 'verify'
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup --python-exit-code 1 \
+            --python motion2sheet/motion/roundtrip/blender_reconstruct.py -- \
+            --rig "$ROOT/rig.json" \
+            --animation "$ROOT/animation.json" \
+            --blend-output "$ROOT/reconstructed.blend" \
+            --fbx-output "$ROOT/reconstructed.fbx"
+
+      - name: Public command - verify-animation-roundtrip
+        if: env.MODE == 'verify'
+        run: |
+          set -euo pipefail
+          motion2sheet verify-animation-roundtrip \
+            --source sample/walk_mixamo.fbx \
+            --rig "$ROOT/rig.json" \
+            --animation "$ROOT/animation.json" \
+            --blend "$ROOT/reconstructed.blend" \
+            --fbx "$ROOT/reconstructed.fbx" \
+            --output "$ROOT/verify"
+          python tests/motion/roundtrip/e2e/verify_roundtrip.py "$ROOT/verify"
+
+      # Full mode is the pull-request acceptance path and the workflow_dispatch
+      # full path. It preserves the existing A/B/C fidelity proof and adds both
+      # standalone render public commands as first-class acceptance checks.
+      - name: Extract canonical source-authority JSON twice
+        if: env.MODE == 'full'
+        run: |
+          set -euo pipefail
           SECOND="$RUNNER_TEMP/motion-roundtrip-second"
           motion2sheet export-animation-json sample/walk_mixamo.fbx --output "$ROOT"
           motion2sheet export-animation-json sample/walk_mixamo.fbx --output "$SECOND"
@@ -48,7 +196,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          root = Path('build/motion_roundtrip/walk_mixamo')
+          root = Path('build/motion_json_command/walk_mixamo')
           rig = json.loads((root / 'rig.json').read_text())
           animation = json.loads((root / 'animation.json').read_text())
           assert rig['restAuthority'] == 'editGeometry', 'editGeometry must be the sole rig rest authority'
@@ -57,19 +205,65 @@ jobs:
           assert (root / 'diagnostics/original_fbx_curves.json').is_file()
           print('canonical authority check PASS: editGeometry is sole rest authority; animation.frames is sole motion data')
           PY
+
       - name: Reconstruct from frames and encode FBX from static metadata
+        if: env.MODE == 'full'
         run: |
           set -euo pipefail
-          ROOT=build/motion_roundtrip/walk_mixamo
           motion2sheet reconstruct-animation \
             --rig "$ROOT/rig.json" \
             --animation "$ROOT/animation.json" \
             --output "$ROOT/reconstructed.blend" \
             --fbx-output "$ROOT/reconstructed.fbx"
-      - name: Record A/B/C transform fidelity
+
+      - name: Public standalone render acceptance (Pillow)
+        if: env.MODE == 'full'
         run: |
           set -euo pipefail
-          ROOT=build/motion_roundtrip/walk_mixamo
+          motion2sheet render-animation-json \
+            --rig "$ROOT/rig.json" \
+            --animation "$ROOT/animation.json" \
+            --renderer pillow \
+            --gif \
+            --output "$ROOT/render-pillow"
+
+      - name: Public standalone render acceptance (Blender)
+        if: env.MODE == 'full'
+        run: |
+          set -euo pipefail
+          motion2sheet render-animation-json \
+            --rig "$ROOT/rig.json" \
+            --animation "$ROOT/animation.json" \
+            --renderer blender \
+            --gif \
+            --output "$ROOT/render-blender"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          base = Path('build/motion_json_command/walk_mixamo')
+          for name in ('render-pillow', 'render-blender'):
+              root = base / name
+              report = json.loads((root / 'render.json').read_text())
+              visual = report['visual']
+              assert report['pass'] is True
+              assert report['sourceMotionFileRequired'] is False
+              assert report['frameCount'] == 32
+              assert visual['frameCount'] == 32
+              assert visual['columns'] == 8 and visual['rows'] == 4
+              assert visual['canvasPerFrame'] == [256, 256]
+              assert visual['layout']['occupiedCells'] == 32
+              assert visual['layout']['emptyCells'] == []
+              with Image.open(root / 'pose_sheet.png') as image:
+                  assert image.size == (2048, 1024)
+              assert (root / 'preview.gif').is_file()
+          print('standalone render acceptance PASS: Pillow + Blender full 8x4 sheets')
+          PY
+
+      - name: Record A/B/C transform fidelity
+        if: env.MODE == 'full'
+        run: |
+          set -euo pipefail
           blender --background --factory-startup --python-exit-code 1 \
             --python motion2sheet/motion/roundtrip/blender_ab_report.py -- \
             --source sample/walk_mixamo.fbx \
@@ -79,10 +273,11 @@ jobs:
             --generic-fbx "$ROOT/reconstructed.generic.fbx" \
             --encoded-fbx "$ROOT/reconstructed.fbx" \
             --output "$ROOT/ab_metrics.json"
+
       - name: Verify canonical reconstruction acceptance
+        if: env.MODE == 'full'
         run: |
           set -euo pipefail
-          ROOT=build/motion_roundtrip/walk_mixamo
           SECOND="$RUNNER_TEMP/motion-roundtrip-second"
           motion2sheet verify-animation-roundtrip \
             --source sample/walk_mixamo.fbx \
@@ -92,12 +287,13 @@ jobs:
             --fbx "$ROOT/reconstructed.fbx" \
             --determinism-rig "$SECOND/rig.json" \
             --determinism-animation "$SECOND/animation.json" \
-            --output "$ROOT"
-          python tests/motion/roundtrip/e2e/verify_roundtrip.py "$ROOT"
-      - name: Verify optional Blender-native visual renderer
+            --output "$ROOT/verify"
+          python tests/motion/roundtrip/e2e/verify_roundtrip.py "$ROOT/verify"
+
+      - name: Verify optional Blender-native source/reconstructed visual renderer
+        if: env.MODE == 'full'
         run: |
           set -euo pipefail
-          ROOT=build/motion_roundtrip/walk_mixamo
           NATIVE="$ROOT/blender_native"
           motion2sheet verify-animation-roundtrip \
             --source sample/walk_mixamo.fbx \
@@ -111,12 +307,10 @@ jobs:
           import json
           from pathlib import Path
           from PIL import Image
-
-          root = Path('build/motion_roundtrip/walk_mixamo/blender_native')
+          root = Path('build/motion_json_command/walk_mixamo/blender_native')
           verification = json.loads((root / 'verification.json').read_text())
           visual = verification['visual']
           layout = visual['layout']
-
           assert verification['pass'] is True
           assert visual['pass'] is True
           assert visual['renderer'] == 'blender-native-eevee-skeleton-v1'
@@ -130,20 +324,19 @@ jobs:
               assert layout[branch]['expectedCells'] == 32
               assert layout[branch]['occupiedCells'] == 32
               assert layout[branch]['emptyCells'] == []
-
           for name in ('source_sheet.png', 'reconstructed_sheet.png', 'diff_sheet.png', 'overlay_sheet.png'):
               path = root / 'visual' / name
               assert path.is_file(), name
               with Image.open(path) as image:
                   assert image.size == (2048, 1024), (name, image.size)
-
           print('Blender-native visual proof PASS: full 8x4 layout occupied')
           PY
-      - name: Upload round-trip proof
+
+      - name: Upload command proof
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: motion2sheet-mixamo-json-roundtrip
-          path: build/motion_roundtrip/walk_mixamo/
+          name: motion-json-${{ env.MODE }}
+          path: build/motion_json_command/
           if-no-files-found: error
           retention-days: 7
