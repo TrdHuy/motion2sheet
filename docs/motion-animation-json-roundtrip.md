@@ -62,6 +62,25 @@ Original source FBX curve values may be written to `diagnostics/original_fbx_cur
 
 `verify-animation-roundtrip` supports two visual proof renderers using the same Blender-evaluated source/reconstructed world-pose data.
 
+Visual responsibilities are deliberately split:
+
+```text
+visual_contract.py
+  = pure projection + pixel-grid + sheet layout contract
+  = owns PANEL / PADDING / COLUMNS
+  = no Pillow, no bpy
+
+visual.py
+  = Pillow rasterization
+  = pixel diff / worst-frame / diff-sheet / overlay utilities
+
+blender_visual.py
+  = Blender geometry + orthographic camera + Eevee render only
+  = consumes visual_contract.py; never redefines projection/layout
+```
+
+This keeps projection/layout as a single authority shared by both renderers while renderer-specific rasterization stays isolated.
+
 ### Pillow (default)
 
 ```bash
@@ -75,7 +94,7 @@ motion2sheet verify-animation-roundtrip \
   --output build/motion_roundtrip/walk_mixamo
 ```
 
-`pillow` keeps the existing deterministic skeleton renderer. It projects Blender-evaluated world bone head/tail positions to a canonical 256x256 grid and rasterizes them with Pillow. This remains the default acceptance path.
+`pillow` keeps the existing deterministic skeleton renderer. It projects Blender-evaluated world bone head/tail positions to the canonical 256x256 grid from `visual_contract.py` and rasterizes them with Pillow. This remains the default acceptance path.
 
 ### Blender native
 
@@ -90,7 +109,11 @@ motion2sheet verify-animation-roundtrip \
   --output build/motion_roundtrip/walk_mixamo/blender_native
 ```
 
-`blender` creates the source and reconstructed skeleton sheet geometry inside Blender and renders both full sheets with an orthographic camera using `BLENDER_EEVEE_NEXT`. World-pose projection is snapped to the declared 256x256 raster grid before geometry creation, matching the visual proof's resolution semantics and preventing valid sub-pixel numeric residuals from becoming an implicit new fidelity tolerance. Pillow does **not** rasterize the source/reconstructed proof sheets in this mode; it is used afterwards only for pixel metrics and diagnostic diff/overlay images.
+`blender` creates the source and reconstructed skeleton sheet geometry inside Blender and renders both full sheets with an orthographic camera using `BLENDER_EEVEE_NEXT`. The shared contract snaps world-pose projection to the declared 256x256 raster grid before Blender geometry creation, matching the visual proof's resolution semantics and preventing valid sub-pixel numeric residuals from becoming an implicit new fidelity tolerance.
+
+Because this proof contains only emission skeleton curves on a flat background, Blender-native rendering explicitly uses one Eevee render sample and disables unused shadow/ray-tracing work. This is a performance setting only; output names, raster dimensions, renderer selection, exact source-vs-reconstructed pixel acceptance and numeric fidelity gates are unchanged.
+
+Pillow does **not** rasterize the source/reconstructed proof sheets in Blender mode; it is used afterwards only for pixel metrics and diagnostic diff/overlay images.
 
 Both modes emit:
 
@@ -102,7 +125,7 @@ visual/
 └── overlay_sheet.png
 ```
 
-The dedicated real-Mixamo workflow exercises both modes. On the current proof both report `32` frames, `0` changed pixels and max channel delta `0`.
+The dedicated real-Mixamo workflow exercises both modes. Both must report `32` frames, `0` changed pixels and max channel delta `0`.
 
 ## A/B/C proof
 
