@@ -7,7 +7,13 @@ import subprocess
 from pathlib import Path
 
 from .schema import read_json, validate_animation_document, validate_rig_document
-from .visual import compare_blender_rendered_visuals, render_visuals
+from .visual import (
+    compare_blender_rendered_visuals,
+    inspect_blender_pose_sheet,
+    render_pose_sheet,
+    render_visuals,
+    write_preview_gif,
+)
 
 
 def package_root() -> Path:
@@ -64,6 +70,101 @@ def reconstruct_animation(args) -> int:
             "--blend-output", str(blend_output.resolve()),
             "--fbx-output", str(fbx_output.resolve()),
         ],
+    )
+    return 0
+
+
+def render_animation_json(args) -> int:
+    """Render canonical JSON without consulting the original source motion file."""
+
+    rig_path = Path(args.rig)
+    animation_path = Path(args.animation)
+    if not rig_path.is_file():
+        raise RuntimeError(f"Rig JSON does not exist: {rig_path}")
+    if not animation_path.is_file():
+        raise RuntimeError(f"Animation JSON does not exist: {animation_path}")
+
+    # Validate in the public CLI process before invoking Blender or Pillow. This
+    # keeps the canonical schema fail-closed and guarantees invalid JSON fails
+    # before renderer work starts.
+    rig = validate_rig_document(read_json(rig_path))
+    animation = validate_animation_document(read_json(animation_path), rig)
+
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    pose_data = output / ".pose_data.json"
+    pose_sheet = output / "pose_sheet.png"
+    preview_gif = output / "preview.gif"
+    pose_data.unlink(missing_ok=True)
+    pose_sheet.unlink(missing_ok=True)
+    if not args.gif:
+        preview_gif.unlink(missing_ok=True)
+
+    try:
+        run_blender(
+            "blender_pose_json.py",
+            args.blender,
+            [
+                "--rig", str(rig_path.resolve()),
+                "--animation", str(animation_path.resolve()),
+                "--output", str(pose_data.resolve()),
+            ],
+        )
+        if not pose_data.is_file():
+            raise RuntimeError("Blender JSON pose materializer did not produce pose data")
+
+        if args.renderer == "pillow":
+            visual = render_pose_sheet(pose_data, pose_sheet)
+        else:
+            run_blender(
+                "blender_visual.py",
+                args.blender,
+                ["--input", str(pose_data.resolve()), "--output", str(output.resolve())],
+            )
+            visual = inspect_blender_pose_sheet(pose_data, pose_sheet)
+
+        if not visual["pass"]:
+            raise RuntimeError("Animation JSON render failed canonical sheet/layout validation")
+
+        if args.gif:
+            write_preview_gif(
+                pose_sheet,
+                len(animation["frames"]),
+                float(animation["fps"]),
+                preview_gif,
+            )
+
+        report = {
+            "schema": "motion2sheet.animation-json-render",
+            "version": 1,
+            "pass": True,
+            "authority": {
+                "motion": "animation.frames[].bones",
+                "rest": "rig.bones[].editGeometry",
+            },
+            "sourceMotionFileRequired": False,
+            "renderer": args.renderer,
+            "fps": float(animation["fps"]),
+            "frameRange": list(animation["frameRange"]),
+            "frameCount": len(animation["frames"]),
+            "visual": visual,
+            "outputs": {
+                "poseSheet": "pose_sheet.png",
+                "previewGif": "preview.gif" if args.gif else None,
+            },
+        }
+        (output / "render.json").write_text(
+            json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n",
+            encoding="utf-8",
+        )
+    finally:
+        pose_data.unlink(missing_ok=True)
+
+    print(
+        "motion2sheet: animation JSON render PASS; "
+        f"renderer={args.renderer}, frames={len(animation['frames'])}, "
+        f"sheet={pose_sheet}"
+        + (f", gif={preview_gif}" if args.gif else "")
     )
     return 0
 
@@ -157,6 +258,18 @@ def add_roundtrip_subcommands(subparsers) -> None:
     reconstruct_parser.add_argument("--fbx-output", default=None, help="Optional reconstructed FBX path; defaults beside .blend")
     reconstruct_parser.add_argument("--blender", default="blender")
     reconstruct_parser.set_defaults(func=reconstruct_animation)
+
+    render_parser = subparsers.add_parser(
+        "render-animation-json",
+        help="Render a canonical pose sheet using only rig.json + animation.json",
+    )
+    render_parser.add_argument("--rig", required=True)
+    render_parser.add_argument("--animation", required=True)
+    render_parser.add_argument("--renderer", choices=("pillow", "blender"), default="pillow")
+    render_parser.add_argument("--output", required=True)
+    render_parser.add_argument("--gif", action="store_true", help="Also emit preview.gif from canonical sheet cells")
+    render_parser.add_argument("--blender", default="blender")
+    render_parser.set_defaults(func=render_animation_json)
 
     verify_parser = subparsers.add_parser(
         "verify-animation-roundtrip",
