@@ -93,6 +93,33 @@ jobs:
             --determinism-animation "$SECOND/animation.json" \
             --output "$ROOT"
           python tests/motion/roundtrip/e2e/verify_roundtrip.py "$ROOT"
+      - name: Verify optional Blender-native visual renderer
+        run: |
+          set -euo pipefail
+          ROOT=build/motion_roundtrip/walk_mixamo
+          NATIVE="$ROOT/blender_native"
+          motion2sheet verify-animation-roundtrip \
+            --source sample/walk_mixamo.fbx \
+            --rig "$ROOT/rig.json" \
+            --animation "$ROOT/animation.json" \
+            --blend "$ROOT/reconstructed.blend" \
+            --fbx "$ROOT/reconstructed.fbx" \
+            --visual-renderer blender \
+            --output "$NATIVE"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('build/motion_roundtrip/walk_mixamo/blender_native')
+          verification = json.loads((root / 'verification.json').read_text())
+          visual = verification['visual']
+          assert verification['pass'] is True
+          assert visual['pass'] is True
+          assert visual['renderer'] == 'blender-native-eevee-skeleton-v1'
+          assert visual['changedPixels'] == 0
+          for name in ('source_sheet.png', 'reconstructed_sheet.png', 'diff_sheet.png', 'overlay_sheet.png'):
+              assert (root / 'visual' / name).is_file(), name
+          print('Blender-native visual proof PASS')
+          PY
       - name: Upload round-trip proof
         if: always()
         uses: actions/upload-artifact@v4
