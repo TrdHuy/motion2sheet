@@ -10,6 +10,7 @@ RIG_SCHEMA = "motion2sheet.source-rig"
 ANIMATION_SCHEMA = "motion2sheet.source-animation"
 VERSION = 1
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+STACK_TIMING_FIELDS = ("LocalStart", "LocalStop", "ReferenceStart", "ReferenceStop")
 
 
 def _finite(value: Any, label: str) -> float:
@@ -18,9 +19,7 @@ def _finite(value: Any, label: str) -> float:
     value = float(value)
     if not math.isfinite(value):
         raise ValueError(f"{label} must be finite")
-    if value == 0.0:
-        return 0.0
-    return value
+    return 0.0 if value == 0.0 else value
 
 
 def vec(values: Any, size: int, label: str) -> list[float]:
@@ -84,23 +83,48 @@ _FBX_VECTOR_STACK_FIELDS = (
 )
 
 
-def _validate_fbx_rig_authority(data: Any, rig_bones: set[str]) -> None:
+def _validate_matrix16(values: Any, label: str) -> None:
+    vec(values, 16, label)
+
+
+def _validate_fbx_encoding_adapter(data: Any, label: str) -> None:
+    if not isinstance(data, dict):
+        raise ValueError(f"{label} must be an object")
+    expected = {"preMatrix", "postMatrix", "geometryMatrix", "rotationAltMatrix"}
+    if set(data) != expected:
+        raise ValueError(f"{label} fields must be {sorted(expected)}")
+    for field in sorted(expected):
+        _validate_matrix16(data[field], f"{label}.{field}")
+
+
+def _validate_fbx_rig_metadata(data: Any, rig_bones: set[str]) -> None:
     if not isinstance(data, dict):
         raise ValueError("rig.sourceFormat.fbx must be an object")
+    expected_top = {"fbxVersion", "globalSettings", "bones"}
+    if set(data) != expected_top:
+        raise ValueError(f"rig.sourceFormat.fbx fields must be {sorted(expected_top)}")
     version = data.get("fbxVersion")
     if not isinstance(version, int) or isinstance(version, bool) or version < 7000:
         raise ValueError("rig.sourceFormat.fbx.fbxVersion must be an FBX 7.x+ integer")
     settings = data.get("globalSettings")
-    if not isinstance(settings, dict):
-        raise ValueError("rig.sourceFormat.fbx.globalSettings must be an object")
+    if not isinstance(settings, dict) or not settings:
+        raise ValueError("rig.sourceFormat.fbx.globalSettings must be a non-empty object")
+    for key, value in settings.items():
+        if not isinstance(key, str) or not key:
+            raise ValueError("rig.sourceFormat.fbx.globalSettings keys must be non-empty strings")
+        _finite(value, f"rig.sourceFormat.fbx.globalSettings.{key}")
     bones = data.get("bones")
     if not isinstance(bones, dict) or set(bones) != rig_bones:
         missing = rig_bones - set(bones or {})
         extra = set(bones or {}) - rig_bones
         raise ValueError(f"rig.sourceFormat.fbx bone set mismatch; missing={sorted(missing)} extra={sorted(extra)}")
     for bone_name, payload in bones.items():
-        if not isinstance(payload, dict) or set(payload) != {"transformStack"}:
-            raise ValueError(f"FBX authority for {bone_name} must contain only transformStack")
+        if not isinstance(payload, dict):
+            raise ValueError(f"FBX metadata for {bone_name} must be an object")
+        if set(payload) - {"transformStack", "encodingAdapter"}:
+            raise ValueError(f"FBX metadata for {bone_name} has unknown fields: {sorted(set(payload) - {'transformStack', 'encodingAdapter'})}")
+        if "transformStack" not in payload:
+            raise ValueError(f"FBX metadata for {bone_name} must contain transformStack")
         stack = payload["transformStack"]
         if not isinstance(stack, dict):
             raise ValueError(f"FBX transformStack for {bone_name} must be an object")
@@ -115,19 +139,34 @@ def _validate_fbx_rig_authority(data: Any, rig_bones: set[str]) -> None:
             inherit_type = stack["InheritType"]
             if not isinstance(inherit_type, int) or isinstance(inherit_type, bool):
                 raise ValueError(f"FBX {bone_name}.InheritType must be an integer")
+        if "encodingAdapter" in payload:
+            _validate_fbx_encoding_adapter(payload["encodingAdapter"], f"FBX {bone_name}.encodingAdapter")
 
 
-def _validate_fbx_animation_authority(
-    data: Any, rig_bones: set[str], expected_frame_count: int
-) -> None:
+def _validate_fbx_animation_metadata(data: Any, expected_frame_count: int) -> None:
     if not isinstance(data, dict):
         raise ValueError("animation.sourceFormat.fbx must be an object")
+    expected = {"stack", "layer", "stackTiming", "sampling", "sampleKeyTimes"}
+    if set(data) != expected:
+        extra = set(data) - expected
+        if "curves" in extra:
+            raise ValueError(
+                "animation.sourceFormat.fbx.curves is forbidden: animation.frames is the sole motion authority"
+            )
+        raise ValueError(f"animation.sourceFormat.fbx fields must be {sorted(expected)}")
     if not isinstance(data.get("stack"), str) or not data["stack"]:
         raise ValueError("animation.sourceFormat.fbx.stack must be non-empty")
     if not isinstance(data.get("layer"), str) or not data["layer"]:
         raise ValueError("animation.sourceFormat.fbx.layer must be non-empty")
     if data.get("sampling") != "all-integer-source-frames":
         raise ValueError("animation.sourceFormat.fbx.sampling must be 'all-integer-source-frames'")
+    stack_timing = data.get("stackTiming")
+    if not isinstance(stack_timing, dict) or set(stack_timing) != set(STACK_TIMING_FIELDS):
+        raise ValueError(f"animation.sourceFormat.fbx.stackTiming fields must be {sorted(STACK_TIMING_FIELDS)}")
+    for field in STACK_TIMING_FIELDS:
+        value = stack_timing[field]
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"animation.sourceFormat.fbx.stackTiming.{field} must be an integer KTime")
     sample_key_times = data.get("sampleKeyTimes")
     if (
         not isinstance(sample_key_times, list)
@@ -139,47 +178,6 @@ def _validate_fbx_animation_authority(
         )
     if any(right <= left for left, right in zip(sample_key_times, sample_key_times[1:])):
         raise ValueError("animation.sourceFormat.fbx.sampleKeyTimes must be strictly increasing")
-    curves = data.get("curves")
-    if not isinstance(curves, list) or not curves:
-        raise ValueError("animation.sourceFormat.fbx.curves must be non-empty")
-    seen = set()
-    previous_key = None
-    for index, curve in enumerate(curves):
-        if not isinstance(curve, dict):
-            raise ValueError(f"animation.sourceFormat.fbx.curves[{index}] must be an object")
-        expected = {"bone", "property", "axis", "keyTimes", "keyValues"}
-        if set(curve) != expected:
-            raise ValueError(f"animation.sourceFormat.fbx.curves[{index}] fields must be {sorted(expected)}")
-        bone = curve["bone"]
-        prop = curve["property"]
-        axis = curve["axis"]
-        key = (bone, prop, axis)
-        if bone not in rig_bones:
-            raise ValueError(f"FBX animation curve references unknown rig bone {bone!r}")
-        if prop not in {"translation", "rotation", "scale"}:
-            raise ValueError(f"FBX animation curve {key} has unsupported property")
-        if axis not in {"x", "y", "z"}:
-            raise ValueError(f"FBX animation curve {key} has unsupported axis")
-        if key in seen:
-            raise ValueError(f"duplicate FBX animation curve: {key}")
-        if previous_key is not None and key <= previous_key:
-            raise ValueError("FBX animation curves must be canonically sorted by bone/property/axis")
-        seen.add(key)
-        previous_key = key
-        times = curve["keyTimes"]
-        values = curve["keyValues"]
-        if not isinstance(times, list) or not times or not all(isinstance(v, int) and not isinstance(v, bool) for v in times):
-            raise ValueError(f"FBX animation curve {key}.keyTimes must be non-empty integers")
-        if any(right <= left for left, right in zip(times, times[1:])):
-            raise ValueError(f"FBX animation curve {key}.keyTimes must be strictly increasing")
-        if times != sample_key_times:
-            raise ValueError(
-                f"FBX animation curve {key}.keyTimes must equal the canonical integer-frame sample timeline"
-            )
-        if not isinstance(values, list) or len(values) != len(times):
-            raise ValueError(f"FBX animation curve {key}.keyValues must match keyTimes")
-        for value_index, value in enumerate(values):
-            _finite(value, f"FBX animation curve {key}.keyValues[{value_index}]")
 
 
 def validate_rig_document(data: Any) -> dict:
@@ -221,7 +219,7 @@ def validate_rig_document(data: Any) -> dict:
         source_format = data.get("sourceFormat")
         if not isinstance(source_format, dict) or set(source_format) != {"fbx"}:
             raise ValueError("FBX rig must contain sourceFormat.fbx")
-        _validate_fbx_rig_authority(source_format["fbx"], names)
+        _validate_fbx_rig_metadata(source_format["fbx"], names)
     return data
 
 
@@ -266,7 +264,7 @@ def validate_animation_document(data: Any, rig: dict) -> dict:
         source_format = data.get("sourceFormat")
         if not isinstance(source_format, dict) or set(source_format) != {"fbx"}:
             raise ValueError("FBX animation must contain sourceFormat.fbx")
-        _validate_fbx_animation_authority(source_format["fbx"], rig_bones, len(expected_frames))
+        _validate_fbx_animation_metadata(source_format["fbx"], len(expected_frames))
     return data
 
 
