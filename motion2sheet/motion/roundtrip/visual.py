@@ -18,6 +18,9 @@ from .visual_contract import (
     sheet_size,
 )
 
+CELL_CONTENT_LUMA_MAX = 245
+MIN_CELL_CONTENT_PIXELS = 16
+
 
 def render_panel(frame: dict[str, Any], config: ProjectionConfig) -> Image.Image:
     image = Image.new("RGB", (PANEL, PANEL), (255, 255, 255))
@@ -97,6 +100,44 @@ def _frame_diff_summary(
     return worst_frame, max(0, worst_changed)
 
 
+def _cell_content_pixels(image: Image.Image) -> int:
+    """Count foreground-like pixels in one expected visual cell.
+
+    Native Blender proof sheets contain only a white background plus dark
+    skeleton geometry. Requiring a minimum number of non-background pixels in
+    every expected cell makes framing/camera crops fail independently from the
+    source-vs-reconstructed equality check.
+    """
+
+    gray = image.convert("L")
+    return sum(1 for value in gray.getdata() if value <= CELL_CONTENT_LUMA_MAX)
+
+
+def sheet_layout_metrics(sheet: Image.Image, frames: tuple[int, ...]) -> dict[str, Any]:
+    expected_size = sheet_size(len(frames))
+    if sheet.size != expected_size:
+        raise ValueError(f"visual sheet size must be {expected_size}; actual={sheet.size}")
+
+    content_counts: list[int] = []
+    empty_cells: list[dict[str, int]] = []
+    for index, frame in enumerate(frames):
+        content_pixels = _cell_content_pixels(sheet.crop(panel_box(index)))
+        content_counts.append(content_pixels)
+        if content_pixels < MIN_CELL_CONTENT_PIXELS:
+            empty_cells.append({"index": index, "frame": frame})
+
+    occupied = len(frames) - len(empty_cells)
+    return {
+        "pass": not empty_cells,
+        "expectedCells": len(frames),
+        "occupiedCells": occupied,
+        "emptyCells": empty_cells,
+        "minContentPixels": min(content_counts),
+        "contentLumaMax": CELL_CONTENT_LUMA_MAX,
+        "minRequiredContentPixels": MIN_CELL_CONTENT_PIXELS,
+    }
+
+
 def _visual_result(
     source_sheet: Image.Image,
     reconstructed_sheet: Image.Image,
@@ -111,10 +152,14 @@ def _visual_result(
             f"source={source_sheet.size}, reconstructed={reconstructed_sheet.size}"
         )
 
+    source_layout = sheet_layout_metrics(source_sheet, frames)
+    reconstructed_layout = sheet_layout_metrics(reconstructed_sheet, frames)
+    layout_pass = source_layout["pass"] and reconstructed_layout["pass"]
+
     worst_frame, worst_changed = _frame_diff_summary(source_sheet, reconstructed_sheet, frames)
     total_changed, max_channel_delta = _write_diff_outputs(source_sheet, reconstructed_sheet, output_dir)
     return {
-        "pass": total_changed == 0,
+        "pass": total_changed == 0 and layout_pass,
         "changedPixels": total_changed,
         "maxChannelDelta": max_channel_delta,
         "worstFrame": worst_frame,
@@ -123,6 +168,12 @@ def _visual_result(
         "frameCount": len(frames),
         "canvasPerFrame": [PANEL, PANEL],
         "columns": COLUMNS,
+        "rows": expected_size[1] // PANEL,
+        "layout": {
+            "pass": layout_pass,
+            "source": source_layout,
+            "reconstructed": reconstructed_layout,
+        },
     }
 
 
@@ -152,7 +203,8 @@ def compare_blender_rendered_visuals(pose_data_path: Path, output_dir: Path) -> 
     """Compare source/reconstructed sheets rendered natively by Blender.
 
     Blender owns source_sheet.png and reconstructed_sheet.png. Pillow owns only
-    deterministic pixel comparison and diagnostic diff/overlay generation.
+    deterministic pixel comparison, layout occupancy validation and diagnostic
+    diff/overlay generation.
     """
 
     data = json.loads(pose_data_path.read_text(encoding="utf-8"))
