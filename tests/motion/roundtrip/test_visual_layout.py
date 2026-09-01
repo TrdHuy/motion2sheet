@@ -4,8 +4,12 @@ from motion2sheet.motion.roundtrip.visual import MIN_CELL_CONTENT_PIXELS, sheet_
 from motion2sheet.motion.roundtrip.visual_contract import PANEL, panel_box, sheet_size
 
 
-def _sheet_with_content(frame_count: int, occupied_indices: set[int]) -> Image.Image:
-    sheet = Image.new("RGB", sheet_size(frame_count), (255, 255, 255))
+def _sheet_with_content(
+    frame_count: int,
+    occupied_indices: set[int],
+    background: tuple[int, int, int] = (255, 255, 255),
+) -> Image.Image:
+    sheet = Image.new("RGB", sheet_size(frame_count), background)
     draw = ImageDraw.Draw(sheet)
     for index in occupied_indices:
         left, top, _right, _bottom = panel_box(index)
@@ -27,16 +31,33 @@ def test_layout_gate_requires_content_in_every_expected_cell():
     assert metrics["minContentPixels"] >= MIN_CELL_CONTENT_PIXELS
 
 
+def test_layout_gate_treats_evee_gray_background_as_background_not_content():
+    frames = tuple(range(1, 33))
+    # Blender's color-managed flat background is around luma 196-197 in the
+    # real proof artifact rather than literal RGB white.
+    metrics = sheet_layout_metrics(_sheet_with_content(32, set(), background=(197, 197, 197)), frames)
+
+    assert metrics["pass"] is False
+    assert metrics["occupiedCells"] == 0
+    assert len(metrics["emptyCells"]) == 32
+    assert metrics["minContentPixels"] == 0
+    assert metrics["minBackgroundLuma"] == 197
+
+
 def test_layout_gate_rejects_matching_camera_crop_even_when_center_cells_have_content():
     frames = tuple(range(1, 33))
     # Reproduce the old camera failure shape: only a centered 4x2 region of the
-    # expected 8x4 sheet contains skeleton pixels.
+    # expected 8x4 sheet contains skeleton pixels, on the real Eevee-like gray
+    # background rather than an ideal white one.
     centered_four_by_two = {
         row * 8 + column
         for row in (1, 2)
         for column in (2, 3, 4, 5)
     }
-    metrics = sheet_layout_metrics(_sheet_with_content(32, centered_four_by_two), frames)
+    metrics = sheet_layout_metrics(
+        _sheet_with_content(32, centered_four_by_two, background=(197, 197, 197)),
+        frames,
+    )
 
     assert metrics["pass"] is False
     assert metrics["expectedCells"] == 32
