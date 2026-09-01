@@ -15,6 +15,7 @@ from .visual_contract import (
     panel_origin,
     panel_pixel,
     projection_config,
+    projection_config_for_branches,
     sheet_size,
 )
 
@@ -152,6 +153,23 @@ def sheet_layout_metrics(sheet: Image.Image, frames: tuple[int, ...]) -> dict[st
     }
 
 
+def _sheet_contract_result(sheet: Image.Image, frames: tuple[int, ...], renderer: str) -> dict[str, Any]:
+    expected_size = sheet_size(len(frames))
+    if sheet.size != expected_size:
+        raise ValueError(f"visual sheet size must be {expected_size}; actual={sheet.size}")
+    layout = sheet_layout_metrics(sheet, frames)
+    return {
+        "pass": layout["pass"],
+        "renderer": renderer,
+        "frameCount": len(frames),
+        "canvasPerFrame": [PANEL, PANEL],
+        "columns": COLUMNS,
+        "rows": expected_size[1] // PANEL,
+        "sheetSize": list(expected_size),
+        "layout": layout,
+    }
+
+
 def _visual_result(
     source_sheet: Image.Image,
     reconstructed_sheet: Image.Image,
@@ -191,8 +209,59 @@ def _visual_result(
     }
 
 
+def render_pose_sheet(pose_data_path: Path, output_path: Path) -> dict[str, Any]:
+    """Render one canonical JSON pose sequence with the deterministic Pillow rasterizer."""
+
+    data = json.loads(pose_data_path.read_text(encoding="utf-8"))
+    frames = frame_numbers(data)
+    branch = data["frames"]
+    config = projection_config_for_branches(branch)
+    sheet = compose_sheet([render_panel(branch[str(frame)], config) for frame in frames])
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(output_path)
+    return _sheet_contract_result(sheet, frames, "deterministic-pillow-skeleton-v1")
+
+
+def inspect_blender_pose_sheet(pose_data_path: Path, output_path: Path) -> dict[str, Any]:
+    """Apply the canonical sheet/layout gate to one Blender-native pose sheet."""
+
+    data = json.loads(pose_data_path.read_text(encoding="utf-8"))
+    frames = frame_numbers(data)
+    if not output_path.is_file():
+        raise ValueError("Blender native renderer did not produce pose_sheet.png")
+    with Image.open(output_path) as image:
+        sheet = image.convert("RGB")
+    return _sheet_contract_result(sheet, frames, "blender-native-eevee-skeleton-v1")
+
+
+def write_preview_gif(sheet_path: Path, frame_count: int, fps: float, output_path: Path) -> None:
+    """Create a preview GIF by cropping canonical 256x256 cells from pose_sheet.png."""
+
+    if frame_count <= 0:
+        raise ValueError("GIF frame count must be positive")
+    if fps <= 0:
+        raise ValueError("GIF FPS must be positive")
+    with Image.open(sheet_path) as image:
+        sheet = image.convert("RGB")
+    expected_size = sheet_size(frame_count)
+    if sheet.size != expected_size:
+        raise ValueError(f"GIF source sheet must be {expected_size}; actual={sheet.size}")
+    gif_frames = [sheet.crop(panel_box(index)) for index in range(frame_count)]
+    duration_ms = max(1, int(round(1000.0 / float(fps))))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    gif_frames[0].save(
+        output_path,
+        save_all=True,
+        append_images=gif_frames[1:],
+        duration=duration_ms,
+        loop=0,
+        disposal=2,
+        optimize=False,
+    )
+
+
 def render_visuals(pose_data_path: Path, output_dir: Path) -> dict[str, Any]:
-    """Render the legacy deterministic Pillow skeleton proof."""
+    """Render the deterministic Pillow source-vs-reconstructed skeleton proof."""
 
     data = json.loads(pose_data_path.read_text(encoding="utf-8"))
     frames = frame_numbers(data)
