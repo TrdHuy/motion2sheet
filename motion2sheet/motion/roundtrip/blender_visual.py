@@ -43,10 +43,18 @@ def _projection_config(data: dict[str, Any]) -> dict[str, float]:
 
 
 def _panel_pixel(point: list[float], config: dict[str, float]) -> tuple[float, float]:
+    """Map world pose to the canonical 256px visual grid before Blender rasterization.
+
+    Pixel snapping deliberately matches the legacy Pillow proof's resolution semantics.
+    Source/reconstructed world-space residuals already have strict numeric gates; the
+    visual proof compares their representation at the declared raster resolution rather
+    than letting sub-pixel anti-aliasing become an additional fidelity tolerance.
+    """
+
     x, y = _project(point)
     px = PADDING + (x - config["minX"]) * config["scale"]
     py = PADDING + (config["maxY"] - y) * config["scale"]
-    return px, py
+    return float(round(px)), float(round(py))
 
 
 def _clear_scene() -> None:
@@ -123,7 +131,6 @@ def _build_skeleton_sheet(
     curve.resolution_v = 0
     curve.bevel_depth = 1.0
     curve.bevel_resolution = 0
-    curve.resolution_u = 1
     curve.materials.append(material)
 
     for index, frame_number in enumerate(frames):
