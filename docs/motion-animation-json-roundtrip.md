@@ -42,54 +42,27 @@ Canonical JSON uses stable key ordering, normalized quaternion sign, finite numb
 
 ## Fail-closed canonical schema
 
-Canonical `rig.json` and `animation.json` are closed contracts rather than extensible property bags. Every fixed-shape object has an exact allowed-field set:
+Canonical `rig.json` and `animation.json` are closed contracts rather than extensible property bags. Every fixed-shape object has an exact allowed-field set. Unknown fields fail validation rather than being ignored, and missing required fields also fail validation.
 
-- top-level rig and animation documents reject unknown fields and require all normative fields;
-- rig source/coordinate/units/armature objects are exact;
-- every bone object and its rest/edit-geometry/property objects are exact;
-- animation rig/source/sampling/transform-space objects are exact;
-- every frame entry is exactly `{frame, bones}`;
-- every bone motion TRS is exact;
-- FBX static metadata, transform stacks, adapters and animation timing metadata are closed as well.
-
-Unknown fields fail validation rather than being ignored. Missing required fields also fail validation. This prevents an undeclared field such as `motionOverride`, `extraRest`, or a frame-level `override` from silently becoming another authority outside the documented contract.
+JSON scalar types are strict: integer fields reject booleans and float equivalents, while boolean fields reject numeric `0/1`.
 
 ## FBX encoding metadata
 
 FBX needs additional **static encoding metadata** because FBX local T/R/S channels are not the same parameterization as Blender `PoseBone.matrix_basis`.
 
-The canonical documents may retain format metadata required to encode the canonical frames back into FBX, including:
+The canonical documents may retain format metadata required to encode the canonical frames back into FBX, including FBX version/GlobalSettings, per-bone transform-stack metadata, static Blender importer adapter matrices, AnimationStack/Layer identity and effective KTime sampling. These values describe **how to encode/decode motion**, not another motion sequence.
 
-- FBX version and GlobalSettings axis/unit/time settings;
-- per-bone `PreRotation`, `PostRotation`, `RotationOrder`;
-- rotation/scaling offsets and pivots;
-- `InheritType` and static local defaults;
-- static matrices captured from Blender's FBX importer that map FBX node transforms to Blender pose-bone basis;
-- AnimationStack/AnimationLayer identity, effective stack timing and one KTime sample per canonical integer frame.
-
-These values describe **how to encode/decode motion**, not another motion sequence.
-
-For every canonical frame the FBX inverse encoder removes the static importer/transform-stack factors from `matrix_basis`, deterministically decomposes the remaining transform into FBX `Lcl Translation`, Euler `Lcl Rotation` in the source `RotationOrder`, and `Lcl Scaling`, then verifies that recomposition matches the canonical matrix within tolerance. Euler continuity uses the previous derived Euler as a deterministic compatibility branch. Unsupported shear, reflection/negative scale, missing adapters, or unexpected varying container animation fails closed.
-
-The generic Blender-exported FBX is only a structural container. All canonical bone T/R/S curves are derived from `animation.frames`. Any other generated container curve is permitted only when constant and is retimed to the canonical KTime range; a varying non-canonical curve fails closed so the container cannot become a second motion authority.
+For every canonical frame the FBX inverse encoder removes the static importer/transform-stack factors from `matrix_basis`, deterministically decomposes the remaining transform into FBX `Lcl Translation`, Euler `Lcl Rotation` in the source `RotationOrder`, and `Lcl Scaling`, then verifies that recomposition matches the canonical matrix within tolerance. Unsupported shear, reflection/negative scale, missing adapters, or unexpected varying container animation fails closed.
 
 ## Diagnostic oracle
 
-Original source FBX curve values may be written to:
-
-`diagnostics/original_fbx_curves.json`
-
-Derived encoder values may be written to:
-
-`diagnostics/derived_fbx_curves.json`
-
-These are diagnostic artifacts only. They are not canonical input and the reconstructor does not read them. Numerical curve equality is not an acceptance requirement because multiple Euler branches can evaluate to the same pose.
+Original source FBX curve values may be written to `diagnostics/original_fbx_curves.json`; derived encoder values may be written to `diagnostics/derived_fbx_curves.json`. These are diagnostics only and never canonical reconstruction inputs.
 
 ## Visual proof renderers
 
-`verify-animation-roundtrip` supports two visual proof renderers while using the same Blender-evaluated source/reconstructed world-pose data.
+`verify-animation-roundtrip` supports two visual proof renderers using the same Blender-evaluated source/reconstructed world-pose data.
 
-The default remains the existing deterministic Pillow renderer:
+### Pillow (default)
 
 ```bash
 motion2sheet verify-animation-roundtrip \
@@ -102,9 +75,9 @@ motion2sheet verify-animation-roundtrip \
   --output build/motion_roundtrip/walk_mixamo
 ```
 
-`pillow` projects world bone head/tail positions and rasterizes the skeleton with Pillow. It remains the default because it is a cheap deterministic regression proof.
+`pillow` keeps the existing deterministic skeleton renderer. It projects Blender-evaluated world bone head/tail positions to a canonical 256x256 grid and rasterizes them with Pillow. This remains the default acceptance path.
 
-The optional Blender-native renderer is selected with:
+### Blender native
 
 ```bash
 motion2sheet verify-animation-roundtrip \
@@ -117,7 +90,7 @@ motion2sheet verify-animation-roundtrip \
   --output build/motion_roundtrip/walk_mixamo/blender_native
 ```
 
-`blender` creates the full source and reconstructed skeleton sheets inside Blender using an orthographic camera and Eevee native rendering. Pillow does not rasterize those two proof sheets; it is used afterwards only to calculate pixel diff metrics and produce the diagnostic diff/overlay images.
+`blender` creates the source and reconstructed skeleton sheet geometry inside Blender and renders both full sheets with an orthographic camera using `BLENDER_EEVEE_NEXT`. World-pose projection is snapped to the declared 256x256 raster grid before geometry creation, matching the visual proof's resolution semantics and preventing valid sub-pixel numeric residuals from becoming an implicit new fidelity tolerance. Pillow does **not** rasterize the source/reconstructed proof sheets in this mode; it is used afterwards only for pixel metrics and diagnostic diff/overlay images.
 
 Both modes emit:
 
@@ -129,7 +102,7 @@ visual/
 └── overlay_sheet.png
 ```
 
-The dedicated Mixamo workflow keeps the Pillow acceptance path and separately exercises the Blender-native option so both remain supported.
+The dedicated real-Mixamo workflow exercises both modes. On the current proof both report `32` frames, `0` changed pixels and max channel delta `0`.
 
 ## A/B/C proof
 
@@ -139,7 +112,7 @@ The dedicated real-Mixamo workflow records three cases:
 - **B** — canonical frames -> generic Blender FBX export -> clean re-import;
 - **C** — canonical frames + static FBX metadata -> inverse encoder -> clean re-import.
 
-Case B demonstrates why generic Blender FBX export is insufficient for strict source-state preservation: Blender may refactor the source FBX bone basis/`PreRotation` representation even when the evaluated pose looks similar. Case C must recover local, rest and world-space fidelity without using original source curve values.
+Case B demonstrates why generic Blender FBX export is insufficient for strict source-state preservation. Case C recovers local/rest/world-space fidelity without using original source curve values.
 
 ## POC v1 fidelity boundary
 
