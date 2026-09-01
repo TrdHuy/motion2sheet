@@ -137,14 +137,14 @@ def _model_transform_stack(model) -> dict[str, Any]:
     result.setdefault("RotationPivot", [0.0, 0.0, 0.0])
     result.setdefault("ScalingOffset", [0.0, 0.0, 0.0])
     result.setdefault("ScalingPivot", [0.0, 0.0, 0.0])
-    result.setdefault("RotationOrder", 0)
-    result.setdefault(
-        "RotationActive",
-        bool(
-            any(abs(float(value)) > 1e-12 for value in result["PreRotation"])
-            or any(abs(float(value)) > 1e-12 for value in result["PostRotation"])
-        ),
+    result["RotationOrder"] = int(result.get("RotationOrder", 0))
+    rotation_active_default = bool(
+        any(abs(float(value)) > 1e-12 for value in result["PreRotation"])
+        or any(abs(float(value)) > 1e-12 for value in result["PostRotation"])
     )
+    result["RotationActive"] = bool(result.get("RotationActive", rotation_active_default))
+    if "InheritType" in result:
+        result["InheritType"] = int(result["InheritType"])
     return result
 
 
