@@ -32,11 +32,27 @@ Canonical `animation.json` is not allowed to contain independent FBX animation c
 
 ## Rig/rest authority
 
-`rig.json` stores each rest bone transform **relative to its parent rest matrix**. Root bones are relative to armature object space. It also stores explicit Blender edit-bone head/tail/roll geometry required to reconstruct the same rest basis.
+`rig.editGeometrySpace = "armature-local"` and `rig.restAuthority = "editGeometry"` explicitly make each bone's `editGeometry {head, tail, roll}` the **single canonical rest authority**. The reconstructor creates Blender EditBones only from this representation.
 
-Before serialization each matrix is decomposed to TRS and immediately recomposed. If the matrix residual exceeds the strict tolerance, extraction fails rather than approximating shear/non-TRS state.
+The per-bone parent-relative `rest` TRS and `length` fields remain in `rig.json` as derived inspection/verifier caches; they are not independent authorities. Schema validation reconstructs the bone basis from canonical head/tail/roll using Blender-compatible `vec_roll_to_mat3` semantics and rejects the document if `rest` or `length` conflicts with `editGeometry`. A dedicated cache-consistency tolerance accounts only for Blender float32 FBX/EditBone conversion noise; it does not change any round-trip fidelity gate.
+
+Before serialization each captured matrix is decomposed to TRS and immediately recomposed. If the matrix residual exceeds the strict transform tolerance, extraction fails rather than approximating shear/non-TRS state.
 
 Canonical JSON uses stable key ordering, normalized quaternion sign, finite numbers, deterministic source filename/SHA256 provenance and no timestamps, UUIDs, absolute machine paths or opaque binary data.
+
+## Fail-closed canonical schema
+
+Canonical `rig.json` and `animation.json` are closed contracts rather than extensible property bags. Every fixed-shape object has an exact allowed-field set:
+
+- top-level rig and animation documents reject unknown fields and require all normative fields;
+- rig source/coordinate/units/armature objects are exact;
+- every bone object and its rest/edit-geometry/property objects are exact;
+- animation rig/source/sampling/transform-space objects are exact;
+- every frame entry is exactly `{frame, bones}`;
+- every bone motion TRS is exact;
+- FBX static metadata, transform stacks, adapters and animation timing metadata are closed as well.
+
+Unknown fields fail validation rather than being ignored. Missing required fields also fail validation. This prevents an undeclared field such as `motionOverride`, `extraRest`, or a frame-level `override` from silently becoming another authority outside the documented contract.
 
 ## FBX encoding metadata
 
