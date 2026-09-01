@@ -2,59 +2,30 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 import bpy
 
-PANEL = 256
-PADDING = 18
-COLUMNS = 8
+PACKAGE_ROOT = Path(__file__).resolve().parents[3]
+if str(PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_ROOT))
+
+from motion2sheet.motion.roundtrip.visual_contract import (
+    ProjectionConfig,
+    frame_numbers,
+    projection_config,
+    sheet_pixel,
+    sheet_size,
+)
+
+RENDER_SAMPLES = 1
 
 
 def _argv() -> list[str]:
     return sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
-
-
-def _project(point: list[float]) -> tuple[float, float]:
-    x, y, z = (float(value) for value in point)
-    return x - 0.42 * y, z + 0.20 * y
-
-
-def _projection_config(data: dict[str, Any]) -> dict[str, float]:
-    points: list[tuple[float, float]] = []
-    for branch in ("source", "reconstructed"):
-        for frame in data[branch].values():
-            for bone in frame.values():
-                points.append(_project(bone["head"]))
-                points.append(_project(bone["tail"]))
-    if not points:
-        raise RuntimeError("visual pose data has no points")
-    xs = [point[0] for point in points]
-    ys = [point[1] for point in points]
-    min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
-    width = max(max_x - min_x, 1e-9)
-    height = max(max_y - min_y, 1e-9)
-    scale = min((PANEL - 2 * PADDING) / width, (PANEL - 2 * PADDING) / height)
-    return {"minX": min_x, "maxY": max_y, "scale": scale}
-
-
-def _panel_pixel(point: list[float], config: dict[str, float]) -> tuple[float, float]:
-    """Map world pose to the canonical 256px visual grid before Blender rasterization.
-
-    Pixel snapping deliberately matches the legacy Pillow proof's resolution semantics.
-    Source/reconstructed world-space residuals already have strict numeric gates; the
-    visual proof compares their representation at the declared raster resolution rather
-    than letting sub-pixel anti-aliasing become an additional fidelity tolerance.
-    """
-
-    x, y = _project(point)
-    px = PADDING + (x - config["minX"]) * config["scale"]
-    py = PADDING + (config["maxY"] - y) * config["scale"]
-    return float(round(px)), float(round(py))
 
 
 def _clear_scene() -> None:
@@ -82,6 +53,10 @@ def _emission_material(name: str, rgba: tuple[float, float, float, float]):
 def _configure_scene(sheet_width: int, sheet_height: int) -> None:
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_EEVEE_NEXT"
+    scene.eevee.taa_render_samples = RENDER_SAMPLES
+    scene.eevee.taa_samples = RENDER_SAMPLES
+    scene.eevee.use_shadows = False
+    scene.eevee.use_raytracing = False
     scene.render.resolution_x = sheet_width
     scene.render.resolution_y = sheet_height
     scene.render.resolution_percentage = 100
@@ -119,8 +94,8 @@ def _remove_skeleton() -> None:
 
 def _build_skeleton_sheet(
     branch: dict[str, Any],
-    frames: list[int],
-    config: dict[str, float],
+    frames: tuple[int, ...],
+    config: ProjectionConfig,
     sheet_height: int,
     material,
 ) -> None:
@@ -135,22 +110,12 @@ def _build_skeleton_sheet(
 
     for index, frame_number in enumerate(frames):
         frame = branch[str(frame_number)]
-        column = index % COLUMNS
-        row = index // COLUMNS
         for bone_name in sorted(frame):
             bone = frame[bone_name]
-            head_x, head_y = _panel_pixel(bone["head"], config)
-            tail_x, tail_y = _panel_pixel(bone["tail"], config)
-            head = (
-                column * PANEL + head_x,
-                sheet_height - (row * PANEL + head_y),
-                0.0,
-            )
-            tail = (
-                column * PANEL + tail_x,
-                sheet_height - (row * PANEL + tail_y),
-                0.0,
-            )
+            head_x, head_y = sheet_pixel(index, bone["head"], config)
+            tail_x, tail_y = sheet_pixel(index, bone["tail"], config)
+            head = (float(head_x), float(sheet_height - head_y), 0.0)
+            tail = (float(tail_x), float(sheet_height - tail_y), 0.0)
             spline = curve.splines.new("POLY")
             spline.points.add(1)
             spline.points[0].co = (*head, 1.0)
@@ -163,8 +128,8 @@ def _build_skeleton_sheet(
 def _render_branch(
     name: str,
     branch: dict[str, Any],
-    frames: list[int],
-    config: dict[str, float],
+    frames: tuple[int, ...],
+    config: ProjectionConfig,
     sheet_height: int,
     material,
     output: Path,
@@ -184,24 +149,23 @@ def main() -> None:
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     data = json.loads(pose_path.read_text(encoding="utf-8"))
-    start, end = data["frameRange"]
-    frames = list(range(int(start), int(end) + 1))
-    if not frames:
-        raise RuntimeError("visual pose data has no frames")
-
-    rows = math.ceil(len(frames) / COLUMNS)
-    sheet_width = PANEL * COLUMNS
-    sheet_height = PANEL * rows
-    config = _projection_config(data)
+    frames = frame_numbers(data)
+    sheet_width, sheet_height = sheet_size(len(frames))
+    config = projection_config(data)
 
     _clear_scene()
     _configure_scene(sheet_width, sheet_height)
     material = _emission_material("RoundTripSkeletonMaterial", (0.02, 0.02, 0.02, 1.0))
+
+    started = time.perf_counter()
     _render_branch("source", data["source"], frames, config, sheet_height, material, output)
     _render_branch("reconstructed", data["reconstructed"], frames, config, sheet_height, material, output)
+    render_seconds = time.perf_counter() - started
+
     print(
         "motion2sheet: Blender-native skeleton sheets rendered; "
-        f"frames={len(frames)}, size={sheet_width}x{sheet_height} -> {output}"
+        f"frames={len(frames)}, size={sheet_width}x{sheet_height}, "
+        f"samples={RENDER_SAMPLES}, renderSeconds={render_seconds:.3f} -> {output}"
     )
 
 
