@@ -5,6 +5,7 @@ on:
     paths:
       - 'motion2sheet/motion/**'
       - 'tests/motion/roundtrip/**'
+      - 'docs/motion-animation-json-roundtrip.md'
       - 'sample/walk_mixamo.fbx'
       - '.github/workflows/motion-roundtrip.yml'
       - 'pyproject.toml'
