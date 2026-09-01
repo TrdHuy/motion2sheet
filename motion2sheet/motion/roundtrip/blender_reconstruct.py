@@ -12,6 +12,7 @@ if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
 from motion2sheet.motion.roundtrip.blender_common import trs_to_matrix
+from motion2sheet.motion.roundtrip.fbx import patch_generated_fbx
 from motion2sheet.motion.roundtrip.schema import read_json, validate_animation_document, validate_rig_document
 
 
@@ -36,9 +37,6 @@ def build_armature(rig: dict):
     armature.select_set(True)
     bpy.ops.object.mode_set(mode="EDIT")
 
-    # Create every EditBone first so hierarchy attachment cannot reinterpret
-    # already-authored source geometry. The actual source head/tail/roll are
-    # restored only after all parent links exist.
     for bone_data in rig["bones"]:
         edit_bone = armature_data.edit_bones.new(bone_data["name"])
         edit_bone.head = Vector((0.0, 0.0, 0.0))
@@ -56,9 +54,6 @@ def build_armature(rig: dict):
         edit_bone.tail = Vector(geometry["tail"])
         edit_bone.roll = float(geometry["roll"])
 
-    # Apply connectivity last. A connected source bone is expected to have a
-    # head exactly at its parent's tail; Blender may snap that shared endpoint,
-    # which preserves the source topology rather than inventing geometry.
     for bone_data in rig["bones"]:
         if bone_data["parent"]:
             armature_data.edit_bones[bone_data["name"]].use_connect = bool(
@@ -112,61 +107,49 @@ def build_action(armature, animation: dict):
     return action
 
 
-def shift_action_frames(action, delta: float) -> None:
-    for fcurve in action.fcurves:
-        for keyframe in fcurve.keyframe_points:
-            keyframe.co.x += delta
-            keyframe.handle_left.x += delta
-            keyframe.handle_right.x += delta
-        fcurve.update()
-
-
-def export_fbx(armature, output_path: Path) -> None:
+def export_fbx_container(armature, output_path: Path) -> None:
     bpy.ops.object.select_all(action="DESELECT")
     armature.select_set(True)
     bpy.context.view_layer.objects.active = armature
-    action = armature.animation_data.action
-    scene = bpy.context.scene
-    original_start = scene.frame_start
-    original_end = scene.frame_end
+    bpy.ops.export_scene.fbx(
+        filepath=str(output_path),
+        use_selection=True,
+        object_types={"ARMATURE"},
+        apply_unit_scale=True,
+        apply_scale_options="FBX_SCALE_NONE",
+        use_space_transform=True,
+        bake_space_transform=False,
+        axis_forward="-Z",
+        axis_up="Y",
+        primary_bone_axis="Y",
+        secondary_bone_axis="X",
+        add_leaf_bones=False,
+        use_armature_deform_only=False,
+        armature_nodetype="NULL",
+        bake_anim=True,
+        bake_anim_use_all_bones=True,
+        bake_anim_use_nla_strips=False,
+        bake_anim_use_all_actions=False,
+        bake_anim_force_startend_keying=True,
+        bake_anim_step=1.0,
+        bake_anim_simplify_factor=0.0,
+    )
 
-    # Blender's legacy FBX importer applies anim_offset=1.0 by default. The
-    # source FBX therefore arrives one Blender frame later than its FBX time.
-    # Invert that convention only while writing FBX so a clean default re-import
-    # lands back on the exact canonical source frame range.
-    shift_action_frames(action, -1.0)
-    scene.frame_start = original_start - 1
-    scene.frame_end = original_end - 1
+
+def export_fbx(armature, output_path: Path, rig: dict, animation: dict) -> None:
+    if rig.get("source", {}).get("format") != "FBX":
+        export_fbx_container(armature, output_path)
+        return
+    rig_fbx = rig.get("sourceFormat", {}).get("fbx")
+    animation_fbx = animation.get("sourceFormat", {}).get("fbx")
+    if rig_fbx is None or animation_fbx is None:
+        raise RuntimeError("FBX reconstruction requires sourceFormat.fbx authority in both JSON documents")
+    container_path = output_path.with_name(output_path.stem + ".container.fbx")
     try:
-        bpy.ops.export_scene.fbx(
-            filepath=str(output_path),
-            use_selection=True,
-            object_types={"ARMATURE"},
-            apply_unit_scale=True,
-            apply_scale_options="FBX_SCALE_NONE",
-            use_space_transform=True,
-            bake_space_transform=False,
-            axis_forward="-Z",
-            axis_up="Y",
-            primary_bone_axis="Y",
-            secondary_bone_axis="X",
-            add_leaf_bones=False,
-            use_armature_deform_only=False,
-            armature_nodetype="NULL",
-            bake_anim=True,
-            bake_anim_use_all_bones=True,
-            bake_anim_use_nla_strips=False,
-            bake_anim_use_all_actions=False,
-            bake_anim_force_startend_keying=True,
-            bake_anim_step=1.0,
-            bake_anim_simplify_factor=0.0,
-        )
+        export_fbx_container(armature, container_path)
+        patch_generated_fbx(container_path, output_path, rig_fbx, animation_fbx)
     finally:
-        shift_action_frames(action, 1.0)
-        scene.frame_start = original_start
-        scene.frame_end = original_end
-        scene.frame_set(original_start)
-        bpy.context.view_layer.update()
+        container_path.unlink(missing_ok=True)
 
 
 def main() -> None:
@@ -186,7 +169,7 @@ def main() -> None:
     armature = build_armature(rig)
     build_action(armature, animation)
     bpy.ops.wm.save_as_mainfile(filepath=str(blend_output), check_existing=False)
-    export_fbx(armature, fbx_output)
+    export_fbx(armature, fbx_output, rig, animation)
     print(f"motion2sheet: JSON-only reconstruction OK -> {blend_output}; {fbx_output}")
 
 
