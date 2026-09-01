@@ -240,6 +240,7 @@ def capture_rig_document(input_path: Path, armature: bpy.types.Object) -> dict[s
             "system": str(scene.unit_settings.system),
             "metersPerBlenderUnit": _clean_float(scene.unit_settings.scale_length or 1.0),
         },
+        "restAuthority": "editGeometry",
         "editGeometrySpace": "armature-local",
         "armatureObject": {
             "name": armature.name,
