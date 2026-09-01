@@ -164,7 +164,9 @@ def _curve_arrays(curve) -> tuple[list[int], list[float]]:
     return times, values
 
 
-def extract_fbx_authority(path: Path, bone_names: list[str]) -> tuple[dict[str, Any], dict[str, Any]]:
+def extract_fbx_authority(
+    path: Path, bone_names: list[str], expected_frame_count: int
+) -> tuple[dict[str, Any], dict[str, Any]]:
     root, version = parse_fbx.parse(str(path), use_namedtuple=True)
     table = _node_table(root)
     forward, _reverse = _connection_maps(root)
@@ -260,6 +262,50 @@ def extract_fbx_authority(path: Path, bone_names: list[str]) -> tuple[dict[str, 
     if not curves:
         raise RuntimeError("No FBX transform animation curves were resolved for rig bones")
 
+    # POC v1 authority is the state at every integer source frame, not the
+    # source FCurve sparsity/tangent representation. Mixamo commonly stores
+    # constant channels with a single key while animated channels contain one
+    # key per source frame. Resolve one canonical FBX KTime timeline from the
+    # animated channels, then expand constant channels onto that same timeline.
+    timelines = {
+        tuple(curve["keyTimes"])
+        for curve in curves
+        if len(curve["keyTimes"]) > 1
+    }
+    if len(timelines) != 1:
+        raise RuntimeError(
+            "POC v1 requires all multi-key FBX transform curves to share one "
+            f"integer-frame timeline; found {len(timelines)} timelines"
+        )
+    sample_key_times = list(next(iter(timelines)))
+    if len(sample_key_times) != expected_frame_count:
+        raise RuntimeError(
+            "FBX source timeline does not match Blender integer-frame contract: "
+            f"FBX samples={len(sample_key_times)} expectedFrames={expected_frame_count}"
+        )
+    normalized_curves: list[dict[str, Any]] = []
+    for curve in curves:
+        times = curve["keyTimes"]
+        values = curve["keyValues"]
+        if times == sample_key_times:
+            normalized_values = values
+        elif len(times) == 1:
+            normalized_values = [values[0]] * len(sample_key_times)
+        else:
+            raise RuntimeError(
+                "POC v1 cannot normalize sparse/nonuniform FBX curve "
+                f"{curve['bone']} {curve['property']}.{curve['axis']}; "
+                f"keys={len(times)} expected={len(sample_key_times)}"
+            )
+        normalized_curves.append(
+            {
+                **curve,
+                "keyTimes": sample_key_times,
+                "keyValues": normalized_values,
+            }
+        )
+    curves = normalized_curves
+
     rig_authority = {
         "fbxVersion": int(version),
         "globalSettings": _global_settings(root),
@@ -271,6 +317,8 @@ def extract_fbx_authority(path: Path, bone_names: list[str]) -> tuple[dict[str, 
     animation_authority = {
         "stack": _name(stacks[0]),
         "layer": _name(layers[0]),
+        "sampling": "all-integer-source-frames",
+        "sampleKeyTimes": sample_key_times,
         "curves": sorted(curves, key=lambda item: (item["bone"], item["property"], item["axis"])),
     }
     return rig_authority, animation_authority
