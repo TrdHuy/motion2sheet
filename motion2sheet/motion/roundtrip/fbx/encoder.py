@@ -258,8 +258,8 @@ def _patch_stack_layer_names(root, stack_name: str, layer_name: str) -> None:
         raise RuntimeError(
             f"Generated FBX must contain exactly one stack/layer; stacks={len(stacks)} layers={len(layers)}"
         )
-    stacks[0].props[-2] = f"AnimStack::{stack_name}".encode()
-    layers[0].props[-2] = f"AnimLayer::{layer_name}".encode()
+    stacks[0].props[-2] = stack_name.encode() + b"\x00\x01AnimStack"
+    layers[0].props[-2] = layer_name.encode() + b"\x00\x01AnimLayer"
 
 
 def encode_generated_fbx(
