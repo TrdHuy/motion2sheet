@@ -18,6 +18,7 @@ from motion2sheet.motion.roundtrip.visual_contract import (
     ProjectionConfig,
     frame_numbers,
     projection_config,
+    projection_config_for_branches,
     sheet_pixel,
     sheet_size,
 )
@@ -165,20 +166,26 @@ def main() -> None:
     data = json.loads(pose_path.read_text(encoding="utf-8"))
     frames = frame_numbers(data)
     sheet_width, sheet_height = sheet_size(len(frames))
-    config = projection_config(data)
+
+    if "frames" in data:
+        branches = (("pose", data["frames"]),)
+        config = projection_config_for_branches(data["frames"])
+    else:
+        branches = (("source", data["source"]), ("reconstructed", data["reconstructed"]))
+        config = projection_config(data)
 
     _clear_scene()
     _configure_scene(sheet_width, sheet_height)
     material = _emission_material("RoundTripSkeletonMaterial", (0.02, 0.02, 0.02, 1.0))
 
     started = time.perf_counter()
-    _render_branch("source", data["source"], frames, config, sheet_height, material, output)
-    _render_branch("reconstructed", data["reconstructed"], frames, config, sheet_height, material, output)
+    for name, branch in branches:
+        _render_branch(name, branch, frames, config, sheet_height, material, output)
     render_seconds = time.perf_counter() - started
 
     print(
-        "motion2sheet: Blender-native skeleton sheets rendered; "
-        f"frames={len(frames)}, size={sheet_width}x{sheet_height}, "
+        "motion2sheet: Blender-native skeleton sheet render OK; "
+        f"sheets={len(branches)}, frames={len(frames)}, size={sheet_width}x{sheet_height}, "
         f"samples={RENDER_SAMPLES}, renderSeconds={render_seconds:.3f} -> {output}"
     )
 
