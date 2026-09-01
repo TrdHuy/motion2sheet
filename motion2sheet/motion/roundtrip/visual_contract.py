@@ -37,10 +37,12 @@ def _frame_projected_points(frame: dict[str, Any]) -> list[tuple[float, float]]:
     return points
 
 
-def projection_config(data: dict[str, Any]) -> ProjectionConfig:
+def projection_config_for_branches(*branches: dict[str, Any]) -> ProjectionConfig:
+    """Compute one canonical projection across one or more frame branches."""
+
     points: list[tuple[float, float]] = []
-    for branch_name in ("source", "reconstructed"):
-        for frame in data[branch_name].values():
+    for branch in branches:
+        for frame in branch.values():
             points.extend(_frame_projected_points(frame))
     if not points:
         raise ValueError("visual pose data has no points")
@@ -53,6 +55,10 @@ def projection_config(data: dict[str, Any]) -> ProjectionConfig:
     height = max(max_y - min_y, 1e-9)
     scale = min((PANEL - 2 * PADDING) / width, (PANEL - 2 * PADDING) / height)
     return ProjectionConfig(min_x=min_x, max_y=max_y, scale=scale)
+
+
+def projection_config(data: dict[str, Any]) -> ProjectionConfig:
+    return projection_config_for_branches(data["source"], data["reconstructed"])
 
 
 def panel_pixel(point: Sequence[float], config: ProjectionConfig) -> tuple[int, int]:
