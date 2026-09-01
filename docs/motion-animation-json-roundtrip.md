@@ -15,7 +15,7 @@ Mixamo FBX
        -> reconstructed.fbx
   -> clean Blender re-import
   -> verify-animation-roundtrip
-  -> numerical + deterministic visual proof
+  -> numerical + selectable visual proof
 ```
 
 `motion2sheet export-animation-json sample/walk_mixamo.fbx --output build/motion_roundtrip/walk_mixamo`
@@ -85,6 +85,52 @@ Derived encoder values may be written to:
 
 These are diagnostic artifacts only. They are not canonical input and the reconstructor does not read them. Numerical curve equality is not an acceptance requirement because multiple Euler branches can evaluate to the same pose.
 
+## Visual proof renderers
+
+`verify-animation-roundtrip` supports two visual proof renderers while using the same Blender-evaluated source/reconstructed world-pose data.
+
+The default remains the existing deterministic Pillow renderer:
+
+```bash
+motion2sheet verify-animation-roundtrip \
+  --source sample/walk_mixamo.fbx \
+  --rig build/motion_roundtrip/walk_mixamo/rig.json \
+  --animation build/motion_roundtrip/walk_mixamo/animation.json \
+  --blend build/motion_roundtrip/walk_mixamo/reconstructed.blend \
+  --fbx build/motion_roundtrip/walk_mixamo/reconstructed.fbx \
+  --visual-renderer pillow \
+  --output build/motion_roundtrip/walk_mixamo
+```
+
+`pillow` projects world bone head/tail positions and rasterizes the skeleton with Pillow. It remains the default because it is a cheap deterministic regression proof.
+
+The optional Blender-native renderer is selected with:
+
+```bash
+motion2sheet verify-animation-roundtrip \
+  --source sample/walk_mixamo.fbx \
+  --rig build/motion_roundtrip/walk_mixamo/rig.json \
+  --animation build/motion_roundtrip/walk_mixamo/animation.json \
+  --blend build/motion_roundtrip/walk_mixamo/reconstructed.blend \
+  --fbx build/motion_roundtrip/walk_mixamo/reconstructed.fbx \
+  --visual-renderer blender \
+  --output build/motion_roundtrip/walk_mixamo/blender_native
+```
+
+`blender` creates the full source and reconstructed skeleton sheets inside Blender using an orthographic camera and Eevee native rendering. Pillow does not rasterize those two proof sheets; it is used afterwards only to calculate pixel diff metrics and produce the diagnostic diff/overlay images.
+
+Both modes emit:
+
+```text
+visual/
+├── source_sheet.png
+├── reconstructed_sheet.png
+├── diff_sheet.png
+└── overlay_sheet.png
+```
+
+The dedicated Mixamo workflow keeps the Pillow acceptance path and separately exercises the Blender-native option so both remain supported.
+
 ## A/B/C proof
 
 The dedicated real-Mixamo workflow records three cases:
@@ -99,6 +145,6 @@ Case B demonstrates why generic Blender FBX export is insufficient for strict so
 
 The acceptance promise is equivalent state at every integer source frame. FCurve tangents and continuous subframe interpolation are deliberately not authority in v1. No frame reduction or terminal-loop synthesis occurs.
 
-Verification checks source vs JSON-only reconstructed Blend and source vs re-imported reconstructed FBX for bone names/parents/rest state, armature transform, FPS/range, all-frame local TRS and evaluated world matrices/head/tail positions. A shared deterministic skeleton renderer produces source/reconstructed/diff/overlay sheets.
+Verification checks source vs JSON-only reconstructed Blend and source vs re-imported reconstructed FBX for bone names/parents/rest state, armature transform, FPS/range, all-frame local TRS and evaluated world matrices/head/tail positions. Visual proof can use the deterministic Pillow skeleton renderer or the optional Blender-native Eevee skeleton-sheet renderer.
 
 Semantic humanoid annotations may be added later only as removable metadata. Reconstruction must remain possible after deleting all semantic annotations.
