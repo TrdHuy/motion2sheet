@@ -63,7 +63,9 @@ def _boolean(value: Any, label: str) -> bool:
 
 
 def _integer(value: Any, label: str) -> int:
-    if not isinstance(value, int) or isinstance(value, bool):
+    # bool is a subclass of int in Python, so check it explicitly. JSON integer
+    # fields are intentionally type-strict: true/false and 1.0 are not integers.
+    if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{label} must be an integer")
     return value
 
@@ -360,8 +362,8 @@ def _validate_fbx_global_settings(data: Any) -> None:
 def _validate_fbx_rig_metadata(data: Any, rig_bones: set[str]) -> None:
     expected_top = {"fbxVersion", "globalSettings", "bones"}
     _expect_object(data, "rig.sourceFormat.fbx", expected_top)
-    version = data["fbxVersion"]
-    if not isinstance(version, int) or isinstance(version, bool) or version < 7000:
+    version = _integer(data["fbxVersion"], "rig.sourceFormat.fbx.fbxVersion")
+    if version < 7000:
         raise ValueError("rig.sourceFormat.fbx.fbxVersion must be an FBX 7.x+ integer")
     _validate_fbx_global_settings(data["globalSettings"])
 
@@ -377,8 +379,8 @@ def _validate_fbx_rig_metadata(data: Any, rig_bones: set[str]) -> None:
         _expect_object(stack, f"FBX transformStack for {bone_name}", required_stack, {"InheritType"})
         for field in _FBX_VECTOR_STACK_FIELDS:
             vec(stack[field], 3, f"FBX {bone_name}.{field}")
-        rotation_order = stack["RotationOrder"]
-        if not isinstance(rotation_order, int) or isinstance(rotation_order, bool) or not 0 <= rotation_order <= 6:
+        rotation_order = _integer(stack["RotationOrder"], f"FBX {bone_name}.RotationOrder")
+        if not 0 <= rotation_order <= 6:
             raise ValueError(f"FBX {bone_name}.RotationOrder must be an integer in 0..6")
         _boolean(stack["RotationActive"], f"FBX {bone_name}.RotationActive")
         if "InheritType" in stack:
@@ -403,14 +405,14 @@ def _validate_fbx_animation_metadata(data: Any, expected_frame_count: int) -> No
     for field in STACK_TIMING_FIELDS:
         _integer(stack_timing[field], f"animation.sourceFormat.fbx.stackTiming.{field}")
     sample_key_times = data["sampleKeyTimes"]
-    if (
-        not isinstance(sample_key_times, list)
-        or len(sample_key_times) != expected_frame_count
-        or not all(isinstance(value, int) and not isinstance(value, bool) for value in sample_key_times)
-    ):
+    if not isinstance(sample_key_times, list) or len(sample_key_times) != expected_frame_count:
         raise ValueError(
             "animation.sourceFormat.fbx.sampleKeyTimes must contain one integer KTime per source frame"
         )
+    sample_key_times = [
+        _integer(value, f"animation.sourceFormat.fbx.sampleKeyTimes[{index}]")
+        for index, value in enumerate(sample_key_times)
+    ]
     if any(right <= left for left, right in zip(sample_key_times, sample_key_times[1:])):
         raise ValueError("animation.sourceFormat.fbx.sampleKeyTimes must be strictly increasing")
 
@@ -429,7 +431,8 @@ def validate_rig_document(data: Any) -> dict:
         "bones",
     }
     _expect_object(data, "rig", top_required, {"sourceFormat"})
-    if data["schema"] != RIG_SCHEMA or data["version"] != VERSION:
+    version = _integer(data["version"], "rig.version")
+    if data["schema"] != RIG_SCHEMA or version != VERSION:
         raise ValueError(f"unsupported rig schema/version: {data['schema']!r}/{data['version']!r}")
     validate_id(data["id"], "rig.id")
     source_format = _validate_source(data["source"], "rig.source", animation=False)
@@ -523,7 +526,8 @@ def validate_animation_document(data: Any, rig: dict) -> dict:
         "frames",
     }
     _expect_object(data, "animation", top_required, {"sourceFormat"})
-    if data["schema"] != ANIMATION_SCHEMA or data["version"] != VERSION:
+    version = _integer(data["version"], "animation.version")
+    if data["schema"] != ANIMATION_SCHEMA or version != VERSION:
         raise ValueError(f"unsupported animation schema/version: {data['schema']!r}/{data['version']!r}")
     validate_id(data["id"], "animation.id")
 
@@ -545,13 +549,10 @@ def validate_animation_document(data: Any, rig: dict) -> dict:
         raise ValueError("animation.fps contradicts fpsNumerator/fpsBase")
 
     frame_range = data["frameRange"]
-    if (
-        not isinstance(frame_range, list)
-        or len(frame_range) != 2
-        or not all(isinstance(v, int) and not isinstance(v, bool) for v in frame_range)
-    ):
+    if not isinstance(frame_range, list) or len(frame_range) != 2:
         raise ValueError("animation.frameRange must be [integerStart, integerEnd]")
-    start, end = frame_range
+    start = _integer(frame_range[0], "animation.frameRange[0]")
+    end = _integer(frame_range[1], "animation.frameRange[1]")
     if end < start:
         raise ValueError("animation.frameRange end must be >= start")
 
@@ -563,9 +564,14 @@ def validate_animation_document(data: Any, rig: dict) -> dict:
     )
     if sampling["policy"] != "all-integer-source-frames-inclusive":
         raise ValueError("animation.sampling.policy must be 'all-integer-source-frames-inclusive'")
-    if sampling["step"] != 1:
+    sampling_step = _integer(sampling["step"], "animation.sampling.step")
+    if sampling_step != 1:
         raise ValueError("animation.sampling.step must be 1")
-    if sampling["continuousSubframeBehaviorPreserved"] is not False:
+    continuous_preserved = _boolean(
+        sampling["continuousSubframeBehaviorPreserved"],
+        "animation.sampling.continuousSubframeBehaviorPreserved",
+    )
+    if continuous_preserved:
         raise ValueError("animation.sampling.continuousSubframeBehaviorPreserved must be false")
 
     transform_space = data["transformSpace"]
@@ -583,14 +589,16 @@ def validate_animation_document(data: Any, rig: dict) -> dict:
     if not isinstance(frames, list) or not frames:
         raise ValueError("animation.frames must be non-empty")
     expected_frames = list(range(start, end + 1))
+    actual_frames: list[int] = []
     for index, entry in enumerate(frames):
         _expect_object(entry, f"animation.frames[{index}]", {"frame", "bones"})
-    actual_frames = [entry["frame"] for entry in frames]
+        actual_frames.append(_integer(entry["frame"], f"animation.frames[{index}].frame"))
     if actual_frames != expected_frames:
         raise ValueError(
             f"animation.frames must be ordered and contiguous: expected {expected_frames[0]}..{expected_frames[-1]}"
         )
-    if data["frameCount"] != len(expected_frames):
+    frame_count = _integer(data["frameCount"], "animation.frameCount")
+    if frame_count != len(expected_frames):
         raise ValueError("animation.frameCount contradicts frameRange")
 
     rig_bones = {bone["name"] for bone in rig["bones"]}
