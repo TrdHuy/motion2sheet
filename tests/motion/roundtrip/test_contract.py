@@ -40,6 +40,21 @@ def animation():
     }
 
 
+def fbx_animation_metadata():
+    return {
+        "stack": "Take 001",
+        "layer": "BaseLayer",
+        "stackTiming": {
+            "LocalStart": 0,
+            "LocalStop": 1,
+            "ReferenceStart": 0,
+            "ReferenceStop": 1,
+        },
+        "sampling": "all-integer-source-frames",
+        "sampleKeyTimes": [0, 1],
+    }
+
+
 def test_contract_is_deterministic_and_human_readable():
     first = canonical_json_text({"z": 1.0, "a": {"value": 2.0}})
     second = canonical_json_text({"a": {"value": 2.0}, "z": 1.0})
@@ -87,3 +102,30 @@ def test_quaternion_must_be_normalized():
     data["bones"][0]["rest"]["rotationQuaternion"] = [2.0, 0.0, 0.0, 0.0]
     with pytest.raises(ValueError, match="normalized"):
         validate_rig_document(data)
+
+
+def test_fbx_static_encoding_metadata_is_allowed_without_motion_curves():
+    validated_rig = validate_rig_document(rig())
+    data = animation()
+    data["source"] = {"format": "FBX"}
+    data["sourceFormat"] = {"fbx": fbx_animation_metadata()}
+    validate_animation_document(data, validated_rig)
+
+
+def test_fbx_native_curve_values_are_forbidden_in_canonical_animation():
+    validated_rig = validate_rig_document(rig())
+    data = animation()
+    data["source"] = {"format": "FBX"}
+    metadata = fbx_animation_metadata()
+    metadata["curves"] = [
+        {
+            "bone": "Root",
+            "property": "rotation",
+            "axis": "x",
+            "keyTimes": [0, 1],
+            "keyValues": [10.0, 20.0],
+        }
+    ]
+    data["sourceFormat"] = {"fbx": metadata}
+    with pytest.raises(ValueError, match="sole motion authority"):
+        validate_animation_document(data, validated_rig)
