@@ -77,6 +77,10 @@ def compose_sheet(images: list[Image.Image]) -> Image.Image:
 
 
 def diff_metrics(first: Image.Image, second: Image.Image) -> tuple[int, int]:
+    first = first.convert("RGB")
+    second = second.convert("RGB")
+    if first.size != second.size:
+        raise ValueError(f"visual sheet size mismatch: {first.size} != {second.size}")
     first_bytes = first.tobytes()
     second_bytes = second.tobytes()
     changed_pixels = 0
@@ -89,30 +93,10 @@ def diff_metrics(first: Image.Image, second: Image.Image) -> tuple[int, int]:
     return changed_pixels, max_delta
 
 
-def render_visuals(pose_data_path: Path, output_dir: Path) -> dict[str, Any]:
-    data = json.loads(pose_data_path.read_text(encoding="utf-8"))
-    start, end = data["frameRange"]
-    frames = list(range(int(start), int(end) + 1))
-    config = _projection_config(data)
-    source_panels: list[Image.Image] = []
-    reconstructed_panels: list[Image.Image] = []
-    worst_frame = None
-    worst_changed = -1
-    total_changed = 0
-    max_channel_delta = 0
-    for frame in frames:
-        source = render_panel(data["source"][str(frame)], config)
-        reconstructed = render_panel(data["reconstructed"][str(frame)], config)
-        source_panels.append(source)
-        reconstructed_panels.append(reconstructed)
-        changed, delta = diff_metrics(source, reconstructed)
-        total_changed += changed
-        max_channel_delta = max(max_channel_delta, delta)
-        if changed > worst_changed:
-            worst_changed = changed
-            worst_frame = frame
-    source_sheet = compose_sheet(source_panels)
-    reconstructed_sheet = compose_sheet(reconstructed_panels)
+def _write_diff_outputs(source_sheet: Image.Image, reconstructed_sheet: Image.Image, output_dir: Path) -> tuple[int, int]:
+    source_sheet = source_sheet.convert("RGB")
+    reconstructed_sheet = reconstructed_sheet.convert("RGB")
+    changed_pixels, max_delta = diff_metrics(source_sheet, reconstructed_sheet)
     difference = ImageChops.difference(source_sheet, reconstructed_sheet)
     amplified = ImageEnhance.Contrast(difference).enhance(8.0)
     source_gray = source_sheet.convert("L")
@@ -126,10 +110,37 @@ def render_visuals(pose_data_path: Path, output_dir: Path) -> dict[str, Any]:
         ),
     )
     output_dir.mkdir(parents=True, exist_ok=True)
-    source_sheet.save(output_dir / "source_sheet.png")
-    reconstructed_sheet.save(output_dir / "reconstructed_sheet.png")
     amplified.save(output_dir / "diff_sheet.png")
     overlay.save(output_dir / "overlay_sheet.png")
+    return changed_pixels, max_delta
+
+
+def render_visuals(pose_data_path: Path, output_dir: Path) -> dict[str, Any]:
+    """Render the legacy deterministic Pillow skeleton proof."""
+
+    data = json.loads(pose_data_path.read_text(encoding="utf-8"))
+    start, end = data["frameRange"]
+    frames = list(range(int(start), int(end) + 1))
+    config = _projection_config(data)
+    source_panels: list[Image.Image] = []
+    reconstructed_panels: list[Image.Image] = []
+    worst_frame = None
+    worst_changed = -1
+    for frame in frames:
+        source = render_panel(data["source"][str(frame)], config)
+        reconstructed = render_panel(data["reconstructed"][str(frame)], config)
+        source_panels.append(source)
+        reconstructed_panels.append(reconstructed)
+        changed, _delta = diff_metrics(source, reconstructed)
+        if changed > worst_changed:
+            worst_changed = changed
+            worst_frame = frame
+    source_sheet = compose_sheet(source_panels)
+    reconstructed_sheet = compose_sheet(reconstructed_panels)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    source_sheet.save(output_dir / "source_sheet.png")
+    reconstructed_sheet.save(output_dir / "reconstructed_sheet.png")
+    total_changed, max_channel_delta = _write_diff_outputs(source_sheet, reconstructed_sheet, output_dir)
     return {
         "pass": total_changed == 0,
         "changedPixels": total_changed,
@@ -137,6 +148,55 @@ def render_visuals(pose_data_path: Path, output_dir: Path) -> dict[str, Any]:
         "worstFrame": worst_frame,
         "worstFrameChangedPixels": max(0, worst_changed),
         "renderer": "deterministic-pillow-skeleton-v1",
+        "frameCount": len(frames),
+        "canvasPerFrame": [PANEL, PANEL],
+        "columns": COLUMNS,
+    }
+
+
+def compare_blender_rendered_visuals(pose_data_path: Path, output_dir: Path) -> dict[str, Any]:
+    """Compare source/reconstructed sheets rendered natively by Blender.
+
+    Blender owns creation of source_sheet.png and reconstructed_sheet.png. Pillow is
+    used only for deterministic pixel comparison and diagnostic diff/overlay output.
+    """
+
+    data = json.loads(pose_data_path.read_text(encoding="utf-8"))
+    start, end = data["frameRange"]
+    frames = list(range(int(start), int(end) + 1))
+    source_path = output_dir / "source_sheet.png"
+    reconstructed_path = output_dir / "reconstructed_sheet.png"
+    if not source_path.is_file() or not reconstructed_path.is_file():
+        raise ValueError("Blender native renderer did not produce both visual sheets")
+    source_sheet = Image.open(source_path).convert("RGB")
+    reconstructed_sheet = Image.open(reconstructed_path).convert("RGB")
+    expected_rows = math.ceil(len(frames) / COLUMNS)
+    expected_size = (PANEL * COLUMNS, PANEL * expected_rows)
+    if source_sheet.size != expected_size or reconstructed_sheet.size != expected_size:
+        raise ValueError(
+            f"Blender native visual sheet size must be {expected_size}; "
+            f"source={source_sheet.size}, reconstructed={reconstructed_sheet.size}"
+        )
+
+    worst_frame = None
+    worst_changed = -1
+    for index, frame in enumerate(frames):
+        x = (index % COLUMNS) * PANEL
+        y = (index // COLUMNS) * PANEL
+        box = (x, y, x + PANEL, y + PANEL)
+        changed, _delta = diff_metrics(source_sheet.crop(box), reconstructed_sheet.crop(box))
+        if changed > worst_changed:
+            worst_changed = changed
+            worst_frame = frame
+
+    total_changed, max_channel_delta = _write_diff_outputs(source_sheet, reconstructed_sheet, output_dir)
+    return {
+        "pass": total_changed == 0,
+        "changedPixels": total_changed,
+        "maxChannelDelta": max_channel_delta,
+        "worstFrame": worst_frame,
+        "worstFrameChangedPixels": max(0, worst_changed),
+        "renderer": "blender-native-eevee-skeleton-v1",
         "frameCount": len(frames),
         "canvasPerFrame": [PANEL, PANEL],
         "columns": COLUMNS,
