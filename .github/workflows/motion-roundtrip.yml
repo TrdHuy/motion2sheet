@@ -48,11 +48,13 @@ jobs:
           import json
           from pathlib import Path
           root = Path('build/motion_roundtrip/walk_mixamo')
+          rig = json.loads((root / 'rig.json').read_text())
           animation = json.loads((root / 'animation.json').read_text())
+          assert rig['restAuthority'] == 'editGeometry', 'editGeometry must be the sole rig rest authority'
           fbx = animation['sourceFormat']['fbx']
           assert 'curves' not in fbx, 'canonical animation.json must not contain FBX motion curves'
           assert (root / 'diagnostics/original_fbx_curves.json').is_file()
-          print('canonical authority check PASS: animation.frames is sole motion data')
+          print('canonical authority check PASS: editGeometry is sole rest authority; animation.frames is sole motion data')
           PY
       - name: Reconstruct from frames and encode FBX from static metadata
         run: |
