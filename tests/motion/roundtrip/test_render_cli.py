@@ -72,6 +72,17 @@ def test_public_parser_exposes_render_animation_json():
     assert args.gif is True
 
 
+def test_render_public_surface_has_no_source_motion_argument():
+    with pytest.raises(SystemExit):
+        root_parser().parse_args([
+            "render-animation-json",
+            "--rig", "rig.json",
+            "--animation", "animation.json",
+            "--source", "sample/walk_mixamo.fbx",
+            "--output", "build/render",
+        ])
+
+
 @pytest.mark.parametrize("renderer", ["pillow", "blender"])
 def test_render_animation_json_uses_only_json_inputs_and_emits_full_sheet(monkeypatch, tmp_path, renderer):
     args = _args(tmp_path, renderer)
