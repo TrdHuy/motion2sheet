@@ -176,9 +176,9 @@ def compare_local(source: dict[str, Any], target: dict[str, Any], frames: list[i
     max_translation = 0.0
     max_angle = 0.0
     max_scale = 0.0
-    worst_frame = None
-    worst_bone = None
-    worst_kind = None
+    translation_at = {"frame": None, "bone": None}
+    angular_at = {"frame": None, "bone": None}
+    scale_at = {"frame": None, "bone": None}
     for frame in frames:
         source_bones = source["local"][str(frame)]
         target_bones = target["local"][str(frame)]
@@ -190,23 +190,32 @@ def compare_local(source: dict[str, Any], target: dict[str, Any], frames: list[i
             translation = _vec_error(first["translation"], second["translation"])
             angle = _angular_error(first["rotationQuaternion"], second["rotationQuaternion"])
             scale = _scale_error(first["scale"], second["scale"])
-            for kind, value, current in (
-                ("translation", translation, max_translation),
-                ("rotation", angle, max_angle),
-                ("scale", scale, max_scale),
-            ):
-                if value > current:
-                    worst_frame, worst_bone, worst_kind = frame, bone_name, kind
-            max_translation = max(max_translation, translation)
-            max_angle = max(max_angle, angle)
-            max_scale = max(max_scale, scale)
+            if translation > max_translation:
+                max_translation = translation
+                translation_at = {"frame": frame, "bone": bone_name}
+            if angle > max_angle:
+                max_angle = angle
+                angular_at = {"frame": frame, "bone": bone_name}
+            if scale > max_scale:
+                max_scale = scale
+                scale_at = {"frame": frame, "bone": bone_name}
+
+    normalized = (
+        ("translation", max_translation / TRANSLATION_TOLERANCE, translation_at),
+        ("rotation", max_angle / ANGULAR_TOLERANCE_DEG, angular_at),
+        ("scale", max_scale / SCALE_TOLERANCE, scale_at),
+    )
+    worst_kind, _worst_ratio, worst_at = max(normalized, key=lambda item: item[1])
     return {
         "pass": max_translation <= TRANSLATION_TOLERANCE and max_angle <= ANGULAR_TOLERANCE_DEG and max_scale <= SCALE_TOLERANCE,
         "maxTranslationError": max_translation,
         "maxAngularErrorDeg": max_angle,
         "maxScaleError": max_scale,
-        "worstFrame": worst_frame,
-        "worstBone": worst_bone,
+        "maxTranslationAt": translation_at,
+        "maxAngularAt": angular_at,
+        "maxScaleAt": scale_at,
+        "worstFrame": worst_at["frame"],
+        "worstBone": worst_at["bone"],
         "worstKind": worst_kind,
     }
 
@@ -266,6 +275,21 @@ def json_authority_state(rig: dict[str, Any], animation: dict[str, Any]) -> dict
     }
 
 
+def _aggregate_local_metric(
+    candidates: list[tuple[str, dict[str, Any]]],
+    value_key: str,
+    at_key: str,
+) -> dict[str, Any]:
+    stage, metrics = max(candidates, key=lambda item: item[1].get(value_key, float("inf")))
+    at = metrics.get(at_key, {})
+    return {
+        "stage": stage,
+        "frame": at.get("frame"),
+        "bone": at.get("bone"),
+        "error": metrics.get(value_key),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True)
@@ -295,7 +319,17 @@ def main() -> None:
 
     aggregate_structure = blend_structure["pass"] and fbx_structure["pass"] and source_json_structure["pass"]
     local_candidates = [("sourceJson", source_json_local), ("reconstructedBlend", blend_local), ("reimportedFbx", fbx_local)]
-    worst_local_stage, worst_local = max(local_candidates, key=lambda item: max(item[1].get("maxTranslationError", float("inf")), item[1].get("maxAngularErrorDeg", float("inf")), item[1].get("maxScaleError", float("inf"))))
+    worst_local_stage, worst_local = max(
+        local_candidates,
+        key=lambda item: max(
+            item[1].get("maxTranslationError", float("inf")) / TRANSLATION_TOLERANCE,
+            item[1].get("maxAngularErrorDeg", float("inf")) / ANGULAR_TOLERANCE_DEG,
+            item[1].get("maxScaleError", float("inf")) / SCALE_TOLERANCE,
+        ),
+    )
+    translation_worst = _aggregate_local_metric(local_candidates, "maxTranslationError", "maxTranslationAt")
+    angular_worst = _aggregate_local_metric(local_candidates, "maxAngularErrorDeg", "maxAngularAt")
+    scale_worst = _aggregate_local_metric(local_candidates, "maxScaleError", "maxScaleAt")
     world_candidates = [("reconstructedBlend", blend_world), ("reimportedFbx", fbx_world)]
     worst_world_stage, worst_world = max(world_candidates, key=lambda item: item[1].get("maxWorldError", float("inf")))
     result = {
@@ -317,12 +351,16 @@ def main() -> None:
         },
         "localTransform": {
             "pass": all(item[1]["pass"] for item in local_candidates),
-            "maxTranslationError": max(item[1].get("maxTranslationError", float("inf")) for item in local_candidates),
-            "maxAngularErrorDeg": max(item[1].get("maxAngularErrorDeg", float("inf")) for item in local_candidates),
-            "maxScaleError": max(item[1].get("maxScaleError", float("inf")) for item in local_candidates),
+            "maxTranslationError": translation_worst["error"],
+            "maxAngularErrorDeg": angular_worst["error"],
+            "maxScaleError": scale_worst["error"],
+            "maxTranslationAt": translation_worst,
+            "maxAngularAt": angular_worst,
+            "maxScaleAt": scale_worst,
             "worstStage": worst_local_stage,
             "worstFrame": worst_local.get("worstFrame"),
             "worstBone": worst_local.get("worstBone"),
+            "worstKind": worst_local.get("worstKind"),
             "stages": {name: metrics for name, metrics in local_candidates},
         },
         "worldPose": {
@@ -334,6 +372,7 @@ def main() -> None:
             "worstStage": worst_world_stage,
             "worstFrame": worst_world.get("worstFrame"),
             "worstBone": worst_world.get("worstBone"),
+            "worstKind": worst_world.get("worstKind"),
             "stages": {name: metrics for name, metrics in world_candidates},
         },
         "jsonOnlyReconstruction": {"pass": blend_structure["pass"] and blend_local["pass"] and blend_world["pass"]},
