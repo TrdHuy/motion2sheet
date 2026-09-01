@@ -9,7 +9,10 @@ if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
 from motion2sheet.motion.roundtrip.blender_common import capture_animation_document, capture_rig_document, import_source
-from motion2sheet.motion.roundtrip.fbx import capture_blender_fbx_pose_adapters, extract_fbx_authority
+from motion2sheet.motion.roundtrip.fbx import (
+    capture_blender_fbx_pose_adapters,
+    extract_fbx_metadata_and_diagnostics,
+)
 from motion2sheet.motion.roundtrip.schema import validate_animation_document, validate_rig_document, write_canonical_json
 
 
@@ -38,7 +41,7 @@ def main() -> None:
     animation = capture_animation_document(input_path, armature, action, rig)
 
     if input_path.suffix.lower() == ".fbx":
-        rig_fbx, animation_fbx = extract_fbx_authority(
+        rig_fbx, animation_fbx, original_curves = extract_fbx_metadata_and_diagnostics(
             input_path,
             [bone["name"] for bone in rig["bones"]],
             animation["frameCount"],
@@ -47,7 +50,6 @@ def main() -> None:
             if bone_name in rig_fbx["bones"]:
                 rig_fbx["bones"][bone_name]["encodingAdapter"] = adapter
 
-        original_curves = animation_fbx.pop("curves")
         rig["sourceFormat"] = {"fbx": rig_fbx}
         animation["sourceFormat"] = {"fbx": animation_fbx}
         write_canonical_json(
