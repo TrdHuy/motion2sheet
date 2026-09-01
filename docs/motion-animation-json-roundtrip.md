@@ -60,26 +60,9 @@ Original source FBX curve values may be written to `diagnostics/original_fbx_cur
 
 ## Visual proof renderers
 
-`verify-animation-roundtrip` supports two visual proof renderers using the same Blender-evaluated source/reconstructed world-pose data.
+`verify-animation-roundtrip` supports two visual proof renderers using the same Blender-evaluated source/reconstructed world-pose data and the same pure visual projection/layout contract.
 
-Visual responsibilities are deliberately split:
-
-```text
-visual_contract.py
-  = pure projection + pixel-grid + sheet layout contract
-  = owns PANEL / PADDING / COLUMNS
-  = no Pillow, no bpy
-
-visual.py
-  = Pillow rasterization
-  = pixel diff / worst-frame / diff-sheet / overlay utilities
-
-blender_visual.py
-  = Blender geometry + orthographic camera + Eevee render only
-  = consumes visual_contract.py; never redefines projection/layout
-```
-
-This keeps projection/layout as a single authority shared by both renderers while renderer-specific rasterization stays isolated.
+The shared `visual_contract.py` owns the canonical 256x256 panel, 8-column sheet layout, projection bounds/formula, integer pixel snap and sheet/panel mapping. It is pure Python and does not import Pillow or `bpy`.
 
 ### Pillow (default)
 
@@ -94,7 +77,7 @@ motion2sheet verify-animation-roundtrip \
   --output build/motion_roundtrip/walk_mixamo
 ```
 
-`pillow` keeps the existing deterministic skeleton renderer. It projects Blender-evaluated world bone head/tail positions to the canonical 256x256 grid from `visual_contract.py` and rasterizes them with Pillow. This remains the default acceptance path.
+`pillow` keeps the deterministic skeleton rasterizer and owns pixel-diff / diagnostic diff-overlay utilities. It remains the default acceptance renderer.
 
 ### Blender native
 
@@ -109,11 +92,20 @@ motion2sheet verify-animation-roundtrip \
   --output build/motion_roundtrip/walk_mixamo/blender_native
 ```
 
-`blender` creates the source and reconstructed skeleton sheet geometry inside Blender and renders both full sheets with an orthographic camera using `BLENDER_EEVEE_NEXT`. The shared contract snaps world-pose projection to the declared 256x256 raster grid before Blender geometry creation, matching the visual proof's resolution semantics and preventing valid sub-pixel numeric residuals from becoming an implicit new fidelity tolerance.
+`blender` creates the source and reconstructed skeleton sheet geometry inside Blender and renders both full sheets with an orthographic camera using `BLENDER_EEVEE_NEXT`. World-pose projection is snapped to the declared 256x256 raster grid before geometry creation. Pillow does not rasterize the proof sheets in this mode; it is used afterwards only for deterministic pixel metrics, layout validation and diagnostic diff/overlay images.
 
-Because this proof contains only emission skeleton curves on a flat background, Blender-native rendering explicitly uses one Eevee render sample and disables unused shadow/ray-tracing work. This is a performance setting only; output names, raster dimensions, renderer selection, exact source-vs-reconstructed pixel acceptance and numeric fidelity gates are unchanged.
+For the 32-frame real Mixamo proof the native sheet contract is exactly:
 
-Pillow does **not** rasterize the source/reconstructed proof sheets in Blender mode; it is used afterwards only for pixel metrics and diagnostic diff/overlay images.
+```text
+32 frames
+8 columns x 4 rows
+256 x 256 pixels per cell
+2048 x 1024 pixels per sheet
+```
+
+The orthographic camera is framed from the full sheet width and verifies that render aspect ratio matches sheet aspect ratio. This prevents the previous failure mode where using sheet height as `ortho_scale` cropped a 2048x1024 image down to the centered equivalent of roughly 4x2 cells.
+
+Visual acceptance is not based only on `source_sheet == reconstructed_sheet`. Each expected cell must independently contain skeleton foreground. The validator estimates each cell's dominant background luma and requires a minimum number of pixels with strong foreground contrast, so two identically cropped or blank Blender renders fail even if their pixel diff is zero. Regression tests explicitly cover the old centered-crop shape and Eevee's color-managed gray background.
 
 Both modes emit:
 
@@ -125,7 +117,7 @@ visual/
 └── overlay_sheet.png
 ```
 
-The dedicated real-Mixamo workflow exercises both modes. Both must report `32` frames, `0` changed pixels and max channel delta `0`.
+The dedicated real-Mixamo workflow exercises both modes and asserts the native 8x4/2048x1024 contract plus all 32 occupied cells.
 
 ## A/B/C proof
 
