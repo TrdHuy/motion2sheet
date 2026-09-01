@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -60,6 +61,8 @@ def _configure_scene(sheet_width: int, sheet_height: int) -> None:
     scene.render.resolution_x = sheet_width
     scene.render.resolution_y = sheet_height
     scene.render.resolution_percentage = 100
+    scene.render.pixel_aspect_x = 1.0
+    scene.render.pixel_aspect_y = 1.0
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGB"
     scene.render.film_transparent = False
@@ -77,7 +80,18 @@ def _configure_scene(sheet_width: int, sheet_height: int) -> None:
     camera.location = (sheet_width / 2.0, sheet_height / 2.0, 100.0)
     camera.rotation_euler = (0.0, 0.0, 0.0)
     camera_data.type = "ORTHO"
-    camera_data.ortho_scale = float(sheet_height)
+
+    # Blender's orthographic scale is the horizontal world span for this camera
+    # orientation. Match it to the full sheet width; with the render resolution's
+    # identical aspect ratio this yields exactly sheet_width x sheet_height world
+    # units instead of the previous sheet_height-wide 4x2 crop.
+    render_aspect = scene.render.resolution_x / scene.render.resolution_y
+    sheet_aspect = sheet_width / sheet_height
+    if not math.isclose(render_aspect, sheet_aspect, rel_tol=0.0, abs_tol=1e-12):
+        raise ValueError(
+            f"Blender visual render aspect {render_aspect} does not match sheet aspect {sheet_aspect}"
+        )
+    camera_data.ortho_scale = float(sheet_width)
     camera_data.clip_start = 0.1
     camera_data.clip_end = 1000.0
     scene.camera = camera
