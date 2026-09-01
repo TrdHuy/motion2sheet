@@ -71,6 +71,98 @@ def validate_edit_geometry(data: Any, label: str) -> None:
         raise ValueError(f"{label} head/tail must define a non-zero bone")
 
 
+_FBX_VECTOR_STACK_FIELDS = (
+    "Lcl Translation",
+    "Lcl Rotation",
+    "Lcl Scaling",
+    "PreRotation",
+    "PostRotation",
+    "RotationOffset",
+    "RotationPivot",
+    "ScalingOffset",
+    "ScalingPivot",
+)
+
+
+def _validate_fbx_rig_authority(data: Any, rig_bones: set[str]) -> None:
+    if not isinstance(data, dict):
+        raise ValueError("rig.sourceFormat.fbx must be an object")
+    version = data.get("fbxVersion")
+    if not isinstance(version, int) or isinstance(version, bool) or version < 7000:
+        raise ValueError("rig.sourceFormat.fbx.fbxVersion must be an FBX 7.x+ integer")
+    settings = data.get("globalSettings")
+    if not isinstance(settings, dict):
+        raise ValueError("rig.sourceFormat.fbx.globalSettings must be an object")
+    bones = data.get("bones")
+    if not isinstance(bones, dict) or set(bones) != rig_bones:
+        missing = rig_bones - set(bones or {})
+        extra = set(bones or {}) - rig_bones
+        raise ValueError(f"rig.sourceFormat.fbx bone set mismatch; missing={sorted(missing)} extra={sorted(extra)}")
+    for bone_name, payload in bones.items():
+        if not isinstance(payload, dict) or set(payload) != {"transformStack"}:
+            raise ValueError(f"FBX authority for {bone_name} must contain only transformStack")
+        stack = payload["transformStack"]
+        if not isinstance(stack, dict):
+            raise ValueError(f"FBX transformStack for {bone_name} must be an object")
+        for field in _FBX_VECTOR_STACK_FIELDS:
+            vec(stack.get(field), 3, f"FBX {bone_name}.{field}")
+        rotation_order = stack.get("RotationOrder")
+        if not isinstance(rotation_order, int) or isinstance(rotation_order, bool) or not 0 <= rotation_order <= 6:
+            raise ValueError(f"FBX {bone_name}.RotationOrder must be an integer in 0..6")
+        if not isinstance(stack.get("RotationActive"), bool):
+            raise ValueError(f"FBX {bone_name}.RotationActive must be boolean")
+        if "InheritType" in stack:
+            inherit_type = stack["InheritType"]
+            if not isinstance(inherit_type, int) or isinstance(inherit_type, bool):
+                raise ValueError(f"FBX {bone_name}.InheritType must be an integer")
+
+
+def _validate_fbx_animation_authority(data: Any, rig_bones: set[str]) -> None:
+    if not isinstance(data, dict):
+        raise ValueError("animation.sourceFormat.fbx must be an object")
+    if not isinstance(data.get("stack"), str) or not data["stack"]:
+        raise ValueError("animation.sourceFormat.fbx.stack must be non-empty")
+    if not isinstance(data.get("layer"), str) or not data["layer"]:
+        raise ValueError("animation.sourceFormat.fbx.layer must be non-empty")
+    curves = data.get("curves")
+    if not isinstance(curves, list) or not curves:
+        raise ValueError("animation.sourceFormat.fbx.curves must be non-empty")
+    seen = set()
+    previous_key = None
+    for index, curve in enumerate(curves):
+        if not isinstance(curve, dict):
+            raise ValueError(f"animation.sourceFormat.fbx.curves[{index}] must be an object")
+        expected = {"bone", "property", "axis", "keyTimes", "keyValues"}
+        if set(curve) != expected:
+            raise ValueError(f"animation.sourceFormat.fbx.curves[{index}] fields must be {sorted(expected)}")
+        bone = curve["bone"]
+        prop = curve["property"]
+        axis = curve["axis"]
+        key = (bone, prop, axis)
+        if bone not in rig_bones:
+            raise ValueError(f"FBX animation curve references unknown rig bone {bone!r}")
+        if prop not in {"translation", "rotation", "scale"}:
+            raise ValueError(f"FBX animation curve {key} has unsupported property")
+        if axis not in {"x", "y", "z"}:
+            raise ValueError(f"FBX animation curve {key} has unsupported axis")
+        if key in seen:
+            raise ValueError(f"duplicate FBX animation curve: {key}")
+        if previous_key is not None and key <= previous_key:
+            raise ValueError("FBX animation curves must be canonically sorted by bone/property/axis")
+        seen.add(key)
+        previous_key = key
+        times = curve["keyTimes"]
+        values = curve["keyValues"]
+        if not isinstance(times, list) or not times or not all(isinstance(v, int) and not isinstance(v, bool) for v in times):
+            raise ValueError(f"FBX animation curve {key}.keyTimes must be non-empty integers")
+        if any(right <= left for left, right in zip(times, times[1:])):
+            raise ValueError(f"FBX animation curve {key}.keyTimes must be strictly increasing")
+        if not isinstance(values, list) or len(values) != len(times):
+            raise ValueError(f"FBX animation curve {key}.keyValues must match keyTimes")
+        for value_index, value in enumerate(values):
+            _finite(value, f"FBX animation curve {key}.keyValues[{value_index}]")
+
+
 def validate_rig_document(data: Any) -> dict:
     if not isinstance(data, dict):
         raise ValueError("rig document must be an object")
@@ -105,6 +197,12 @@ def validate_rig_document(data: Any) -> dict:
         parent = bone.get("parent")
         if parent is not None and parent not in names:
             raise ValueError(f"bone {bone['name']} references missing parent {parent}")
+    source = data.get("source")
+    if isinstance(source, dict) and source.get("format") == "FBX":
+        source_format = data.get("sourceFormat")
+        if not isinstance(source_format, dict) or set(source_format) != {"fbx"}:
+            raise ValueError("FBX rig must contain sourceFormat.fbx")
+        _validate_fbx_rig_authority(source_format["fbx"], names)
     return data
 
 
@@ -144,6 +242,12 @@ def validate_animation_document(data: Any, rig: dict) -> dict:
             raise ValueError(f"frame {entry.get('frame')} bone set mismatch; missing={sorted(missing)} extra={sorted(extra)}")
         for bone_name, transform in bones.items():
             validate_trs(transform, f"frame {entry['frame']} bone {bone_name}")
+    source = data.get("source")
+    if isinstance(source, dict) and source.get("format") == "FBX":
+        source_format = data.get("sourceFormat")
+        if not isinstance(source_format, dict) or set(source_format) != {"fbx"}:
+            raise ValueError("FBX animation must contain sourceFormat.fbx")
+        _validate_fbx_animation_authority(source_format["fbx"], rig_bones)
     return data
 
 
