@@ -306,12 +306,49 @@ def extract_fbx_authority(
         )
     curves = normalized_curves
 
+    # Blender's FBX exporter bakes T/R/S curves for every bone. If we leave a
+    # generated curve unpatched, that container-only channel becomes a second
+    # animation authority and can extend the timeline or override source Lcl
+    # defaults. Make the JSON FBX adapter complete at the POC sampling level:
+    # every rig bone owns all 9 scalar T/R/S channels on every integer frame.
+    bone_stacks = {
+        name: _model_transform_stack(models_by_name[name])
+        for name in sorted(models_by_name)
+    }
+    curve_map = {
+        (curve["bone"], curve["property"], curve["axis"]): curve
+        for curve in curves
+    }
+    stack_field_by_property = {
+        "translation": "Lcl Translation",
+        "rotation": "Lcl Rotation",
+        "scale": "Lcl Scaling",
+    }
+    axis_names = ("x", "y", "z")
+    for bone_name, stack in bone_stacks.items():
+        for property_name, stack_field in stack_field_by_property.items():
+            default_values = stack[stack_field]
+            for axis_index, axis_name in enumerate(axis_names):
+                key = (bone_name, property_name, axis_name)
+                if key in curve_map:
+                    continue
+                value = float(default_values[axis_index])
+                curve = {
+                    "bone": bone_name,
+                    "property": property_name,
+                    "axis": axis_name,
+                    "keyTimes": sample_key_times,
+                    "keyValues": [value] * len(sample_key_times),
+                }
+                curves.append(curve)
+                curve_map[key] = curve
+
     rig_authority = {
         "fbxVersion": int(version),
         "globalSettings": _global_settings(root),
         "bones": {
-            name: {"transformStack": _model_transform_stack(models_by_name[name])}
-            for name in sorted(models_by_name)
+            name: {"transformStack": bone_stacks[name]}
+            for name in sorted(bone_stacks)
         },
     }
     animation_authority = {
