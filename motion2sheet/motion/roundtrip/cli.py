@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from .schema import read_json, validate_animation_document, validate_rig_document
-from .visual import render_visuals
+from .visual import compare_blender_rendered_visuals, render_visuals
 
 
 def package_root() -> Path:
@@ -68,11 +68,23 @@ def reconstruct_animation(args) -> int:
     return 0
 
 
+def _render_verification_visuals(args, visual_pose: Path, visual_dir: Path) -> dict:
+    if args.visual_renderer == "pillow":
+        return render_visuals(visual_pose, visual_dir)
+    run_blender(
+        "blender_visual.py",
+        args.blender,
+        ["--input", str(visual_pose.resolve()), "--output", str(visual_dir.resolve())],
+    )
+    return compare_blender_rendered_visuals(visual_pose, visual_dir)
+
+
 def verify_animation_roundtrip(args) -> int:
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     numeric_path = output / "verification.numeric.json"
-    visual_pose = output / "visual" / "pose_data.json"
+    visual_dir = output / "visual"
+    visual_pose = visual_dir / "pose_data.json"
     completed = run_blender(
         "blender_verify.py",
         args.blender,
@@ -89,7 +101,7 @@ def verify_animation_roundtrip(args) -> int:
     if not numeric_path.exists() or not visual_pose.exists():
         raise RuntimeError(f"Blender verifier did not produce expected outputs (exit={completed.returncode})")
     verification = json.loads(numeric_path.read_text(encoding="utf-8"))
-    visual = render_visuals(visual_pose, output / "visual")
+    visual = _render_verification_visuals(args, visual_pose, visual_dir)
     determinism = {"pass": True, "checked": False}
     if args.determinism_rig or args.determinism_animation:
         if not args.determinism_rig or not args.determinism_animation:
@@ -115,6 +127,7 @@ def verify_animation_roundtrip(args) -> int:
         raise RuntimeError("Round-trip verification failed; see verification.json")
     print(
         "motion2sheet: round-trip verification PASS; "
+        f"renderer={verification['visual']['renderer']}, "
         f"maxTranslation={verification['localTransform']['maxTranslationError']:.9g}, "
         f"maxAngleDeg={verification['localTransform']['maxAngularErrorDeg']:.9g}, "
         f"maxScale={verification['localTransform']['maxScaleError']:.9g}, "
@@ -157,5 +170,11 @@ def add_roundtrip_subcommands(subparsers) -> None:
     verify_parser.add_argument("--output", required=True)
     verify_parser.add_argument("--determinism-rig", default=None)
     verify_parser.add_argument("--determinism-animation", default=None)
+    verify_parser.add_argument(
+        "--visual-renderer",
+        choices=("pillow", "blender"),
+        default="pillow",
+        help="Visual proof renderer: pillow (default deterministic skeleton) or Blender-native Eevee sheet render",
+    )
     verify_parser.add_argument("--blender", default="blender")
     verify_parser.set_defaults(func=verify_animation_roundtrip)
