@@ -35,6 +35,7 @@ def main() -> None:
         rig_fbx, animation_fbx = extract_fbx_authority(
             input_path,
             [bone["name"] for bone in rig["bones"]],
+            animation["frameCount"],
         )
         rig["sourceFormat"] = {"fbx": rig_fbx}
         animation["sourceFormat"] = {"fbx": animation_fbx}
