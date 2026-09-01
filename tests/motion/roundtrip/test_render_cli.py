@@ -17,7 +17,10 @@ def _pose_data(frame_count=32):
             str(frame): {
                 "Bone": {
                     "head": [0.0, 0.0, 0.0],
-                    "tail": [0.1 + frame * 0.001, 0.0, 1.0],
+                    # Keep every fixture pose visibly distinct after canonical
+                    # integer pixel snap so GIF frame-count assertions measure
+                    # temporal packaging rather than duplicate-frame coalescing.
+                    "tail": [0.1 + frame * 0.02, 0.0, 1.0],
                 }
             }
             for frame in range(1, frame_count + 1)
