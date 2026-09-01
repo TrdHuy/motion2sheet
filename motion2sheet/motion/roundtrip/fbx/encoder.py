@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import array
 import math
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ ROTATION_ORDERS = {
 }
 ENCODE_RESIDUAL_TOLERANCE = 2e-5
 ORTHOGONAL_TOLERANCE = 2e-5
+CONTAINER_CONSTANT_TOLERANCE = 1e-7
 
 
 def _matrix(values: list[float]) -> Matrix:
@@ -189,7 +191,7 @@ def derive_fbx_curves(
     previous_eulers: dict[str, Euler] = {}
     axis_names = ("x", "y", "z")
 
-    for index, frame_entry in enumerate(frames):
+    for frame_entry in frames:
         frame = int(frame_entry["frame"])
         for bone_name, payload in rig_fbx["bones"].items():
             stack = payload["transformStack"]
@@ -262,6 +264,72 @@ def _patch_stack_layer_names(root, stack_name: str, layer_name: str) -> None:
     layers[0].props[-2] = layer_name.encode() + b"\x00\x01AnimLayer"
 
 
+def _replace_curve_samples(curve, times: list[int], values: list[float]) -> None:
+    if len(times) != len(values) or not times:
+        raise RuntimeError("FBX encoder requires non-empty equal-length keyTimes/keyValues")
+    key_time = native._find_first(curve, b"KeyTime")
+    key_value = native._find_first(curve, b"KeyValueFloat")
+    if key_time is None or key_value is None or not key_time.props or not key_value.props:
+        raise RuntimeError(f"Generated FBX curve {native._name(curve)!r} lacks key arrays")
+    existing_times = key_time.props[0]
+    existing_values = key_value.props[0]
+    key_time.props[0] = array.array(existing_times.typecode, [int(value) for value in times])
+    key_value.props[0] = array.array(existing_values.typecode, [float(value) for value in values])
+
+
+def _normalize_container_curves(
+    root,
+    target_curves: dict[tuple[str, str, str], Any],
+    canonical_keys: set[tuple[str, str, str]],
+    key_times: list[int],
+) -> None:
+    """Prevent the Blender-generated FBX container from carrying motion authority.
+
+    Canonical bone T/R/S curves are replaced from animation.frames. Any other
+    generated curve must be constant; we retime that constant onto the canonical
+    KTime samples. A varying non-canonical curve would be independent motion and
+    therefore fails closed instead of silently surviving the container export.
+    """
+
+    normalized_ids: set[int] = set()
+    for key, curve in target_curves.items():
+        curve_id = int(curve.props[0])
+        if key in canonical_keys:
+            normalized_ids.add(curve_id)
+            continue
+        _times, values = native._curve_arrays(curve)
+        spread = max(values) - min(values)
+        if spread > CONTAINER_CONSTANT_TOLERANCE:
+            raise RuntimeError(
+                "Generated FBX contains non-canonical varying transform curve; "
+                f"key={key} valueSpread={spread:.12g}. "
+                "animation.frames must remain the sole motion authority."
+            )
+        value = float(values[0])
+        _replace_curve_samples(curve, key_times, [value] * len(key_times))
+        normalized_ids.add(curve_id)
+
+    # Also guard curves that are not recognizable as Model Lcl T/R/S. They are
+    # allowed only when constant, and are retimed so they cannot extend the
+    # reconstructed action range beyond the canonical sample timeline.
+    for elem in native._node_table(root).values():
+        if elem.id != b"AnimationCurve":
+            continue
+        curve_id = int(elem.props[0])
+        if curve_id in normalized_ids:
+            continue
+        _times, values = native._curve_arrays(elem)
+        spread = max(values) - min(values)
+        if spread > CONTAINER_CONSTANT_TOLERANCE:
+            raise RuntimeError(
+                "Generated FBX contains unmapped varying AnimationCurve "
+                f"{native._name(elem)!r}; valueSpread={spread:.12g}. "
+                "Refusing a second motion authority outside animation.frames."
+            )
+        value = float(values[0])
+        _replace_curve_samples(elem, key_times, [value] * len(key_times))
+
+
 def encode_generated_fbx(
     generated_path: Path,
     output_path: Path,
@@ -289,12 +357,21 @@ def encode_generated_fbx(
     _patch_stack_layer_names(root, animation_fbx["stack"], animation_fbx["layer"])
 
     target_curves = native._target_curve_map(root)
+    canonical_keys: set[tuple[str, str, str]] = set()
     for curve in curves:
         key = (curve["bone"], curve["property"], curve["axis"])
         target = target_curves.get(key)
         if target is None:
             raise RuntimeError(f"Generated FBX is missing animation curve required by derived canonical data: {key}")
-        native._replace_curve_arrays(target, curve["keyTimes"], curve["keyValues"])
+        _replace_curve_samples(target, curve["keyTimes"], curve["keyValues"])
+        canonical_keys.add(key)
+
+    _normalize_container_curves(
+        root,
+        target_curves,
+        canonical_keys,
+        list(animation_fbx["sampleKeyTimes"]),
+    )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     encode_bin.write(
