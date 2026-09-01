@@ -1,5 +1,12 @@
-"""FBX-specific source-format preservation for round-trip POC."""
+"""FBX-specific metadata extraction and deterministic encoding for round-trip POC."""
 
-from .native import extract_fbx_authority, patch_generated_fbx
+from .capture import capture_blender_fbx_pose_adapters
+from .encoder import derive_fbx_curves, encode_generated_fbx
+from .native import extract_fbx_authority
 
-__all__ = ["extract_fbx_authority", "patch_generated_fbx"]
+__all__ = [
+    "capture_blender_fbx_pose_adapters",
+    "derive_fbx_curves",
+    "encode_generated_fbx",
+    "extract_fbx_authority",
+]
