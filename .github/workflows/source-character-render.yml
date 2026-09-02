@@ -1,0 +1,136 @@
+name: Source Character Render POC
+
+on:
+  pull_request:
+    paths:
+      - 'motion2sheet/motion/character_render/**'
+      - 'motion2sheet/motion/cli.py'
+      - 'profiles/characters/**'
+      - 'profiles/cameras/**'
+      - 'tests/motion/character_render/**'
+      - '.github/workflows/source-character-render.yml'
+  workflow_dispatch:
+    inputs:
+      command:
+        description: Contract B direct character render proof
+        required: true
+        default: render-character-and-verify
+        type: choice
+        options: [render-character, render-character-and-verify]
+
+permissions:
+  contents: read
+
+jobs:
+  source-character-render:
+    name: source-character-render / ${{ matrix.mode }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.command) || '["render-character","render-character-and-verify"]') }}
+    env:
+      MODE: ${{ matrix.mode }}
+      ROOT: build/source_character_render/walk_mixamo
+      CHARACTER: profiles/characters/swordsman_mixamo.json5
+      CAMERA: profiles/cameras/front_final.json5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12', cache: pip}
+      - name: Install package
+        run: python -m pip install -e '.[dev]'
+      - name: Run direct character render unit tests
+        run: pytest tests/motion/character_render
+      - name: Assert new architecture has no Anim2Sheet dependency
+        run: |
+          ! grep -R "motion2sheet\.anim2sheet\|anim2sheet build\|Contract A" motion2sheet/motion/character_render profiles/characters profiles/cameras
+      - name: Install Blender headless runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 xvfb
+      - name: Setup Blender 4.5 LTS
+        uses: bradyajohnston/setup-blender@v5
+        with: {version: '4.5.12'}
+      - name: Existing PR 11 export creates canonical Contract B
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROOT"
+          motion2sheet export-animation-json sample/walk_mixamo.fbx --output "$ROOT/contract-b"
+          test -f "$ROOT/contract-b/rig.json"
+          test -f "$ROOT/contract-b/animation.json"
+      - name: Existing PR 11 renderer creates source reference
+        run: |
+          motion2sheet render-animation-json --rig "$ROOT/contract-b/rig.json" --animation "$ROOT/contract-b/animation.json" --renderer blender --gif --output "$ROOT/source-json"
+          test -f "$ROOT/source-json/pose_sheet.png"
+          test -f "$ROOT/source-json/preview.gif"
+      - name: Delete original FBX before new public command
+        run: |
+          rm sample/walk_mixamo.fbx
+          test ! -e sample/walk_mixamo.fbx
+      - name: New motion2sheet command renders compatible character from JSON only
+        run: |
+          motion2sheet render-character-animation \
+            --rig "$ROOT/contract-b/rig.json" \
+            --animation "$ROOT/contract-b/animation.json" \
+            --character-profile "$CHARACTER" \
+            --camera-profile "$CAMERA" \
+            --sheet-columns 8 \
+            --canvas 320x320 \
+            --background transparent \
+            --gif \
+            --output "$ROOT/character-render"
+          test ! -e sample/walk_mixamo.fbx
+          test -f "$ROOT/character-render/pose_sheet.png"
+          test -f "$ROOT/character-render/preview.gif"
+          test -f "$ROOT/character-render/render.json"
+          test -f "$ROOT/character-render/source.blend"
+          test -f "$ROOT/character-render/diagnostics/playback.json"
+      - name: Verify direct Contract B playback semantics
+        if: matrix.mode == 'render-character-and-verify'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path("build/source_character_render/walk_mixamo")
+          report=json.loads((root/"character-render/render.json").read_text())
+          p=report["playbackFidelity"]
+          assert report["sourceAnimation"]["frameCount"]==32
+          assert report["sourceAnimation"]["fps"]==30.0
+          assert report["sourceRig"]["boneCount"]==65
+          assert report["rigCompatibility"]["pass"] and report["rigCompatibility"]["boneCount"]==65
+          assert report["sourceMotionFileRequired"] is False
+          assert p["pass"] and p["appliedBoneCount"]==65 and p["fingerToeBoneCount"]>0
+          assert p["leftRightIdentityPass"]
+          assert p["maxSemanticDirectionErrorDegrees"] <= 0.001
+          assert p["maxJointBendErrorDegrees"] <= 0.001
+          assert p["maxLocalRotationErrorDegrees"] <= 0.0001
+          assert p["rootMotion"]["directionPreserved"]
+          with Image.open(root/"source-json/preview.gif") as im: assert im.n_frames==32
+          with Image.open(root/"character-render/preview.gif") as im: assert im.n_frames==32
+          print(json.dumps({"frames":report["frameCount"],"fps":report["fps"],"bones":p["appliedBoneCount"],"semanticDirectionDeg":p["maxSemanticDirectionErrorDegrees"],"jointBendDeg":p["maxJointBendErrorDegrees"],"localRotationDeg":p["maxLocalRotationErrorDegrees"]},indent=2))
+          PY
+      - name: Build source vs character visual comparison
+        if: matrix.mode == 'render-character-and-verify'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageDraw
+          root=Path("build/source_character_render/walk_mixamo")
+          source=Image.open(root/"source-json/pose_sheet.png").convert("RGBA")
+          character=Image.open(root/"character-render/pose_sheet.png").convert("RGBA")
+          source_scaled=source.resize(character.size)
+          w,h=character.size
+          out=Image.new("RGBA",(w*2,h+48),(255,255,255,255))
+          out.alpha_composite(source_scaled,(0,48)); out.alpha_composite(character,(w,48)); draw=ImageDraw.Draw(out)
+          draw.text((12,14),"Contract B source skeleton",fill=(0,0,0,255)); draw.text((w+12,14),"Direct Mixamo-compatible character",fill=(0,0,0,255)); out.save(root/"visual-comparison.png")
+          source.close(); source_scaled.close(); character.close(); out.close()
+          PY
+      - name: Upload direct character render proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-character-${{ matrix.mode }}
+          path: build/source_character_render/walk_mixamo/
+          if-no-files-found: error
+          retention-days: 7

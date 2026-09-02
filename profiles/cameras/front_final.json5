@@ -1,0 +1,12 @@
+{
+  "schema": "motion2sheet.camera",
+  "version": 1,
+  "id": "front_final",
+  "projection": "ORTHO",
+  "location": [0.0, -6.0, 1.05],
+  "target": [0.0, 0.0, 1.05],
+  "upAxis": [0.0, 0.0, 1.0],
+  "orthoScale": 2.25,
+  "followRoot": true,
+  "margin": 1.0
+}
