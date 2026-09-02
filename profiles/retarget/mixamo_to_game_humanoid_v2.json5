@@ -30,25 +30,35 @@
     "LeftThigh","LeftShin","LeftFoot","RightThigh","RightShin","RightFoot"
   ],
   "bones": [
-    {"source":"mixamorig:Hips","target":"Pelvis"},
-    {"source":"mixamorig:Spine","target":"Spine"},
-    {"source":"mixamorig:Spine2","target":"Chest"},
-    {"source":"mixamorig:Neck","target":"Neck"},
-    {"source":"mixamorig:Head","target":"Head"},
-    {"source":"mixamorig:LeftShoulder","target":"LeftClavicle"},
-    {"source":"mixamorig:LeftArm","target":"LeftUpperArm"},
-    {"source":"mixamorig:LeftForeArm","target":"LeftForeArm"},
-    {"source":"mixamorig:LeftHand","target":"LeftHand"},
-    {"source":"mixamorig:RightShoulder","target":"RightClavicle"},
-    {"source":"mixamorig:RightArm","target":"RightUpperArm"},
-    {"source":"mixamorig:RightForeArm","target":"RightForeArm"},
-    {"source":"mixamorig:RightHand","target":"RightHand"},
-    {"source":"mixamorig:LeftUpLeg","target":"LeftThigh"},
-    {"source":"mixamorig:LeftLeg","target":"LeftShin"},
-    {"source":"mixamorig:LeftFoot","target":"LeftFoot"},
-    {"source":"mixamorig:RightUpLeg","target":"RightThigh"},
-    {"source":"mixamorig:RightLeg","target":"RightShin"},
-    {"source":"mixamorig:RightFoot","target":"RightFoot"}
+    {"source":"mixamorig:Hips","target":"Pelvis","sourceReferenceAxis":"-Y","targetReferenceAxis":"-Y"},
+    {"source":"mixamorig:Spine","target":"Spine","sourceReferenceAxis":"-Y","targetReferenceAxis":"-Y"},
+    {"source":"mixamorig:Spine2","target":"Chest","sourceReferenceAxis":"-Y","targetReferenceAxis":"-Y"},
+    {"source":"mixamorig:Neck","target":"Neck","sourceReferenceAxis":"-Y","targetReferenceAxis":"-Y"},
+    {"source":"mixamorig:Head","target":"Head","sourceReferenceAxis":"-Y","targetReferenceAxis":"-Y"},
+
+    {"source":"mixamorig:LeftShoulder","target":"LeftClavicle","sourceReferenceAxis":"+Z","targetReferenceAxis":"+Z"},
+    {"source":"mixamorig:LeftArm","target":"LeftUpperArm","sourceReferenceAxis":"+Z","targetReferenceAxis":"+Z"},
+    {"source":"mixamorig:LeftForeArm","target":"LeftForeArm","sourceReferenceAxis":"+Z","targetReferenceAxis":"+Z"},
+    {"source":"mixamorig:LeftHand","target":"LeftHand","sourceReferenceAxis":"+Z","targetReferenceAxis":"+Z"},
+
+    {"source":"mixamorig:RightShoulder","target":"RightClavicle","sourceReferenceAxis":"+Z","targetReferenceAxis":"+Z"},
+    {"source":"mixamorig:RightArm","target":"RightUpperArm","sourceReferenceAxis":"+Z","targetReferenceAxis":"+Z"},
+    {"source":"mixamorig:RightForeArm","target":"RightForeArm","sourceReferenceAxis":"+Z","targetReferenceAxis":"+Z"},
+    {"source":"mixamorig:RightHand","target":"RightHand","sourceReferenceAxis":"+Z","targetReferenceAxis":"+Z"},
+
+    {"source":"mixamorig:LeftUpLeg","target":"LeftThigh","sourceReferenceAxis":"-Y","targetReferenceAxis":"-Y"},
+    {"source":"mixamorig:LeftLeg","target":"LeftShin","sourceReferenceAxis":"-Y","targetReferenceAxis":"-Y"},
+    {"source":"mixamorig:LeftFoot","target":"LeftFoot","sourceReferenceAxis":"+Z","targetReferenceAxis":"+Z"},
+    {"source":"mixamorig:RightUpLeg","target":"RightThigh","sourceReferenceAxis":"-Y","targetReferenceAxis":"-Y"},
+    {"source":"mixamorig:RightLeg","target":"RightShin","sourceReferenceAxis":"-Y","targetReferenceAxis":"-Y"},
+    {"source":"mixamorig:RightFoot","target":"RightFoot","sourceReferenceAxis":"+Z","targetReferenceAxis":"+Z"}
   ],
+  "semanticRetargetTolerance": {
+    "directionDegrees": 0.05,
+    "elbowBendDegrees": 12.0,
+    "kneeBendDegrees": 1.1,
+    "rootDirectionDegrees": 0.05,
+    "normalizedVerticalError": 0.30
+  },
   "poseErrorToleranceMeters": 0.08
 }

@@ -10,6 +10,7 @@ from .math3d import Mat3, det3
 
 MAPPING_SCHEMA = "motion2sheet.retarget-mapping"
 MAPPING_VERSION = 1
+_AXIS_NAMES = {"+X", "-X", "+Y", "-Y", "+Z", "-Z"}
 
 
 def _object(value, label: str) -> dict:
@@ -22,6 +23,22 @@ def _string(value, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{label} must be a non-empty string")
     return value.strip()
+
+
+def _axis_name(value, label: str) -> str:
+    value = _string(value, label).upper()
+    if value not in _AXIS_NAMES:
+        raise ValueError(f"{label} must be one of {sorted(_AXIS_NAMES)}")
+    return value
+
+
+def _finite_number(value, label: str, *, minimum: float, maximum: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be numeric")
+    value = float(value)
+    if not math.isfinite(value) or value <= minimum or value > maximum:
+        raise ValueError(f"{label} must be finite and in ({minimum}, {maximum}]")
+    return value
 
 
 def _matrix3(value, label: str) -> Mat3:
@@ -54,6 +71,29 @@ def _matrix3(value, label: str) -> Mat3:
     return matrix
 
 
+def _semantic_tolerance(value) -> dict[str, float]:
+    data = _object(value, "retarget mapping semanticRetargetTolerance")
+    expected = {
+        "directionDegrees",
+        "elbowBendDegrees",
+        "kneeBendDegrees",
+        "rootDirectionDegrees",
+        "normalizedVerticalError",
+    }
+    if set(data) != expected:
+        raise ValueError(
+            "retarget mapping semanticRetargetTolerance must contain exactly "
+            f"{sorted(expected)}"
+        )
+    return {
+        "directionDegrees": _finite_number(data["directionDegrees"], "semanticRetargetTolerance.directionDegrees", minimum=0.0, maximum=30.0),
+        "elbowBendDegrees": _finite_number(data["elbowBendDegrees"], "semanticRetargetTolerance.elbowBendDegrees", minimum=0.0, maximum=45.0),
+        "kneeBendDegrees": _finite_number(data["kneeBendDegrees"], "semanticRetargetTolerance.kneeBendDegrees", minimum=0.0, maximum=30.0),
+        "rootDirectionDegrees": _finite_number(data["rootDirectionDegrees"], "semanticRetargetTolerance.rootDirectionDegrees", minimum=0.0, maximum=30.0),
+        "normalizedVerticalError": _finite_number(data["normalizedVerticalError"], "semanticRetargetTolerance.normalizedVerticalError", minimum=0.0, maximum=1.0),
+    }
+
+
 def load_mapping(path: Path, *, target_rig: dict | None = None) -> dict:
     path = path.resolve()
     try:
@@ -65,6 +105,7 @@ def load_mapping(path: Path, *, target_rig: dict | None = None) -> dict:
         "schema", "version", "id", "targetRig", "sourceCoordinateSystem",
         "targetCoordinateSystem", "sourceToTargetAxes", "rootSourceBone",
         "requiredTargets", "bones", "poseErrorToleranceMeters",
+        "semanticRetargetTolerance",
     }
     unknown = set(data) - allowed
     required = allowed
@@ -123,12 +164,19 @@ def load_mapping(path: Path, *, target_rig: dict | None = None) -> dict:
         raise ValueError("retarget mapping bones must be a non-empty array")
     target_to_source: dict[str, str] = {}
     source_to_target: dict[str, str] = {}
+    source_refs: dict[str, str] = {}
+    target_refs: dict[str, str] = {}
     for index, raw in enumerate(rows):
         row = _object(raw, f"retarget mapping bones[{index}]")
-        if set(row) != {"source", "target"}:
-            raise ValueError(f"retarget mapping bones[{index}] must contain source/target exactly")
+        expected_row = {"source", "target", "sourceReferenceAxis", "targetReferenceAxis"}
+        if set(row) != expected_row:
+            raise ValueError(
+                f"retarget mapping bones[{index}] must contain exactly {sorted(expected_row)}"
+            )
         source = _string(row["source"], f"retarget mapping bones[{index}].source")
         target_name = _string(row["target"], f"retarget mapping bones[{index}].target")
+        source_ref = _axis_name(row["sourceReferenceAxis"], f"retarget mapping bones[{index}].sourceReferenceAxis")
+        target_ref = _axis_name(row["targetReferenceAxis"], f"retarget mapping bones[{index}].targetReferenceAxis")
         if target_name in target_to_source:
             raise ValueError(f"ambiguous target mapping for {target_name!r}")
         if source in source_to_target:
@@ -137,17 +185,15 @@ def load_mapping(path: Path, *, target_rig: dict | None = None) -> dict:
             )
         target_to_source[target_name] = source
         source_to_target[source] = target_name
+        source_refs[target_name] = source_ref
+        target_refs[target_name] = target_ref
     missing_required = set(required_targets) - set(target_to_source)
     if missing_required:
         raise ValueError(f"required target mappings missing: {sorted(missing_required)}")
     if root_source_bone not in source_to_target:
         raise ValueError("rootSourceBone must also appear in bones mapping")
-    tolerance = data["poseErrorToleranceMeters"]
-    if isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)):
-        raise ValueError("poseErrorToleranceMeters must be numeric")
-    tolerance = float(tolerance)
-    if not math.isfinite(tolerance) or tolerance <= 0.0 or tolerance > 0.25:
-        raise ValueError("poseErrorToleranceMeters must be finite and in (0, 0.25]")
+    tolerance = _finite_number(data["poseErrorToleranceMeters"], "poseErrorToleranceMeters", minimum=0.0, maximum=0.25)
+    semantic_tolerance = _semantic_tolerance(data["semanticRetargetTolerance"])
 
     if target_rig is not None:
         if target["id"] != target_rig.get("id"):
@@ -183,7 +229,10 @@ def load_mapping(path: Path, *, target_rig: dict | None = None) -> dict:
         "requiredTargets": required_targets,
         "targetToSource": target_to_source,
         "sourceToTarget": source_to_target,
+        "targetToSourceReferenceAxis": source_refs,
+        "targetToTargetReferenceAxis": target_refs,
         "poseErrorToleranceMeters": tolerance,
+        "semanticRetargetTolerance": semantic_tolerance,
         "path": path,
     }
 
