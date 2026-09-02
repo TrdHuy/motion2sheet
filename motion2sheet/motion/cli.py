@@ -18,6 +18,7 @@ from .output import (
 )
 from .render import compose_sheet, render_sequence
 from .retarget import load_profile
+from .roundtrip.cli import add_roundtrip_subcommands
 
 
 def parse_canvas(value: str) -> tuple[int, int]:
@@ -153,6 +154,7 @@ def parser() -> argparse.ArgumentParser:
     validate_parser = sub.add_parser("validate", help="Validate an existing generated output directory")
     validate_parser.add_argument("output")
     validate_parser.set_defaults(func=validate)
+    add_roundtrip_subcommands(sub)
     return root
 
 
