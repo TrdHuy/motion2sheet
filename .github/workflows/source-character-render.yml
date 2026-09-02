@@ -47,7 +47,11 @@ jobs:
         run: |
           ! grep -R "motion2sheet\.anim2sheet\|anim2sheet build\|Contract A" motion2sheet/motion/character_render profiles/characters profiles/cameras
       - name: Install Blender headless runtime libraries
-        run: sudo apt-get update && sudo apt-get install -y libegl1 xvfb
+        run: |
+          set -euo pipefail
+          grep -rl 'packages.microsoft.com' /etc/apt/sources.list.d 2>/dev/null | xargs -r sudo rm -f
+          sudo apt-get update
+          sudo apt-get install -y libegl1 xvfb
       - name: Setup Blender 4.5 LTS
         uses: bradyajohnston/setup-blender@v5
         with: {version: '4.5.12'}
@@ -63,6 +67,7 @@ jobs:
           motion2sheet render-animation-json --rig "$ROOT/contract-b/rig.json" --animation "$ROOT/contract-b/animation.json" --renderer blender --gif --output "$ROOT/source-json"
           test -f "$ROOT/source-json/pose_sheet.png"
           test -f "$ROOT/source-json/preview.gif"
+          test -f "$ROOT/source-json/render.json"
       - name: Delete original FBX before new public command
         run: |
           rm sample/walk_mixamo.fbx
@@ -85,7 +90,7 @@ jobs:
           test -f "$ROOT/character-render/render.json"
           test -f "$ROOT/character-render/source.blend"
           test -f "$ROOT/character-render/diagnostics/playback.json"
-      - name: Verify direct Contract B playback semantics
+      - name: Verify direct Contract B playback semantics and GIF timing
         if: matrix.mode == 'render-character-and-verify'
         run: |
           python - <<'PY'
@@ -95,6 +100,7 @@ jobs:
           root=Path("build/source_character_render/walk_mixamo")
           report=json.loads((root/"character-render/render.json").read_text())
           p=report["playbackFidelity"]
+          timing=report["gifTiming"]
           assert report["sourceAnimation"]["frameCount"]==32
           assert report["sourceAnimation"]["fps"]==30.0
           assert report["sourceRig"]["boneCount"]==65
@@ -106,17 +112,27 @@ jobs:
           assert p["maxJointBendErrorDegrees"] <= 0.001
           assert p["maxLocalRotationErrorDegrees"] <= 0.0001
           assert p["rootMotion"]["directionPreserved"]
+          assert len(timing["frameDurationsMs"])==32
+          assert abs(timing["totalDurationMs"]-(32/30.0*1000.0))<=5.0
+          assert timing["totalDurationMs"]!=960
           with Image.open(root/"source-json/preview.gif") as im: assert im.n_frames==32
-          with Image.open(root/"character-render/preview.gif") as im: assert im.n_frames==32
-          print(json.dumps({"frames":report["frameCount"],"fps":report["fps"],"bones":p["appliedBoneCount"],"semanticDirectionDeg":p["maxSemanticDirectionErrorDegrees"],"jointBendDeg":p["maxJointBendErrorDegrees"],"localRotationDeg":p["maxLocalRotationErrorDegrees"]},indent=2))
+          with Image.open(root/"character-render/preview.gif") as im:
+              assert im.n_frames==32
+              encoded=[]
+              for frame in range(im.n_frames):
+                  im.seek(frame); encoded.append(int(im.info["duration"]))
+              assert sum(encoded)==timing["totalDurationMs"]
+          print(json.dumps({"frames":report["frameCount"],"fps":report["fps"],"bones":p["appliedBoneCount"],"semanticDirectionDeg":p["maxSemanticDirectionErrorDegrees"],"jointBendDeg":p["maxJointBendErrorDegrees"],"localRotationDeg":p["maxLocalRotationErrorDegrees"],"gifTotalDurationMs":timing["totalDurationMs"],"gifEffectiveFps":timing["effectiveFps"]},indent=2))
           PY
       - name: Build source vs character visual comparison
         if: matrix.mode == 'render-character-and-verify'
         run: |
           python - <<'PY'
+          import json
           from pathlib import Path
           from PIL import Image, ImageDraw
           root=Path("build/source_character_render/walk_mixamo")
+          report=json.loads((root/"character-render/render.json").read_text())
           source=Image.open(root/"source-json/pose_sheet.png").convert("RGBA")
           character=Image.open(root/"character-render/pose_sheet.png").convert("RGBA")
           source_scaled=source.resize(character.size)
@@ -125,6 +141,23 @@ jobs:
           out.alpha_composite(source_scaled,(0,48)); out.alpha_composite(character,(w,48)); draw=ImageDraw.Draw(out)
           draw.text((12,14),"Contract B source skeleton",fill=(0,0,0,255)); draw.text((w+12,14),"Direct Mixamo-compatible character",fill=(0,0,0,255)); out.save(root/"visual-comparison.png")
           source.close(); source_scaled.close(); character.close(); out.close()
+
+          source_gif=Image.open(root/"source-json/preview.gif")
+          character_gif=Image.open(root/"character-render/preview.gif")
+          frames=[]
+          for index in range(32):
+              source_gif.seek(index); character_gif.seek(index)
+              left=source_gif.convert("RGBA").resize(character_gif.size)
+              right=character_gif.convert("RGBA")
+              fw,fh=right.size
+              frame=Image.new("RGBA",(fw*2,fh+36),(255,255,255,255))
+              frame.alpha_composite(left,(0,36)); frame.alpha_composite(right,(fw,36)); d=ImageDraw.Draw(frame)
+              d.text((8,10),"Contract B source",fill=(0,0,0,255)); d.text((fw+8,10),"Character render",fill=(0,0,0,255))
+              frames.append(frame); left.close(); right.close()
+          durations=report["gifTiming"]["frameDurationsMs"]
+          frames[0].save(root/"visual-comparison.gif",save_all=True,append_images=frames[1:],duration=durations,loop=0,disposal=2,optimize=False)
+          for frame in frames: frame.close()
+          source_gif.close(); character_gif.close()
           PY
       - name: Upload direct character render proof
         if: always()
