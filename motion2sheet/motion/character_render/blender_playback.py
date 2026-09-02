@@ -3,6 +3,8 @@ import math
 import bpy
 from mathutils import Quaternion, Vector
 
+from motion2sheet.motion.character_render.diagnostics import frame_bounds
+
 
 def apply_animation(arm,animation,scales):
     names=set()
@@ -37,7 +39,7 @@ def setup_scene(request,char_arm):
 def diagnostics(source_arm,char_arm,animation,compatibility,source_names,char_names):
     semantics={'leftUpperArm':'mixamorig:LeftArm','leftForeArm':'mixamorig:LeftForeArm','rightUpperArm':'mixamorig:RightArm','rightForeArm':'mixamorig:RightForeArm','leftThigh':'mixamorig:LeftUpLeg','leftShin':'mixamorig:LeftLeg','rightThigh':'mixamorig:RightUpLeg','rightShin':'mixamorig:RightLeg'}
     max_dir=max_bend=max_local=max_root=0.0; worst_dir=worst_bend=worst_local=worst_root=None
-    by_frame={int(f['frame']):f for f in animation['frames']}; root=compatibility['rootBone']; first=last=min(by_frame),max(by_frame); source_root=[]; char_root=[]
+    by_frame={int(f['frame']):f for f in animation['frames']}; root=compatibility['rootBone']; first,last=frame_bounds(by_frame); source_root=[]; char_root=[]
     for frame in sorted(by_frame):
         bpy.context.scene.frame_set(frame)
         for semantic,bone in semantics.items():
