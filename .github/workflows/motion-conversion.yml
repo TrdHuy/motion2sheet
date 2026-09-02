@@ -118,7 +118,7 @@ jobs:
         if: env.MODE == 'convert-and-render'
         run: |
           set -euo pipefail
-          blender --background "$ROOT/anim2sheet/source.blend" --python tests/motion/conversion/e2e/verify_anim2sheet_pose.py -- --conversion "$ROOT/contract-a/conversion.json" --output "$ROOT/anim2sheet/pose_fidelity.json"
+          blender --background "$ROOT/anim2sheet/source.blend" --python-exit-code 1 --python tests/motion/conversion/e2e/verify_anim2sheet_pose.py -- --conversion "$ROOT/contract-a/conversion.json" --output "$ROOT/anim2sheet/pose_fidelity.json"
       - name: Verify render artifacts and build visual comparison
         if: env.MODE == 'convert-and-render'
         run: |
