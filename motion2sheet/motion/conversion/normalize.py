@@ -17,7 +17,6 @@ from .math3d import (
     mul,
     mul3,
     mul4,
-    rotate_around_axis,
     rotation4,
     sub,
     transpose3,
@@ -145,7 +144,7 @@ def _reanchor_segment(start: Vec3, desired_start: Vec3, desired_end: Vec3, targe
     return add(start, mul(direction, target_length))
 
 
-def _knee_guide(hip: Vec3, knee: Vec3, ankle: Vec3, *, pole_angle_deg: float, guide_distance: float, fallback_bend: Vec3) -> tuple[Vec3, bool]:
+def _knee_guide(hip: Vec3, knee: Vec3, ankle: Vec3, *, guide_distance: float, fallback_bend: Vec3) -> tuple[Vec3, bool]:
     axis = sub(ankle, hip)
     axis_length_sq = sum(value * value for value in axis)
     if axis_length_sq <= 1e-10:
@@ -157,10 +156,12 @@ def _knee_guide(hip: Vec3, knee: Vec3, ankle: Vec3, *, pole_angle_deg: float, gu
     if length(bend) <= 1e-6:
         bend = fallback_bend
         fallback = True
-    bend_dir = unit(bend, "knee bend plane")
-    guide_dir = rotate_around_axis(
-        bend_dir, unit(axis, "hip-ankle axis"), math.radians(-float(pole_angle_deg))
-    )
+    # Contract A kneeGuide is authored world-space bend-plane authority.  The
+    # target rig's poleAngleDeg calibrates the IK constraint to the mirrored
+    # rest bases; it is not an instruction to rotate the authored guide.
+    # Existing leg_ik diagnostics explicitly require evaluated knee bend and
+    # guide bend to point to the same half-plane for both left and right legs.
+    guide_dir = unit(bend, "knee bend plane")
     return add(projection, mul(guide_dir, guide_distance)), fallback
 
 
@@ -226,7 +227,6 @@ def normalize_frame(retarget_frame: dict, target_rig: dict, rests: dict[str, Bon
             hip,
             knee,
             ankle,
-            pole_angle_deg=float(cfg["poleAngleDeg"]),
             guide_distance=max(0.45, (rests[thigh].length + rests[shin].length) * 0.65),
             fallback_bend=fallback_bend,
         )
