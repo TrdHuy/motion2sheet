@@ -27,10 +27,15 @@ permissions:
 
 jobs:
   mixamo-contract-conversion:
+    name: mixamo-contract-conversion / ${{ matrix.mode }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.command) || '["convert","convert-and-render"]') }}
     env:
-      MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.command || 'convert-and-render' }}
+      MODE: ${{ matrix.mode }}
       ROOT: build/motion_profile_conversion/walk_mixamo
       TARGET_RIG: profiles/anim2sheet/rigs/game_humanoid_v2.json5
       MAPPING: profiles/retarget/mixamo_to_game_humanoid_v2.json5
@@ -87,6 +92,20 @@ jobs:
           test -f "$ROOT/contract-a/motion.json"
           test -f "$ROOT/contract-a/animation.json5"
           test -f "$ROOT/contract-a/conversion.json"
+      - name: Verify real Mixamo conversion is byte deterministic
+        run: |
+          set -euo pipefail
+          motion2sheet convert-animation-profile \
+            --source-rig "$ROOT/contract-b/rig.json" \
+            --source-animation "$ROOT/contract-b/animation.json" \
+            --target-rig "$TARGET_RIG" \
+            --mapping "$MAPPING" \
+            --character-profile "$CHARACTER" \
+            --output "$ROOT/contract-a-repeat"
+          cmp "$ROOT/contract-a/motion.json" "$ROOT/contract-a-repeat/motion.json"
+          cmp "$ROOT/contract-a/animation.json5" "$ROOT/contract-a-repeat/animation.json5"
+          cmp "$ROOT/contract-a/conversion.json" "$ROOT/contract-a-repeat/conversion.json"
+          rm -rf "$ROOT/contract-a-repeat"
       - name: Validate generated Contract A through existing loaders
         run: |
           set -euo pipefail
