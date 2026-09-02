@@ -1,0 +1,54 @@
+{
+  "schema": "motion2sheet.retarget-mapping",
+  "version": 1,
+  "id": "mixamo_to_game_humanoid_v2",
+  "targetRig": {
+    "schema": "anim2sheet.rig",
+    "version": 2,
+    "id": "game_humanoid_v2"
+  },
+  "sourceCoordinateSystem": {
+    "space": "Blender scene after source import",
+    "handedness": "right-handed",
+    "rightAxis": "+X",
+    "forwardAxis": "-Y",
+    "upAxis": "+Z"
+  },
+  "targetCoordinateSystem": {
+    "space": "world",
+    "x": "screen-right",
+    "y": "depth; negative is toward camera",
+    "z": "up",
+    "units": "Blender meters"
+  },
+  "sourceToTargetAxes": [[1,0,0],[0,1,0],[0,0,1]],
+  "rootSourceBone": "mixamorig:Hips",
+  "requiredTargets": [
+    "Pelvis","Spine","Chest","Neck","Head",
+    "LeftClavicle","LeftUpperArm","LeftForeArm","LeftHand",
+    "RightClavicle","RightUpperArm","RightForeArm","RightHand",
+    "LeftThigh","LeftShin","LeftFoot","RightThigh","RightShin","RightFoot"
+  ],
+  "bones": [
+    {"source":"mixamorig:Hips","target":"Pelvis"},
+    {"source":"mixamorig:Spine","target":"Spine"},
+    {"source":"mixamorig:Spine2","target":"Chest"},
+    {"source":"mixamorig:Neck","target":"Neck"},
+    {"source":"mixamorig:Head","target":"Head"},
+    {"source":"mixamorig:LeftShoulder","target":"LeftClavicle"},
+    {"source":"mixamorig:LeftArm","target":"LeftUpperArm"},
+    {"source":"mixamorig:LeftForeArm","target":"LeftForeArm"},
+    {"source":"mixamorig:LeftHand","target":"LeftHand"},
+    {"source":"mixamorig:RightShoulder","target":"RightClavicle"},
+    {"source":"mixamorig:RightArm","target":"RightUpperArm"},
+    {"source":"mixamorig:RightForeArm","target":"RightForeArm"},
+    {"source":"mixamorig:RightHand","target":"RightHand"},
+    {"source":"mixamorig:LeftUpLeg","target":"LeftThigh"},
+    {"source":"mixamorig:LeftLeg","target":"LeftShin"},
+    {"source":"mixamorig:LeftFoot","target":"LeftFoot"},
+    {"source":"mixamorig:RightUpLeg","target":"RightThigh"},
+    {"source":"mixamorig:RightLeg","target":"RightShin"},
+    {"source":"mixamorig:RightFoot","target":"RightFoot"}
+  ],
+  "poseErrorToleranceMeters": 0.08
+}

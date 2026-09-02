@@ -19,6 +19,7 @@ from .output import (
 from .render import compose_sheet, render_sequence
 from .retarget import load_profile
 from .roundtrip.cli import add_roundtrip_subcommands
+from .conversion.cli import add_conversion_subcommands
 
 
 def parse_canvas(value: str) -> tuple[int, int]:
@@ -144,9 +145,7 @@ def parser() -> argparse.ArgumentParser:
     build_parser.add_argument("--padding", type=int, default=20)
     build_parser.add_argument("--profile", default="source", help="Body proportion profile: source (default), built-in name such as chibi_v1, or JSON path")
     build_parser.add_argument(
-        "--output-mode",
-        choices=OUTPUT_MODES,
-        default=DEFAULT_OUTPUT_MODE,
+        "--output-mode", choices=OUTPUT_MODES, default=DEFAULT_OUTPUT_MODE,
         help="Output type: both (default), frames, or sheet",
     )
     build_parser.add_argument("--keep-raw", action="store_true")
@@ -155,6 +154,7 @@ def parser() -> argparse.ArgumentParser:
     validate_parser.add_argument("output")
     validate_parser.set_defaults(func=validate)
     add_roundtrip_subcommands(sub)
+    add_conversion_subcommands(sub)
     return root
 
 
