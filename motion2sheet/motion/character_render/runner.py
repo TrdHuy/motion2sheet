@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -10,6 +11,8 @@ from PIL import Image
 from motion2sheet.motion.roundtrip.schema import read_json, validate_animation_document, validate_rig_document
 
 from .profile import load_camera_profile, load_character_profile, validate_character_compatibility
+
+GIF_TIME_QUANTUM_MS = 10
 
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
@@ -44,11 +47,29 @@ def _compose_sheet(frame_paths: list[Path], output: Path, columns: int, canvas: 
     for i,path in enumerate(frame_paths):
         with Image.open(path) as im: sheet.alpha_composite(im.convert("RGBA"),(i%columns*canvas[0],i//columns*canvas[1]))
     sheet.save(output); size=sheet.size; sheet.close(); return rows,size[0],size[1]
-def _compose_gif(frame_paths: list[Path], output: Path, fps: float) -> None:
-    images=[Image.open(p).convert("RGBA") for p in frame_paths]
-    try: images[0].save(output,save_all=True,append_images=images[1:],duration=max(1,round(1000.0/fps)),loop=0,disposal=2,optimize=False)
+
+def gif_frame_durations_ms(frame_count: int, fps: float) -> list[int]:
+    if frame_count <= 0: raise ValueError("GIF frame count must be positive")
+    if not math.isfinite(fps) or fps <= 0: raise ValueError("GIF FPS must be positive and finite")
+    # GIF stores frame delays in 10 ms centiseconds. Quantize cumulative source-time
+    # boundaries instead of each frame independently so rounding error is distributed.
+    boundaries=[]
+    for index in range(frame_count+1):
+        ideal_ms=index*1000.0/fps
+        quantized=int(math.floor(ideal_ms/GIF_TIME_QUANTUM_MS+0.5))*GIF_TIME_QUANTUM_MS
+        boundaries.append(quantized)
+    durations=[boundaries[index+1]-boundaries[index] for index in range(frame_count)]
+    if any(duration < GIF_TIME_QUANTUM_MS for duration in durations):
+        raise ValueError(f"GIF timing cannot represent {fps:g} FPS without zero-duration frames")
+    return durations
+
+def _compose_gif(frame_paths: list[Path], output: Path, fps: float) -> dict[str, Any]:
+    durations=gif_frame_durations_ms(len(frame_paths),fps); images=[Image.open(p).convert("RGBA") for p in frame_paths]
+    try: images[0].save(output,save_all=True,append_images=images[1:],duration=durations,loop=0,disposal=2,optimize=False)
     finally:
         for im in images: im.close()
+    total=sum(durations)
+    return {"frameDurationsMs":durations,"totalDurationMs":total,"effectiveFps":len(durations)*1000.0/total,"quantumMs":GIF_TIME_QUANTUM_MS}
 
 def render_character_animation(*, rig_path: Path, animation_path: Path, character_profile_path: Path, camera_profile_path: Path, output: Path, sheet_columns: int=8, canvas: tuple[int,int]=(320,320), background: str="transparent", gif: bool=False, frames: str="all", blender: str="blender") -> dict[str, Any]:
     rig=read_json(rig_path); animation=read_json(animation_path); validate_rig_document(rig); validate_animation_document(animation,rig)
@@ -67,8 +88,8 @@ def render_character_animation(*, rig_path: Path, animation_path: Path, characte
     missing=[str(p) for p in frame_paths if not p.is_file()]
     if missing: raise RuntimeError(f"Blender character render missing frames: {missing[:4]}")
     rows,width,height=_compose_sheet(frame_paths,output/"pose_sheet.png",sheet_columns,canvas)
-    if gif: _compose_gif(frame_paths,output/"preview.gif",float(animation["fps"]))
+    gif_timing=_compose_gif(frame_paths,output/"preview.gif",float(animation["fps"])) if gif else None
     playback=json.loads((output/"diagnostics"/"playback.json").read_text(encoding="utf-8"))
-    report={"schema":"motion2sheet.character-render","version":1,"sourceRig":{"id":rig["id"],"schema":rig["schema"],"boneCount":len(rig["bones"])},"sourceAnimation":{"id":animation["id"],"schema":animation["schema"],"frameCount":animation["frameCount"],"fps":animation["fps"]},"characterProfile":{"id":character["id"],"path":str(character_profile_path)},"cameraProfile":{"id":camera["id"],"path":str(camera_profile_path)},"renderedFrames":selected,"frameCount":len(selected),"fps":animation["fps"],"rigCompatibility":compatibility,"playbackFidelity":playback,"sourceMotionFileRequired":False,"layout":{"cellSize":list(canvas),"sheetColumns":sheet_columns,"sheetRows":rows,"sheetSize":[width,height]},"outputs":{"poseSheet":"pose_sheet.png","previewGif":"preview.gif" if gif else None,"sourceBlend":"source.blend","diagnostics":"diagnostics/playback.json"}}
+    report={"schema":"motion2sheet.character-render","version":1,"sourceRig":{"id":rig["id"],"schema":rig["schema"],"boneCount":len(rig["bones"])},"sourceAnimation":{"id":animation["id"],"schema":animation["schema"],"frameCount":animation["frameCount"],"fps":animation["fps"]},"characterProfile":{"id":character["id"],"path":str(character_profile_path)},"cameraProfile":{"id":camera["id"],"path":str(camera_profile_path)},"renderedFrames":selected,"frameCount":len(selected),"fps":animation["fps"],"rigCompatibility":compatibility,"playbackFidelity":playback,"sourceMotionFileRequired":False,"layout":{"cellSize":list(canvas),"sheetColumns":sheet_columns,"sheetRows":rows,"sheetSize":[width,height]},"gifTiming":gif_timing,"outputs":{"poseSheet":"pose_sheet.png","previewGif":"preview.gif" if gif else None,"sourceBlend":"source.blend","diagnostics":"diagnostics/playback.json"}}
     _write_json(output/"render.json",report); shutil.rmtree(frame_dir,ignore_errors=True)
     return report
