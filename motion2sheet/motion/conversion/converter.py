@@ -8,7 +8,13 @@ from pathlib import Path
 from motion2sheet.anim2sheet.common.profile import load_motion_profile, load_rig_profile, resolve_character_profile
 from motion2sheet.motion.roundtrip.schema import read_json, validate_animation_document, validate_rig_document
 
-from .diagnostics import conversion_fidelity, representation_limitations, source_pose_rows, source_retarget_fidelity, target_pose_rows
+from .diagnostics import (
+    conversion_fidelity,
+    representation_limitations,
+    source_pose_rows,
+    source_retarget_fidelity,
+    target_pose_rows,
+)
 from .mapping import load_mapping
 from .normalize import normalize_animation
 from .retarget import retarget_animation
@@ -66,8 +72,25 @@ def convert_animation_profile(*, source_rig_path: Path, source_animation_path: P
     retargeted = retarget_animation(source_rig, source_animation, target_rig, mapping)
     retarget_fidelity = source_retarget_fidelity(retargeted, mapping)
     if not retarget_fidelity["pass"]:
+        if retarget_fidelity["orderingMismatches"]:
+            mismatch = retarget_fidelity["orderingMismatches"][0]
+            raise ValueError(
+                "Contract B -> target retarget semantic gate failed: "
+                f"ordering mismatch at F{mismatch['frame']} {mismatch['semantic']} "
+                f"source={mismatch['source']} target={mismatch['target']}"
+            )
+        if retarget_fidelity["leftRightFailures"]:
+            mismatch = retarget_fidelity["leftRightFailures"][0]
+            raise ValueError(
+                "Contract B -> target retarget semantic gate failed: "
+                f"left/right identity mismatch at F{mismatch['frame']} {mismatch['pair']}"
+            )
         worst = retarget_fidelity["worst"]
-        raise ValueError(f"Contract B -> target retarget semantic gate failed: metric={worst['metric']} value={worst['value']} tolerance={worst['tolerance']} at F{worst['frame']} {worst['semantic']}")
+        raise ValueError(
+            "Contract B -> target retarget semantic gate failed: "
+            f"metric={worst['metric']} value={worst['value']} tolerance={worst['tolerance']} "
+            f"at F{worst['frame']} {worst['semantic']}"
+        )
 
     normalized = normalize_animation(retargeted, target_rig)
     fidelity = conversion_fidelity(retargeted, normalized, float(mapping["poseErrorToleranceMeters"]))
