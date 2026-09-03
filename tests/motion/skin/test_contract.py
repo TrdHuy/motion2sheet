@@ -9,6 +9,7 @@ import pytest
 from motion2sheet.motion.skin import (
     build_skin_document,
     canonical_json_bytes,
+    compare_skin_bindings,
     normalize_influences,
     skin_statistics,
     validate_level1_rig_compatibility,
@@ -187,6 +188,43 @@ def test_missing_model_mesh_fails_closed(tmp_path):
     skin = build_skin(model_sha=hashlib.sha256(model.read_bytes()).hexdigest())
     with pytest.raises(ValueError, match="model mesh set mismatch"):
         verify_model_identity(skin, model, [])
+
+
+def test_skin_reconstruction_exact_binding_passes():
+    reference = build_skin()
+    report = compare_skin_bindings(reference, copy.deepcopy(reference))
+    assert report["pass"] is True
+    assert report["sameMeshObjects"] is True
+    assert report["sameVertexCounts"] is True
+    assert report["sameVertexOrder"] is True
+    assert report["sameInfluencedBones"] is True
+    assert report["weightedVertexCount"] == 2
+    assert report["influenceCount"] == 3
+    assert report["maxWeightDelta"] == 0.0
+    assert report["worst"] is None
+
+
+def test_skin_reconstruction_weight_drift_reports_strict_failure():
+    reference = build_skin()
+    reconstructed = copy.deepcopy(reference)
+    influences = reconstructed["meshes"][0]["weights"][0]["influences"]
+    influences[0][1] += 1e-5
+    influences[1][1] -= 1e-5
+    report = compare_skin_bindings(reference, reconstructed, tolerance=1e-8)
+    assert report["pass"] is False
+    assert report["maxWeightDelta"] == pytest.approx(1e-5)
+    assert report["worst"]["mesh"] == "Character"
+    assert report["worst"]["vertex"] == 0
+
+
+def test_skin_reconstruction_influenced_bone_mismatch_fails_closed():
+    reference = build_skin()
+    reconstructed = copy.deepcopy(reference)
+    reconstructed["boneTable"].append("Other")
+    reconstructed["boneTable"].sort()
+    reconstructed["meshes"][0]["weights"][0]["influences"] = [["Other", 1.0 / 3.0], ["Root", 2.0 / 3.0]]
+    with pytest.raises(ValueError, match="influenced-bone set mismatch"):
+        compare_skin_bindings(reference, reconstructed)
 
 
 def test_level1_allows_different_lengths_with_same_rest_basis():
