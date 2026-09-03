@@ -147,12 +147,12 @@ def build_skin_document(
         for row in mesh["weights"]:
             normalized = normalize_influences(row["influences"])
             referenced_bones.update(item[0] for item in normalized)
-            weights.append({"vertex": int(row["vertex"]), "influences": normalized})
+            weights.append({"vertex": _integer(row["vertex"], "skin build vertex"), "influences": normalized})
         weights.sort(key=lambda row: row["vertex"])
         built_meshes.append(
             {
                 "object": mesh["object"],
-                "vertexCount": int(mesh["vertexCount"]),
+                "vertexCount": _integer(mesh["vertexCount"], "skin build vertexCount", minimum=1),
                 "vertexOrderHash": mesh["vertexOrderHash"],
                 "objectTransform": list(mesh["objectTransform"]),
                 "armatureModifier": dict(mesh["armatureModifier"]),
@@ -313,3 +313,58 @@ def verify_model_identity(data: dict[str, Any], model_path: Path, mesh_layout: I
             raise ValueError(f"model vertex count mismatch for {name}")
         if actual[name].get("vertexOrderHash") != expected[name]["vertexOrderHash"]:
             raise ValueError(f"model vertex-order hash mismatch for {name}")
+
+
+def compare_skin_bindings(reference: dict[str, Any], reconstructed: dict[str, Any], *, tolerance: float = 1e-8) -> dict[str, Any]:
+    if tolerance < 0.0:
+        raise ValueError("skin comparison tolerance must be non-negative")
+    first = validate_skin_document(reference)
+    second = validate_skin_document(reconstructed)
+    first_meshes = {mesh["object"]: mesh for mesh in first["meshes"]}
+    second_meshes = {mesh["object"]: mesh for mesh in second["meshes"]}
+    if set(first_meshes) != set(second_meshes):
+        raise ValueError(
+            f"skin mesh set mismatch: reference={sorted(first_meshes)} reconstructed={sorted(second_meshes)}"
+        )
+
+    max_delta = 0.0
+    worst: dict[str, Any] | None = None
+    weighted_vertices = 0
+    influence_count = 0
+    for mesh_name in sorted(first_meshes):
+        expected = first_meshes[mesh_name]
+        actual = second_meshes[mesh_name]
+        if expected["vertexCount"] != actual["vertexCount"]:
+            raise ValueError(f"skin vertex count mismatch for {mesh_name}")
+        if expected["vertexOrderHash"] != actual["vertexOrderHash"]:
+            raise ValueError(f"skin vertex-order hash mismatch for {mesh_name}")
+        expected_rows = {row["vertex"]: row for row in expected["weights"]}
+        actual_rows = {row["vertex"]: row for row in actual["weights"]}
+        if set(expected_rows) != set(actual_rows):
+            raise ValueError(f"skin weighted-vertex set mismatch for {mesh_name}")
+        weighted_vertices += len(expected_rows)
+        for vertex in sorted(expected_rows):
+            expected_weights = {bone: float(weight) for bone, weight in expected_rows[vertex]["influences"]}
+            actual_weights = {bone: float(weight) for bone, weight in actual_rows[vertex]["influences"]}
+            if set(expected_weights) != set(actual_weights):
+                raise ValueError(f"skin influenced-bone set mismatch for {mesh_name} vertex {vertex}")
+            influence_count += len(expected_weights)
+            for bone in sorted(expected_weights):
+                delta = abs(expected_weights[bone] - actual_weights[bone])
+                if delta > max_delta:
+                    max_delta = delta
+                    worst = {"mesh": mesh_name, "vertex": vertex, "bone": bone, "delta": delta}
+
+    return {
+        "pass": max_delta <= tolerance,
+        "meshCount": len(first_meshes),
+        "weightedVertexCount": weighted_vertices,
+        "influenceCount": influence_count,
+        "sameMeshObjects": True,
+        "sameVertexCounts": True,
+        "sameVertexOrder": True,
+        "sameInfluencedBones": True,
+        "tolerance": tolerance,
+        "maxWeightDelta": max_delta,
+        "worst": worst,
+    }
