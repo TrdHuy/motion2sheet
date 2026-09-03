@@ -74,6 +74,59 @@ def capture_source_skin(objects: list[bpy.types.Object], armature: bpy.types.Obj
     return result
 
 
+def bake_source_meshes_to_frame(
+    objects: list[bpy.types.Object],
+    armature: bpy.types.Object,
+    frame: int,
+) -> dict[str, Any]:
+    """Bake the source Armature deformation into geometry at the canonical rest frame.
+
+    Mixamo FBX mesh bind geometry can differ from the canonicalized Blender rig rest
+    geometry even when the visible skinned character is correct. Skin Contract v1
+    reconstructs Blender Armature deformation from a geometry-only GLB, rest rig and
+    vertex weights, so the GLB base geometry must represent the same rest pose as the
+    exported character rig. Apply only the source Armature modifier at the proven rest
+    frame before stripping binding authority. Armature deformation preserves topology.
+    """
+    scene = bpy.context.scene
+    scene.frame_set(int(frame))
+    bpy.context.view_layer.update()
+    rows: list[dict[str, Any]] = []
+    for obj in sorted(objects, key=lambda item: item.name):
+        modifiers = [modifier for modifier in obj.modifiers if modifier.type == "ARMATURE" and modifier.object == armature]
+        if len(modifiers) != 1:
+            raise RuntimeError(
+                f"mesh {obj.name!r} rest bake requires exactly one source Armature modifier; found {len(modifiers)}"
+            )
+        modifier = modifiers[0]
+        vertex_count = len(obj.data.vertices)
+        world_before = matrix16(obj.matrix_world.copy())
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        result = bpy.ops.object.modifier_apply(modifier=modifier.name)
+        if "FINISHED" not in result:
+            raise RuntimeError(f"mesh {obj.name!r} Armature rest bake failed: {sorted(result)}")
+        if len(obj.data.vertices) != vertex_count:
+            raise RuntimeError(
+                f"mesh {obj.name!r} Armature rest bake changed topology: {vertex_count} -> {len(obj.data.vertices)}"
+            )
+        if matrix16(obj.matrix_world) != world_before:
+            raise RuntimeError(f"mesh {obj.name!r} Armature rest bake changed object transform")
+        rows.append({"object": obj.name, "vertexCount": vertex_count})
+    if not rows:
+        raise RuntimeError("Armature rest bake received no skinned meshes")
+    bpy.context.view_layer.update()
+    return {
+        "mode": "apply-source-armature-at-canonical-rest-frame",
+        "frame": int(frame),
+        "meshCount": len(rows),
+        "vertexCount": sum(int(row["vertexCount"]) for row in rows),
+        "topologyPreserved": True,
+        "meshes": rows,
+    }
+
+
 def _add_source_index_attribute(obj: bpy.types.Object) -> None:
     mesh = obj.data
     existing = mesh.attributes.get(SOURCE_INDEX_ATTRIBUTE)
