@@ -9,6 +9,7 @@ import pytest
 from motion2sheet.motion.cli import parser
 from motion2sheet.motion.model_render.profile import load_camera_profile
 from motion2sheet.motion.model_render.rest import character_rest_fingerprint
+from motion2sheet.motion.model_render.root_motion import contract_root_motion, root_motion_difference
 from motion2sheet.motion.model_render.runner import gif_frame_durations_ms, parse_frames
 
 
@@ -127,3 +128,47 @@ def test_export_character_source_has_no_animation_frame_rest_sampling():
     assert "source_start" not in source
     assert "animationFrameSampled\": False" in source
     assert "capture_character_rig_document" in source
+
+
+def test_character_rest_authority_uses_only_identity_encoding_carrier():
+    source = (Path(__file__).parents[3] / "motion2sheet/motion/model_render/blender_rest_authority.py").read_text(encoding="utf-8")
+    assert "M2S_CANONICAL_REST_IDENTITY_CARRIER" in source
+    assert "matrix_basis = Matrix.Identity(4)" in source
+    assert '"restEncodingCarrierDefinesRest": False' in source
+    assert '"restEncodingSourceAnimationRead": False' in source
+    assert '"restEncodingSourceAnimationSampled": False' in source
+
+
+def test_motion_normalizer_does_not_rebuild_rest_from_json_or_first_pose():
+    source = (Path(__file__).parents[3] / "motion2sheet/motion/model_render/blender_prepare_motion_source.py").read_text(encoding="utf-8")
+    assert "build_json_scene" not in source
+    assert "capture_animation_document" not in source
+    assert "export_armature_only_fbx(armature, output)" in source
+    assert '"normalizationRestRebuilt": False' in source
+    assert '"firstAnimationPoseUsedAsRest": False' in source
+    assert '"animationFrameUsedAsRest": False' in source
+
+
+def test_contract_root_motion_is_data_driven():
+    rig = {"bones": [{"name": "Root", "parent": None}, {"name": "Child", "parent": "Root"}]}
+    animation_doc = {
+        "frames": [
+            {"frame": 4, "bones": {"Root": {"translation": [1.0, 2.0, 3.0]}}},
+            {"frame": 9, "bones": {"Root": {"translation": [4.0, 6.0, 3.0]}}},
+        ]
+    }
+    metrics = contract_root_motion(rig, animation_doc)
+    assert metrics["rootBone"] == "Root"
+    assert metrics["rootTranslationStart"] == [1.0, 2.0, 3.0]
+    assert metrics["rootTranslationEnd"] == [4.0, 6.0, 3.0]
+    assert metrics["rootTranslationDelta"] == [3.0, 4.0, 0.0]
+    assert metrics["rootDisplacement"] == 5.0
+    assert metrics["rootDirection"] == pytest.approx([0.6, 0.8, 0.0])
+
+
+def test_root_motion_difference_requires_material_contract_difference():
+    moving = {"rootDisplacement": 2.0}
+    stationary = {"rootDisplacement": 0.02}
+    assert root_motion_difference(moving, stationary)["pass"] is True
+    almost_same = {"rootDisplacement": 1.99}
+    assert root_motion_difference(moving, almost_same)["pass"] is False
