@@ -74,6 +74,36 @@ jobs:
           motion2sheet export-animation-json "$NORMALIZED" --output "$ROOT/animation"
           test -s "$ROOT/animation/rig.json"
           test -s "$ROOT/animation/animation.json"
+      - name: Render one actual-source silhouette before deletion
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from motion2sheet.motion.model_render.profile import load_camera_profile
+          from motion2sheet.motion.roundtrip.schema import read_json
+          root=Path(os.environ['ROOT'])
+          animation=read_json(root/'animation'/'animation.json')
+          normalization=json.loads((root/'motion_source_normalization.json').read_text())
+          first=int(animation['frames'][0]['frame'])
+          output=root/'source-reference'
+          output.mkdir(parents=True,exist_ok=True)
+          request={
+              'sourcePath': os.environ['ASSET'],
+              'output': str(output.resolve()),
+              'selectedFrames': [first],
+              'frameOffset': int(normalization['frameOffset']),
+              'canvas': [320,320],
+              'background': {'transparent': True, 'rgba': [0.0,0.0,0.0,0.0]},
+              'camera': load_camera_profile(Path(os.environ['CAMERA'])),
+          }
+          (output/'request.json').write_text(json.dumps(request,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          PY
+          blender --background --factory-startup --python-exit-code 1 \
+            --python motion2sheet/motion/model_render/blender_source_reference.py -- \
+            --request "$ROOT/source-reference/request.json"
+          test -s "$ROOT/source-reference/.frames/frame_0002.png"
+          test -s "$ROOT/source-reference/source_reference.json"
       - name: Delete every FBX before JSON-only playback preflight
         run: |
           set -euo pipefail
@@ -97,15 +127,19 @@ jobs:
             --output "$ROOT/render"
           test ! -e "$ASSET"
           test ! -e "$NORMALIZED"
-      - name: Verify strict preflight metrics
+      - name: Verify strict Skin, playback and silhouette metrics
         run: |
           python - <<'PY'
           import json, os
           from pathlib import Path
+          from PIL import Image
           root=Path(os.environ['ROOT'])
           report=json.loads((root/'render'/'render.json').read_text())
+          export=json.loads((root/'character'/'diagnostics'/'export.json').read_text())
           skin=report['skinReconstruction']
           playback=report['animationFidelity']
+          assert export['modelAuthority']['geometryPose']=='canonical-character-rest'
+          assert export['geometryRestBake']['topologyPreserved']
           assert skin['pass'] and skin['maxWeightDelta'] <= 1e-8, skin
           assert playback['pass'], playback
           assert playback['leftRightIdentityPass'] and playback['fullBonePlayback']
@@ -113,13 +147,35 @@ jobs:
           assert playback['maxJointBendErrorDegrees'] <= 0.001
           assert playback['maxLocalRotationErrorDegrees'] <= 0.0001
           assert playback['rootMotion']['directionPreserved']
-          print(json.dumps({
+          source=Image.open(root/'source-reference'/'.frames'/'frame_0002.png').convert('RGBA')
+          target=Image.open(root/'render'/'pose_sheet.png').convert('RGBA')
+          assert source.size==target.size==(320,320)
+          source_alpha=source.getchannel('A')
+          target_alpha=target.getchannel('A')
+          source_mask=bytes(1 if value else 0 for value in source_alpha.getdata())
+          target_mask=bytes(1 if value else 0 for value in target_alpha.getdata())
+          mismatch=sum(a!=b for a,b in zip(source_mask,target_mask))
+          foreground=sum(source_mask)
+          union=sum(1 for a,b in zip(source_mask,target_mask) if a or b)
+          intersection=sum(1 for a,b in zip(source_mask,target_mask) if a and b)
+          iou=intersection/union if union else 1.0
+          assert mismatch==0, {'silhouetteMismatchPixels':mismatch,'silhouetteIoU':iou}
+          visual=Image.new('RGBA',(640,356),(255,255,255,255))
+          visual.alpha_composite(source,(0,36)); visual.alpha_composite(target,(320,36))
+          visual.save(root/'visual-comparison.png')
+          source.close(); target.close(); visual.close()
+          metrics={
               'maxWeightDelta': skin['maxWeightDelta'],
               'maxSemanticDirectionErrorDegrees': playback['maxSemanticDirectionErrorDegrees'],
               'maxJointBendErrorDegrees': playback['maxJointBendErrorDegrees'],
               'maxLocalRotationErrorDegrees': playback['maxLocalRotationErrorDegrees'],
               'rootDirectionErrorDegrees': playback['rootMotion']['directionErrorDegrees'],
-          }, indent=2, sort_keys=True))
+              'silhouetteForegroundPixels': foreground,
+              'silhouetteMismatchPixels': mismatch,
+              'silhouetteIoU': iou,
+          }
+          (root/'preflight-summary.json').write_text(json.dumps(metrics,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(metrics,indent=2,sort_keys=True))
           PY
       - name: Upload preflight diagnostics
         if: always()
