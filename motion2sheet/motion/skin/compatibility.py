@@ -6,6 +6,7 @@ from typing import Any
 from motion2sheet.motion.roundtrip.schema import validate_rig_document
 
 REST_BASIS_TOLERANCE_DEGREES = 0.001
+_COORDINATE_FIELDS = ("handedness", "rightAxis", "forwardAxis", "upAxis")
 
 
 def _sub(a, b):
@@ -96,67 +97,138 @@ def _local_bases(rows: dict[str, dict[str, Any]]):
     }
 
 
-def validate_level1_rig_compatibility(
+def diagnose_level1_rig_compatibility(
     animation_rig: dict[str, Any],
     character_rig: dict[str, Any],
     *,
     rest_basis_tolerance_degrees: float = REST_BASIS_TOLERANCE_DEGREES,
 ) -> dict[str, Any]:
+    """Return a complete, deterministic Level-1 compatibility report.
+
+    This function is diagnostic only: it never performs retargeting, fuzzy mapping,
+    or tolerance adaptation. Structural and coordinate mismatches are collected so
+    CI can explain an incompatible fixture in one artifact instead of stopping at
+    the first bone. The strict validator below preserves fail-closed behavior.
+    """
     if rest_basis_tolerance_degrees < 0.0:
         raise ValueError("rest basis tolerance must be non-negative")
+
     source = validate_rig_document(animation_rig)
     target = validate_rig_document(character_rig)
     source_rows = _rows(source)
     target_rows = _rows(target)
     source_names = set(source_rows)
     target_names = set(target_rows)
+
     missing = sorted(source_names - target_names)
     extra = sorted(target_names - source_names)
-    if missing or extra:
-        raise ValueError(f"Level-1 bone set mismatch: missing={missing} extra={extra}")
+    common_names = sorted(source_names & target_names)
 
-    for name in sorted(source_names):
+    parent_mismatches = []
+    for name in common_names:
         source_parent = source_rows[name]["parent"]
         target_parent = target_rows[name]["parent"]
         if source_parent != target_parent:
-            raise ValueError(
-                f"Level-1 parent mismatch for {name}: animation={source_parent!r} character={target_parent!r}"
+            parent_mismatches.append(
+                {
+                    "bone": name,
+                    "animationParent": source_parent,
+                    "characterParent": target_parent,
+                }
             )
 
     source_coordinate = source["coordinateSystem"]
     target_coordinate = target["coordinateSystem"]
-    for field in ("handedness", "rightAxis", "forwardAxis", "upAxis"):
-        if source_coordinate.get(field) != target_coordinate.get(field):
-            raise ValueError(
-                f"Level-1 coordinate convention mismatch for {field}: "
-                f"animation={source_coordinate.get(field)!r} character={target_coordinate.get(field)!r}"
+    coordinate_mismatches = []
+    for field in _COORDINATE_FIELDS:
+        source_value = source_coordinate.get(field)
+        target_value = target_coordinate.get(field)
+        if source_value != target_value:
+            coordinate_mismatches.append(
+                {
+                    "field": field,
+                    "animation": source_value,
+                    "character": target_value,
+                }
             )
 
-    source_bases = _local_bases(source_rows)
-    target_bases = _local_bases(target_rows)
-    max_error = -1.0
-    worst = None
-    for name in sorted(source_names):
-        error = _rotation_error_degrees(source_bases[name], target_bases[name])
-        if error > max_error:
-            max_error = error
-            worst = name
-        if error > rest_basis_tolerance_degrees:
-            raise ValueError(
-                f"Level-1 rest-basis mismatch for {name}: "
-                f"error={error:.12g}deg tolerance={rest_basis_tolerance_degrees:.12g}deg"
-            )
+    rest_errors: list[dict[str, Any]] = []
+    max_error: float | None = None
+    worst: str | None = None
+    if not missing and not extra and not parent_mismatches:
+        source_bases = _local_bases(source_rows)
+        target_bases = _local_bases(target_rows)
+        max_error = -1.0
+        for name in sorted(source_names):
+            error = _rotation_error_degrees(source_bases[name], target_bases[name])
+            if error > max_error:
+                max_error = error
+                worst = name
+            if error > rest_basis_tolerance_degrees:
+                rest_errors.append({"bone": name, "errorDegrees": error})
+
+    exact_bones = not missing and not extra
+    exact_hierarchy = exact_bones and not parent_mismatches
+    coordinate_match = not coordinate_mismatches
+    passed = exact_bones and exact_hierarchy and coordinate_match and not rest_errors
 
     return {
-        "pass": True,
+        "pass": passed,
         "level": 1,
         "boneCount": len(source_names),
-        "exactBoneNames": True,
-        "exactHierarchy": True,
-        "coordinateConventionMatch": True,
+        "exactBoneNames": exact_bones,
+        "exactHierarchy": exact_hierarchy,
+        "coordinateConventionMatch": coordinate_match,
+        "missingBones": missing,
+        "extraBones": extra,
+        "parentMismatches": parent_mismatches,
+        "coordinateMismatches": coordinate_mismatches,
         "restBasisToleranceDegrees": rest_basis_tolerance_degrees,
         "maxRestBasisErrorDegrees": max_error,
         "worstRestBasisBone": worst,
+        "restBasisMismatchCount": len(rest_errors),
+        "restBasisMismatches": rest_errors,
         "retargeting": False,
         "fuzzyMapping": False,
     }
+
+
+def validate_level1_rig_compatibility(
+    animation_rig: dict[str, Any],
+    character_rig: dict[str, Any],
+    *,
+    rest_basis_tolerance_degrees: float = REST_BASIS_TOLERANCE_DEGREES,
+) -> dict[str, Any]:
+    report = diagnose_level1_rig_compatibility(
+        animation_rig,
+        character_rig,
+        rest_basis_tolerance_degrees=rest_basis_tolerance_degrees,
+    )
+
+    missing = report["missingBones"]
+    extra = report["extraBones"]
+    if missing or extra:
+        raise ValueError(f"Level-1 bone set mismatch: missing={missing} extra={extra}")
+
+    if report["parentMismatches"]:
+        mismatch = report["parentMismatches"][0]
+        raise ValueError(
+            f"Level-1 parent mismatch for {mismatch['bone']}: "
+            f"animation={mismatch['animationParent']!r} character={mismatch['characterParent']!r}"
+        )
+
+    if report["coordinateMismatches"]:
+        mismatch = report["coordinateMismatches"][0]
+        raise ValueError(
+            f"Level-1 coordinate convention mismatch for {mismatch['field']}: "
+            f"animation={mismatch['animation']!r} character={mismatch['character']!r}"
+        )
+
+    if report["restBasisMismatches"]:
+        mismatch = report["restBasisMismatches"][0]
+        raise ValueError(
+            f"Level-1 rest-basis mismatch for {mismatch['bone']}: "
+            f"error={mismatch['errorDegrees']:.12g}deg tolerance={rest_basis_tolerance_degrees:.12g}deg"
+        )
+
+    return report
