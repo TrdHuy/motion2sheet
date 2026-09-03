@@ -170,6 +170,26 @@ def test_unknown_skin_bone_fails_closed():
         validate_skin_document(skin, character_rig)
 
 
+def test_skin_model_coordinate_mismatch_fails_closed():
+    character_rig = rig()
+    skin = build_skin(character_rig)
+    skin["model"]["coordinateSystem"]["upAxis"] = "+Y"
+    with pytest.raises(ValueError, match="coordinate convention"):
+        validate_skin_document(skin, character_rig)
+
+
+def test_model_asset_hash_mismatch_fails_closed(tmp_path):
+    model = tmp_path / "model.glb"
+    model.write_bytes(b"fixture-glb")
+    skin = build_skin(model_sha="2" * 64)
+    with pytest.raises(ValueError, match="asset SHA-256"):
+        verify_model_identity(
+            skin,
+            model,
+            [{"object": "Character", "vertexCount": 3, "vertexOrderHash": skin["meshes"][0]["vertexOrderHash"]}],
+        )
+
+
 def test_model_vertex_hash_mismatch_fails_closed(tmp_path):
     model = tmp_path / "model.glb"
     model.write_bytes(b"fixture-glb")
