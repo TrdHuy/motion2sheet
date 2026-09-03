@@ -31,6 +31,7 @@ jobs:
       RUN_INPLACE_SIZE: '333840'
       ROOT: build/real_skin_cross_animation
       CAMERA: profiles/cameras/front_final.json5
+      CROSS_CANVAS: 224x224
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -188,6 +189,50 @@ jobs:
           (root/'diagnostics'/'normalization_summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
           print(json.dumps(summary,indent=2,sort_keys=True))
           PY
+      - name: Fail closed unless every Contract B rig matches fixed character Level-1
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from motion2sheet.motion.roundtrip.schema import read_json
+          from motion2sheet.motion.skin import validate_level1_rig_compatibility
+
+          root=Path(os.environ['ROOT'])
+          character=read_json(root/'character'/'rig.json')
+          reports={}
+          failures=[]
+          for clip in ('walking','idle','run','run-inplace'):
+              rig=read_json(root/clip/'rig.json')
+              try:
+                  level1=validate_level1_rig_compatibility(rig,character)
+              except ValueError as exc:
+                  level1={
+                      'pass':False,
+                      'level':1,
+                      'restBasisToleranceDegrees':0.001,
+                      'retargeting':False,
+                      'fuzzyMapping':False,
+                      'error':str(exc),
+                  }
+                  failures.append({'clip':clip,'error':str(exc)})
+              reports[clip]=level1
+          payload={
+              'schema':'motion2sheet.diagnostics.fixed-character-level1-preflight',
+              'version':1,
+              'characterExportCount':1,
+              'pass':not failures,
+              'retargetingPermitted':False,
+              'fuzzyMappingPermitted':False,
+              'restBasisToleranceDegrees':0.001,
+              'clips':reports,
+              'failures':failures,
+          }
+          out=root/'diagnostics'/'fixed_character_level1_preflight.json'
+          out.write_text(json.dumps(payload,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(payload,indent=2,sort_keys=True))
+          if failures:
+              raise SystemExit('fixed-character Level-1 preflight failed; replace incompatible animation fixture(s), do not retarget: '+json.dumps(failures,sort_keys=True))
+          PY
       - name: Delete every FBX before canonical JSON-only renders
         run: |
           set -euo pipefail
@@ -197,15 +242,15 @@ jobs:
       - name: Render SAME character with Walking Contract B
         run: |
           set -euo pipefail
-          motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/walking/rig.json" --animation "$ROOT/walking/animation.json" --camera-profile "$CAMERA" --sheet-columns 8 --canvas 320x320 --background transparent --gif --output "$ROOT/render-walking"
+          motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/walking/rig.json" --animation "$ROOT/walking/animation.json" --camera-profile "$CAMERA" --sheet-columns 8 --canvas "$CROSS_CANVAS" --background transparent --gif --output "$ROOT/render-walking"
       - name: Render SAME character with independent Idle Contract B
         run: |
           set -euo pipefail
-          motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/idle/rig.json" --animation "$ROOT/idle/animation.json" --camera-profile "$CAMERA" --sheet-columns 8 --canvas 320x320 --background transparent --gif --output "$ROOT/render-idle"
+          motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/idle/rig.json" --animation "$ROOT/idle/animation.json" --camera-profile "$CAMERA" --sheet-columns 8 --canvas "$CROSS_CANVAS" --background transparent --gif --output "$ROOT/render-idle"
       - name: Render SAME character with independent Run Contract B
         run: |
           set -euo pipefail
-          motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/run/rig.json" --animation "$ROOT/run/animation.json" --camera-profile "$CAMERA" --sheet-columns 8 --canvas 320x320 --background transparent --gif --output "$ROOT/render-run"
+          motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/run/rig.json" --animation "$ROOT/run/animation.json" --camera-profile "$CAMERA" --sheet-columns 8 --canvas "$CROSS_CANVAS" --background transparent --gif --output "$ROOT/render-run"
       - name: Verify one character, strict Level-1, skin, playback, visual and GIF gates
         run: |
           python - <<'PY'
@@ -223,6 +268,10 @@ jobs:
           assert actual_identity==expected_identity
           deletion=json.loads((root/'diagnostics'/'fbx_deletion.json').read_text())
           assert deletion['allOriginalAndNormalizedFbxDeletedBeforeRender'] is True
+          fixed_preflight=json.loads((root/'diagnostics'/'fixed_character_level1_preflight.json').read_text())
+          assert fixed_preflight['pass'] is True
+          assert fixed_preflight['retargetingPermitted'] is False and fixed_preflight['fuzzyMappingPermitted'] is False
+          assert fixed_preflight['restBasisToleranceDegrees']==0.001
           for key in ('CHARACTER_FBX','IDLE_FBX','RUN_FBX','RUN_INPLACE_FBX','WALK_NORMALIZED','IDLE_NORMALIZED','RUN_NORMALIZED','RUN_INPLACE_NORMALIZED'):
               assert not Path(os.environ[key]).exists(), key
 
@@ -293,6 +342,7 @@ jobs:
               'characterExportCount':1,
               'characterIdentityBeforeAndAfter':{'pass':True,**actual_identity},
               'allFbxDeletedBeforeRender':True,
+              'fixedCharacterLevel1Preflight':fixed_preflight,
               'clips':clip_reports,
               'runInPlaceLevel1':inplace_level1,
               'rootMotion':root_motion,
