@@ -13,6 +13,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 import bpy
 
 from motion2sheet.motion.model_render.blender_helpers import (
+    bake_source_meshes_to_frame,
     build_final_skin_meshes,
     capture_source_skin,
     export_geometry_glb,
@@ -89,6 +90,12 @@ def main() -> None:
     # Capture all source skin authority before removing any binding.
     source_skin = capture_source_skin(skinned, armature, source_bone_names)
     source_stats = _source_stats(source_skin)
+
+    # The Mixamo mesh's raw bind geometry is not necessarily the same pose as the
+    # canonicalized Blender rig rest geometry. Bake the visible source deformation at
+    # the first canonical motion sample before removing binding. The later Level-1
+    # canonicalization proves that this sample is the exported Contract B rest sample.
+    geometry_rest_bake = bake_source_meshes_to_frame(skinned, armature, source_start)
 
     # Freeze geometry/material authority into an unskinned staging GLB before the
     # scene is cleared to canonicalize the armature. The staging/final GLBs contain
@@ -218,6 +225,7 @@ def main() -> None:
         "source": {"filename": source.name, "sha256": source_sha},
         "armature": {"name": source_armature_name, "boneCount": len(rig["bones"])},
         "restBasisCanonicalization": canonicalization,
+        "geometryRestBake": geometry_rest_bake,
         "statistics": source_stats,
         "meshes": [
             {
@@ -242,6 +250,7 @@ def main() -> None:
         "skinStatistics": stats,
         "characterBoneCount": len(rig["bones"]),
         "restBasisCanonicalization": canonicalization,
+        "geometryRestBake": geometry_rest_bake,
         "modelAuthority": {
             "format": "GLB",
             "sha256": model_sha,
@@ -249,6 +258,7 @@ def main() -> None:
             "containsArmatureModifiers": False,
             "containsVertexGroups": False,
             "sourceVertexMappingAttribute": "_M2S_SOURCE_VERTEX",
+            "geometryPose": "canonical-character-rest",
         },
         "outputs": {
             "modelGlb": "model.glb",
