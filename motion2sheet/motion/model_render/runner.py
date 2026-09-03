@@ -11,7 +11,12 @@ from typing import Any
 from PIL import Image
 
 from motion2sheet.motion.roundtrip.schema import read_json, validate_animation_document, validate_rig_document
-from motion2sheet.motion.skin import skin_statistics, validate_level1_rig_compatibility, validate_skin_document
+from motion2sheet.motion.skin import (
+    diagnose_level1_rig_compatibility,
+    skin_statistics,
+    validate_level1_rig_compatibility,
+    validate_skin_document,
+)
 
 from .profile import load_camera_profile
 
@@ -128,6 +133,31 @@ def compose_gif(frame_paths: list[Path], output: Path, fps: float) -> dict[str, 
     }
 
 
+def _validate_and_record_level1_compatibility(
+    animation_rig: dict[str, Any],
+    character_rig: dict[str, Any],
+    output: Path,
+) -> dict[str, Any]:
+    diagnostic = diagnose_level1_rig_compatibility(animation_rig, character_rig)
+    _write_json(output / "diagnostics" / "rig_compatibility.json", diagnostic)
+    try:
+        return validate_level1_rig_compatibility(animation_rig, character_rig)
+    except ValueError as exc:
+        summary = {
+            "missingBoneCount": len(diagnostic["missingBones"]),
+            "extraBoneCount": len(diagnostic["extraBones"]),
+            "parentMismatchCount": len(diagnostic["parentMismatches"]),
+            "coordinateMismatchCount": len(diagnostic["coordinateMismatches"]),
+            "restBasisMismatchCount": diagnostic["restBasisMismatchCount"],
+            "maxRestBasisErrorDegrees": diagnostic["maxRestBasisErrorDegrees"],
+            "worstRestBasisBone": diagnostic["worstRestBasisBone"],
+            "restBasisToleranceDegrees": diagnostic["restBasisToleranceDegrees"],
+            "retargeting": diagnostic["retargeting"],
+            "fuzzyMapping": diagnostic["fuzzyMapping"],
+        }
+        raise ValueError(f"{exc}; Level-1 diagnostic summary={json.dumps(summary, sort_keys=True)}") from exc
+
+
 def export_character(*, input_path: Path, output: Path, blender: str = "blender") -> dict[str, Any]:
     input_path = input_path.resolve()
     if not input_path.is_file() or input_path.suffix.lower() != ".fbx":
@@ -183,6 +213,7 @@ def render_model_animation(
     animation_rig_path = animation_rig_path.resolve()
     animation_path = animation_path.resolve()
     camera_profile_path = camera_profile_path.resolve()
+    output = output.resolve()
     for path in (model_path, character_rig_path, skin_path, animation_rig_path, animation_path, camera_profile_path):
         if not path.is_file():
             raise ValueError(f"render-model-animation input does not exist: {path}")
@@ -194,11 +225,10 @@ def render_model_animation(
     validate_rig_document(animation_rig)
     validate_animation_document(animation, animation_rig)
     validate_skin_document(skin, character_rig)
-    compatibility = validate_level1_rig_compatibility(animation_rig, character_rig)
+    output.mkdir(parents=True, exist_ok=True)
+    compatibility = _validate_and_record_level1_compatibility(animation_rig, character_rig, output)
     camera = load_camera_profile(camera_profile_path)
     selected = parse_frames(frames, animation)
-    output = output.resolve()
-    output.mkdir(parents=True, exist_ok=True)
     frame_dir = output / ".frames"
     shutil.rmtree(frame_dir, ignore_errors=True)
     frame_dir.mkdir(parents=True)
