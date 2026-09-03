@@ -195,7 +195,7 @@ jobs:
           import json, os
           from pathlib import Path
           from motion2sheet.motion.roundtrip.schema import read_json
-          from motion2sheet.motion.skin import validate_level1_rig_compatibility
+          from motion2sheet.motion.skin import diagnose_level1_rig_compatibility, validate_level1_rig_compatibility
 
           root=Path(os.environ['ROOT'])
           character=read_json(root/'character'/'rig.json')
@@ -203,22 +203,26 @@ jobs:
           failures=[]
           for clip in ('walking','idle','run','run-inplace'):
               rig=read_json(root/clip/'rig.json')
-              try:
-                  level1=validate_level1_rig_compatibility(rig,character)
-              except ValueError as exc:
-                  level1={
-                      'pass':False,
-                      'level':1,
-                      'restBasisToleranceDegrees':0.001,
-                      'retargeting':False,
-                      'fuzzyMapping':False,
-                      'error':str(exc),
-                  }
-                  failures.append({'clip':clip,'error':str(exc)})
+              level1=diagnose_level1_rig_compatibility(rig,character)
               reports[clip]=level1
+              if level1['pass']:
+                  strict=validate_level1_rig_compatibility(rig,character)
+                  assert strict['pass'] is True
+                  assert strict['restBasisToleranceDegrees']==0.001
+                  continue
+              failures.append({
+                  'clip':clip,
+                  'missingBones':level1['missingBones'],
+                  'extraBones':level1['extraBones'],
+                  'parentMismatchCount':len(level1['parentMismatches']),
+                  'coordinateMismatchCount':len(level1['coordinateMismatches']),
+                  'restBasisMismatchCount':level1['restBasisMismatchCount'],
+                  'maxRestBasisErrorDegrees':level1['maxRestBasisErrorDegrees'],
+                  'worstRestBasisBone':level1['worstRestBasisBone'],
+              })
           payload={
               'schema':'motion2sheet.diagnostics.fixed-character-level1-preflight',
-              'version':1,
+              'version':2,
               'characterExportCount':1,
               'pass':not failures,
               'retargetingPermitted':False,
@@ -270,6 +274,7 @@ jobs:
           assert deletion['allOriginalAndNormalizedFbxDeletedBeforeRender'] is True
           fixed_preflight=json.loads((root/'diagnostics'/'fixed_character_level1_preflight.json').read_text())
           assert fixed_preflight['pass'] is True
+          assert fixed_preflight['version']==2
           assert fixed_preflight['retargetingPermitted'] is False and fixed_preflight['fuzzyMappingPermitted'] is False
           assert fixed_preflight['restBasisToleranceDegrees']==0.001
           for key in ('CHARACTER_FBX','IDLE_FBX','RUN_FBX','RUN_INPLACE_FBX','WALK_NORMALIZED','IDLE_NORMALIZED','RUN_NORMALIZED','RUN_INPLACE_NORMALIZED'):
