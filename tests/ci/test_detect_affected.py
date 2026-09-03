@@ -16,7 +16,8 @@ def test_component_change_runs_only_dependent_targets():
 def test_vfx_effect_change_does_not_run_motion_or_anim():
     manifest=load_manifest(); components,targets=resolve("motion2sheet/vfx2sheet/effects/splash/config.py",manifest=manifest); assert "vfx-splash" in components; assert "vfx-unit" in targets; assert "vfx-splash-e2e" in targets; assert not anim_e2e_targets(manifest,targets)
 def test_dynamic_animation_discovery_accepts_v2_two_file_clip(tmp_path):
-    make_clip(tmp_path,"walk"); assert discover_animation_clips(tmp_path)==["walk"]; manifest=load_manifest(repo_root=tmp_path); assert manifest["test_targets"]["anim-walk-e2e"]["target"]=="walk"; assert "anim-walk-unit" not in manifest["test_targets"]; assert "anim-walk" not in manifest["components"]ndef test_incomplete_animation_clip_fails_closed(tmp_path):
+    make_clip(tmp_path,"walk"); assert discover_animation_clips(tmp_path)==["walk"]; manifest=load_manifest(repo_root=tmp_path); assert manifest["test_targets"]["anim-walk-e2e"]["target"]=="walk"; assert "anim-walk-unit" not in manifest["test_targets"]; assert "anim-walk" not in manifest["components"]
+def test_incomplete_animation_clip_fails_closed(tmp_path):
     clip=tmp_path/"profiles/anim2sheet/animations/walk"; clip.mkdir(parents=True); (clip/"animation.json5").write_text("{}\n",encoding="utf-8")
     with pytest.raises(ValueError,match="Incomplete animation clip"): discover_animation_clips(tmp_path)
 
