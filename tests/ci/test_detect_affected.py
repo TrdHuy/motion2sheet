@@ -36,7 +36,8 @@ def test_full_ci_selects_all_discovered_animation_clips(tmp_path):
     for clip in ("walk","guard","hurt"):make_clip(tmp_path,clip)
     manifest=load_manifest(repo_root=tmp_path); _,targets=resolve_targets(manifest,[],full=True); assert anim_e2e_targets(manifest,targets)=={"anim-walk-e2e","anim-guard-e2e","anim-hurt-e2e"}
 def test_global_ci_change_selects_all_discovered_animation_clips(tmp_path):
-    for clip in ("walk","guard"):make_clip(tmp_path,"walk"); manifest=load_manifest(repo_root=tmp_path); _,targets=resolve(".github/workflows/ci.yml",manifest=manifest); assert targets==set(manifest["test_targets"]); assert anim_e2e_targets(manifest,targets)=={"anim-walk-e2e","anim-guard-e2e"}
+    for clip in ("walk","guard"):make_clip(tmp_path,clip)
+    manifest=load_manifest(repo_root=tmp_path); _,targets=resolve(".github/workflows/ci.yml",manifest=manifest); assert targets==set(manifest["test_targets"]); assert anim_e2e_targets(manifest,targets)=={"anim-walk-e2e","anim-guard-e2e"}
 def test_current_repo_discovers_canonical_clips_without_manifest_whitelist():
     manifest=load_manifest(); assert discover_animation_clips(ROOT)==["gale_slash","sword_idle"]; assert "anim-gale-slash" not in manifest["components"]; assert "anim-sword-idle" not in manifest["components"]
 def test_gale_motion_change_does_not_pull_idle_e2e():
