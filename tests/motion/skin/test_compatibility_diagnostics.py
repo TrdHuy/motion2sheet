@@ -171,8 +171,12 @@ def test_level1_diagnostic_collects_parent_mismatch_without_retaining_false_rest
 def test_level2_accepts_only_exact_skeleton_rest_basis_difference():
     source = _rig()
     target = copy.deepcopy(source)
+    # Rotate both absolute edit-bone bases equally. Root local basis changes by 2deg,
+    # while Child remains locally identical to Root, keeping the PR11 derived rest
+    # cache internally consistent and isolating one exact-skeleton basis mismatch.
     target["bones"][0]["editGeometry"]["roll"] = math.radians(2.0)
     target["bones"][0]["rest"]["rotationQuaternion"] = list(_y_quaternion(2.0))
+    target["bones"][1]["editGeometry"]["roll"] = math.radians(2.0)
 
     report = validate_level2_rest_basis_eligibility(source, target)
 
