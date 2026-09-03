@@ -63,6 +63,7 @@ jobs:
           test -s sample/walk_mixamo.fbx
           WALK_SHA256="$(sha256sum sample/walk_mixamo.fbx | awk '{print $1}')"
           WALK_SIZE="$(stat -c %s sample/walk_mixamo.fbx)"
+          export WALK_SHA256 WALK_SIZE
           CHARACTER_FBX="$RUNNER_TEMP/walking_mixamo_with_skin.fbx"
           IDLE_FBX="$RUNNER_TEMP/idle-without-skin.fbx"
           RUN_FBX="$RUNNER_TEMP/run-without-skin-not-inplace.fbx"
