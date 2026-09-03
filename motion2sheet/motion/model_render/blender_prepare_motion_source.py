@@ -329,7 +329,7 @@ def main() -> None:
     report = {
         "schema": "motion2sheet.diagnostics.level1-motion-source-normalization",
         "version": 1,
-        "reason": "Source pose matrices are re-expressed as local matrix_basis motion on the clip-independent canonical bind/EditBone rest. Static FBX rest is exported with the Action detached and identity pose, while the sole stored Action is baked separately. This is same-skeleton encoding canonicalization only; no animation frame defines rest authority.",
+        "reason": "Source pose matrices are re-expressed as local matrix_basis motion on the canonical bind/EditBone rest captured from the same source FBX, independently of animation samples. Static FBX rest is exported with the Action detached and identity pose, while the sole stored Action is baked separately. This is same-skeleton encoding canonicalization only; it does not make independent source rest rigs compatible, and no animation frame defines rest authority.",
         "source": {"filename": source.name, "sha256": _sha256(source), "frameRange": [source_start, source_end]},
         "sourceImportedRest": imported_rest,
         "sourceCharacterRest": canonical_rest,
