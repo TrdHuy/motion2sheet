@@ -13,8 +13,10 @@ from PIL import Image
 from motion2sheet.motion.roundtrip.schema import read_json, validate_animation_document, validate_rig_document
 from motion2sheet.motion.skin import (
     diagnose_level1_rig_compatibility,
+    diagnose_level2_rest_basis_eligibility,
     skin_statistics,
     validate_level1_rig_compatibility,
+    validate_level2_rest_basis_eligibility,
     validate_skin_document,
 )
 
@@ -133,6 +135,21 @@ def compose_gif(frame_paths: list[Path], output: Path, fps: float) -> dict[str, 
     }
 
 
+def _level1_failure_summary(diagnostic: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "missingBoneCount": len(diagnostic["missingBones"]),
+        "extraBoneCount": len(diagnostic["extraBones"]),
+        "parentMismatchCount": len(diagnostic["parentMismatches"]),
+        "coordinateMismatchCount": len(diagnostic["coordinateMismatches"]),
+        "restBasisMismatchCount": diagnostic["restBasisMismatchCount"],
+        "maxRestBasisErrorDegrees": diagnostic["maxRestBasisErrorDegrees"],
+        "worstRestBasisBone": diagnostic["worstRestBasisBone"],
+        "restBasisToleranceDegrees": diagnostic["restBasisToleranceDegrees"],
+        "retargeting": diagnostic["retargeting"],
+        "fuzzyMapping": diagnostic["fuzzyMapping"],
+    }
+
+
 def _validate_and_record_level1_compatibility(
     animation_rig: dict[str, Any],
     character_rig: dict[str, Any],
@@ -143,19 +160,45 @@ def _validate_and_record_level1_compatibility(
     try:
         return validate_level1_rig_compatibility(animation_rig, character_rig)
     except ValueError as exc:
-        summary = {
-            "missingBoneCount": len(diagnostic["missingBones"]),
-            "extraBoneCount": len(diagnostic["extraBones"]),
-            "parentMismatchCount": len(diagnostic["parentMismatches"]),
-            "coordinateMismatchCount": len(diagnostic["coordinateMismatches"]),
-            "restBasisMismatchCount": diagnostic["restBasisMismatchCount"],
-            "maxRestBasisErrorDegrees": diagnostic["maxRestBasisErrorDegrees"],
-            "worstRestBasisBone": diagnostic["worstRestBasisBone"],
-            "restBasisToleranceDegrees": diagnostic["restBasisToleranceDegrees"],
-            "retargeting": diagnostic["retargeting"],
-            "fuzzyMapping": diagnostic["fuzzyMapping"],
+        raise ValueError(f"{exc}; Level-1 diagnostic summary={json.dumps(_level1_failure_summary(diagnostic), sort_keys=True)}") from exc
+
+
+def _select_compatibility(
+    animation_rig: dict[str, Any],
+    character_rig: dict[str, Any],
+    output: Path,
+    maximum_level: int,
+) -> dict[str, Any]:
+    if maximum_level not in (1, 2):
+        raise ValueError("compatibility level must be 1 or 2")
+    level1_diagnostic = diagnose_level1_rig_compatibility(animation_rig, character_rig)
+    _write_json(output / "diagnostics" / "rig_compatibility.json", level1_diagnostic)
+    if level1_diagnostic["pass"]:
+        strict = validate_level1_rig_compatibility(animation_rig, character_rig)
+        return {
+            "compatibilityLevel": 1,
+            "maximumCompatibilityLevel": maximum_level,
+            "adaptationApplied": False,
+            "adaptationType": None,
+            "level1": strict,
+            "level2Eligibility": None,
+            "retargeting": {"boneMapping": "identity", "fuzzyMapping": False},
         }
-        raise ValueError(f"{exc}; Level-1 diagnostic summary={json.dumps(summary, sort_keys=True)}") from exc
+    if maximum_level == 1:
+        return _validate_and_record_level1_compatibility(animation_rig, character_rig, output)
+
+    level2 = diagnose_level2_rest_basis_eligibility(animation_rig, character_rig)
+    _write_json(output / "diagnostics" / "rest_basis_eligibility.json", level2)
+    strict_level2 = validate_level2_rest_basis_eligibility(animation_rig, character_rig)
+    return {
+        "compatibilityLevel": 2,
+        "maximumCompatibilityLevel": maximum_level,
+        "adaptationApplied": True,
+        "adaptationType": "rest-basis",
+        "level1": level1_diagnostic,
+        "level2Eligibility": strict_level2,
+        "retargeting": {"boneMapping": "exact-name", "fuzzyMapping": False},
+    }
 
 
 def export_character(*, input_path: Path, output: Path, blender: str = "blender") -> dict[str, Any]:
@@ -204,9 +247,12 @@ def render_model_animation(
     gif: bool = False,
     frames: str = "all",
     blender: str = "blender",
+    compatibility_level: int = 1,
 ) -> dict[str, Any]:
     if sheet_columns <= 0 or canvas[0] <= 0 or canvas[1] <= 0:
         raise ValueError("sheet columns and canvas dimensions must be positive")
+    if compatibility_level not in (1, 2):
+        raise ValueError("compatibility level must be 1 or 2")
     model_path = model_path.resolve()
     character_rig_path = character_rig_path.resolve()
     skin_path = skin_path.resolve()
@@ -226,7 +272,7 @@ def render_model_animation(
     validate_animation_document(animation, animation_rig)
     validate_skin_document(skin, character_rig)
     output.mkdir(parents=True, exist_ok=True)
-    compatibility = _validate_and_record_level1_compatibility(animation_rig, character_rig, output)
+    compatibility = _select_compatibility(animation_rig, character_rig, output, compatibility_level)
     camera = load_camera_profile(camera_profile_path)
     selected = parse_frames(frames, animation)
     frame_dir = output / ".frames"
@@ -274,7 +320,13 @@ def render_model_animation(
         "animationRig": {"id": animation_rig["id"], "boneCount": len(animation_rig["bones"])},
         "animation": {"id": animation["id"], "frameCount": animation["frameCount"], "fps": animation["fps"]},
         "cameraProfile": {"id": camera["id"], "path": str(camera_profile_path)},
-        "rigCompatibility": compatibility,
+        "compatibilityLevel": compatibility["compatibilityLevel"],
+        "maximumCompatibilityLevel": compatibility["maximumCompatibilityLevel"],
+        "adaptationApplied": compatibility["adaptationApplied"],
+        "adaptationType": compatibility["adaptationType"],
+        "retargeting": compatibility["retargeting"],
+        "rigCompatibility": compatibility["level1"],
+        "level2Eligibility": compatibility["level2Eligibility"],
         "skinStatistics": skin_statistics(skin, character_rig),
         "modelIdentity": model_identity,
         "skinReconstruction": skin_reconstruction,
@@ -289,6 +341,7 @@ def render_model_animation(
             "previewGif": "preview.gif" if gif else None,
             "sourceBlend": "source.blend",
             "diagnostics": "diagnostics/",
+            "restBasisAdaptation": "diagnostics/rest_basis_adaptation.json" if compatibility["adaptationApplied"] else None,
         },
     }
     _write_json(output / "render.json", report)
