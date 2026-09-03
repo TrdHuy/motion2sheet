@@ -13,7 +13,6 @@ if str(PACKAGE_ROOT) not in sys.path:
 import bpy
 
 from motion2sheet.motion.model_render.blender_helpers import (
-    bake_source_meshes_to_frame,
     build_final_skin_meshes,
     capture_source_skin,
     export_geometry_glb,
@@ -22,15 +21,12 @@ from motion2sheet.motion.model_render.blender_helpers import (
     mesh_objects,
     strip_source_binding_for_glb,
 )
-from motion2sheet.motion.model_render.blender_level1 import export_armature_only_fbx
-from motion2sheet.motion.roundtrip.blender_common import (
-    capture_rig_document,
-    import_source,
-    integer_action_range,
-    stable_profile_id,
+from motion2sheet.motion.model_render.blender_rest_authority import (
+    capture_character_rig_document,
+    import_character_fbx,
 )
-from motion2sheet.motion.roundtrip.fbx import extract_fbx_metadata_and_diagnostics
-from motion2sheet.motion.roundtrip.schema import validate_rig_document, write_canonical_json
+from motion2sheet.motion.model_render.rest import character_skin_id
+from motion2sheet.motion.roundtrip.schema import write_canonical_json
 from motion2sheet.motion.skin import build_skin_document, skin_statistics, write_skin_document
 
 
@@ -73,9 +69,11 @@ def main() -> None:
         raise RuntimeError("export-character supports FBX With-Skin sources only")
 
     source_sha = _sha256(source)
-    armature, source_action = import_source(source)
-    source_start, source_end = integer_action_range(source_action)
-    source_frame_count = source_end - source_start + 1
+
+    # Character extraction deliberately does NOT activate, inspect, or sample an
+    # animation Action. The character rest authority comes only from FBX bind/rest
+    # state materialized by Blender as EditBone geometry plus the source skin binding.
+    armature = import_character_fbx(source)
     source_hierarchy = _hierarchy(armature)
     source_bone_names = set(source_hierarchy)
     source_armature_name = armature.name
@@ -85,83 +83,38 @@ def main() -> None:
         if any(modifier.type == "ARMATURE" and modifier.object == armature for modifier in obj.modifiers)
     ]
     if not skinned:
-        raise RuntimeError("source FBX is not a usable With-Skin character: no skinned mesh bound to the animation armature")
+        raise RuntimeError("source FBX is not a usable With-Skin character: no skinned mesh bound to the character armature")
 
-    # Capture all source skin authority before removing any binding.
+    # Capture skin and canonical character rest before removing any source binding.
     source_skin = capture_source_skin(skinned, armature, source_bone_names)
     source_stats = _source_stats(source_skin)
+    rig, rest_diagnostics = capture_character_rig_document(source, armature)
+    rig_bone_names = {bone["name"] for bone in rig["bones"]}
+    if rig_bone_names != source_bone_names:
+        raise RuntimeError("clip-independent character rest capture changed the source bone set")
+    canonical_armature_name = rig["armatureObject"]["name"]
 
-    # The Mixamo mesh's raw bind geometry is not necessarily the same pose as the
-    # canonicalized Blender rig rest geometry. Bake the visible source deformation at
-    # the first canonical motion sample before removing binding. The later Level-1
-    # canonicalization proves that this sample is the exported Contract B rest sample.
-    geometry_rest_bake = bake_source_meshes_to_frame(skinned, armature, source_start)
-
-    # Freeze geometry/material authority into an unskinned staging GLB before the
-    # scene is cleared to canonicalize the armature. The staging/final GLBs contain
-    # no vertex groups, Armature modifier, armature object, or animation authority.
+    # Geometry authority is the source mesh bind geometry itself. Do not evaluate or
+    # apply the Armature modifier at any animation frame. Once the binding is stripped,
+    # the staging/final GLB contains no armature, vertex groups, or animation authority.
+    geometry_bind = {
+        "mode": "source-mesh-bind-geometry-v1",
+        "meshCount": len(skinned),
+        "vertexCount": sum(len(obj.data.vertices) for obj in skinned),
+        "animationFrameSampled": False,
+        "armatureModifierApplied": False,
+        "topologyPreserved": True,
+        "meshes": [
+            {"object": obj.name, "vertexCount": len(obj.data.vertices)}
+            for obj in sorted(skinned, key=lambda item: item.name)
+        ],
+    }
     strip_source_binding_for_glb(skinned)
     staging = diagnostics / ".model-stage.glb"
     export_geometry_glb(staging, skinned)
 
-    # The real With-Skin FBX imports with a tiny non-TRS matrix_local shear on a
-    # Mixamo bone. Do not loosen PR #11. Instead round-trip only the armature/action
-    # through FBX, then let the locked PR #11 rig capture validate the canonicalized
-    # rest basis. Mesh/skin authority never comes from this temporary FBX.
-    canonical_fbx = diagnostics / ".character-rig-canonical.fbx"
-    export_armature_only_fbx(armature, canonical_fbx)
-    canonical_armature, canonical_action = import_source(canonical_fbx)
-    canonical_start, canonical_end = integer_action_range(canonical_action)
-    canonical_frame_count = canonical_end - canonical_start + 1
-    if canonical_frame_count != source_frame_count:
-        raise RuntimeError(
-            "character Level-1 canonicalization changed animation sample count; "
-            f"source={[source_start, source_end]} canonical={[canonical_start, canonical_end]}"
-        )
-    frame_offset = canonical_start - source_start
-    if canonical_end - source_end != frame_offset:
-        raise RuntimeError(
-            "character Level-1 canonicalization frame numbering is not a constant offset; "
-            f"source={[source_start, source_end]} canonical={[canonical_start, canonical_end]}"
-        )
-    canonical_hierarchy = _hierarchy(canonical_armature)
-    if canonical_hierarchy != source_hierarchy:
-        raise RuntimeError(
-            "character Level-1 canonicalization changed bone names/hierarchy; "
-            f"source={source_hierarchy} canonical={canonical_hierarchy}"
-        )
-
-    # Mirror the locked PR #11 exporter ordering: capture the Blender rig first,
-    # then attach static FBX transform-stack/global metadata before schema validation.
-    # Character motion still does not come from this metadata; it is required only
-    # because the canonical Contract B rig schema requires FBX source metadata.
-    rig = capture_rig_document(canonical_fbx, canonical_armature)
-    rig_bone_names = [bone["name"] for bone in rig["bones"]]
-    rig_fbx, _animation_fbx, _diagnostic_curves = extract_fbx_metadata_and_diagnostics(
-        canonical_fbx,
-        rig_bone_names,
-        canonical_frame_count,
-    )
-    rig["sourceFormat"] = {"fbx": rig_fbx}
-    if set(rig_bone_names) != source_bone_names:
-        raise RuntimeError("character Level-1 canonicalization changed the source bone set")
-
-    # Make the public character-rig identity describe the original release asset,
-    # while diagnostics below explicitly record that its numeric rest basis and
-    # sourceFormat transform stack were canonicalized through an armature-only FBX
-    # solely to remove importer-level non-TRS numerical shear.
-    rig["id"] = stable_profile_id(source.stem, "rig")
-    rig["source"] = {
-        "format": "FBX",
-        "filename": source.name,
-        "sha256": source_sha,
-        "importer": "blender-fbx",
-    }
-    rig = validate_rig_document(rig)
-    canonical_armature_name = rig["armatureObject"]["name"]
-
-    # Re-import the stripped geometry authority and bind Skin Contract weights to
-    # the final GLB vertex layout, using the preserved source-index attribute.
+    # Re-import stripped geometry and bind Skin Contract weights to the final GLB
+    # vertex layout using the preserved source-index attribute.
     stage_objects = import_geometry_glb(staging)
     build_final_skin_meshes(stage_objects, source_skin, canonical_armature_name)
     model_path = output / "model.glb"
@@ -178,7 +131,7 @@ def main() -> None:
 
     model_sha = _sha256(model_path)
     skin = build_skin_document(
-        skin_id=stable_profile_id(source.stem, "skin"),
+        skin_id=character_skin_id(rig),
         canonical_rig="mixamo-compatible-v1",
         character_rig=rig,
         model={
@@ -201,31 +154,13 @@ def main() -> None:
     if stats["unknownBoneReferences"] != 0:
         raise RuntimeError(f"skin extraction produced unknown bone references: {stats}")
 
-    canonicalization = {
-        "mode": "armature-only-fbx-roundtrip",
-        "reason": "remove importer-level non-TRS floating-point rest shear without modifying PR #11 tolerance or using mesh/skin authority from the temporary FBX",
-        "sourceArmature": source_armature_name,
-        "canonicalArmature": canonical_armature_name,
-        "sourceBoneCount": len(source_hierarchy),
-        "canonicalBoneCount": len(rig["bones"]),
-        "exactBoneNames": True,
-        "exactHierarchy": True,
-        "sourceFrameRange": [source_start, source_end],
-        "canonicalFrameRange": [canonical_start, canonical_end],
-        "frameOffset": frame_offset,
-        "temporaryFbxSha256": _sha256(canonical_fbx),
-        "temporaryContainsMesh": False,
-        "temporaryContainsSkinAuthority": False,
-        "sourceFormatMetadataAuthority": "temporary-armature-only-fbx-static-transform-stack",
-        "motionAuthority": False,
-    }
     source_diag = {
         "schema": "motion2sheet.diagnostics.source-skin",
         "version": 1,
         "source": {"filename": source.name, "sha256": source_sha},
         "armature": {"name": source_armature_name, "boneCount": len(rig["bones"])},
-        "restBasisCanonicalization": canonicalization,
-        "geometryRestBake": geometry_rest_bake,
+        "characterRestAuthority": rest_diagnostics,
+        "geometryBindAuthority": geometry_bind,
         "statistics": source_stats,
         "meshes": [
             {
@@ -239,7 +174,6 @@ def main() -> None:
     }
     write_canonical_json(diagnostics / "source_skin.json", source_diag)
     staging.unlink(missing_ok=True)
-    canonical_fbx.unlink(missing_ok=True)
 
     report = {
         "schema": "motion2sheet.character-export",
@@ -249,8 +183,8 @@ def main() -> None:
         "sourceSkinStatistics": source_stats,
         "skinStatistics": stats,
         "characterBoneCount": len(rig["bones"]),
-        "restBasisCanonicalization": canonicalization,
-        "geometryRestBake": geometry_rest_bake,
+        "characterRestAuthority": rest_diagnostics,
+        "geometryBindAuthority": geometry_bind,
         "modelAuthority": {
             "format": "GLB",
             "sha256": model_sha,
@@ -258,7 +192,8 @@ def main() -> None:
             "containsArmatureModifiers": False,
             "containsVertexGroups": False,
             "sourceVertexMappingAttribute": "_M2S_SOURCE_VERTEX",
-            "geometryPose": "canonical-character-rest",
+            "geometryPose": "source-bind-rest",
+            "animationFrameSampled": False,
         },
         "outputs": {
             "modelGlb": "model.glb",
