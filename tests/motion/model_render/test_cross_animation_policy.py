@@ -13,7 +13,11 @@ def test_cross_animation_fails_closed_before_any_fixed_character_render():
 
     assert preflight in workflow
     assert workflow.index(preflight) < workflow.index(delete) < workflow.index(render)
+    assert "diagnose_level1_rig_compatibility(rig,character)" in workflow
     assert "validate_level1_rig_compatibility(rig,character)" in workflow
+    assert "restBasisMismatchCount" in workflow
+    assert "maxRestBasisErrorDegrees" in workflow
+    assert "worstRestBasisBone" in workflow
     assert "restBasisToleranceDegrees':0.001" in workflow
     assert "retargetingPermitted':False" in workflow
     assert "fuzzyMappingPermitted':False" in workflow
