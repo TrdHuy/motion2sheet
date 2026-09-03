@@ -47,6 +47,8 @@ def test_sword_idle_profile_change_does_not_pull_gale_e2e():
 @pytest.mark.parametrize("path",["profiles/anim2sheet/cameras/fast_keypose_review.json","profiles/anim2sheet/rigs/game_humanoid_v2.json5","profiles/anim2sheet/characters/swordsman_v1.json5"])
 def test_anim_common_profile_change_runs_all_current_anim_e2e(path):
     manifest=load_manifest(); _,targets=resolve(path,manifest=manifest); assert anim_e2e_targets(manifest,targets)=={"anim-gale-slash-e2e","anim-sword-idle-e2e"}
+def test_skin_change_selects_skin_unit_without_unrelated_e2e():
+    manifest=load_manifest(); components,targets=resolve("motion2sheet/motion/skin/contract.py",manifest=manifest); assert components=={"motion-skin"}; assert "motion-skin-unit" in targets; assert "motion-mixamo-real" not in targets; assert not anim_e2e_targets(manifest,targets); assert "vfx-splash-e2e" not in targets
 def test_unknown_path_fails_safe_to_full_ci():
     manifest=load_manifest(); _,targets=resolve("motion2sheet/new_unmapped_module.py",manifest=manifest); assert targets==set(manifest["test_targets"])
 def test_docs_only_change_runs_no_tests():
