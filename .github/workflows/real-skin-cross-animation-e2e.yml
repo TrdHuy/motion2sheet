@@ -103,11 +103,13 @@ jobs:
           assert rest['restEncodingSourceAnimationSampled'] is False
           assert rest['restEncodingCarrierDefinesRest'] is False
           model=export['modelAuthority']
+          assert model['geometryPose']=='source-bind-rest'
           assert model['containsArmatureObjects'] is False
           assert model['containsArmatureModifiers'] is False
           assert model['containsVertexGroups'] is False
           assert model['animationFrameSampled'] is False
-          print(json.dumps({'characterIdentity':identity,'characterRestAuthority':rest},indent=2,sort_keys=True))
+          assert export['geometryBindAuthority']['topologyPreserved'] is True
+          print(json.dumps({'characterIdentity':identity,'characterRestAuthority':rest,'modelAuthority':model},indent=2,sort_keys=True))
           PY
       - name: Normalize Walking, Idle and Run FBX encoding without retargeting
         run: |
@@ -154,17 +156,35 @@ jobs:
           for name,sha in expected.items():
               report=json.loads((root/'diagnostics'/f'{name}_normalization.json').read_text())
               assert report['source']['sha256']==sha
-              assert report['normalizationRestRebuilt'] is False
+              assert report['motionRebasedToCanonicalRest'] is True
+              assert report['canonicalizationOnly'] is True
+              assert report['normalizationRestRebuiltFromCanonicalAuthority'] is True
+              assert report['normalizationRestDerivedFromAnimationFrame'] is False
+              assert report['staticFbxRestActionDetached'] is True
+              assert report['staticFbxRestPoseBasisIdentity'] is True
+              assert report['animationExportedFromStoredAction'] is True
               assert report['firstAnimationPoseUsedAsRest'] is False
               assert report['animationFrameUsedAsRest'] is False
               assert report['retargeting'] is False and report['fuzzyMapping'] is False
-              assert report['fidelity']['pass'] and report['lockedPr11RigCapturePass']
+              assert report['preFbxFidelity']['pass'] and report['fidelity']['pass'] and report['lockedPr11RigCapturePass']
+              policy=report['fidelityPolicy']
+              assert policy['canonicalRebaseTranslationTolerance']==1e-5
+              assert policy['canonicalRebaseHeadTailTolerance']==1e-5
+              assert policy['fbxSerializationTranslationTolerance']==2e-5
+              assert policy['fbxSerializationHeadTailTolerance']==2e-5
+              assert policy['level1RestBasisToleranceChanged'] is False
               level1=report['restCompatibility']
               assert level1['pass'] and level1['level']==1
               assert level1['exactBoneNames'] and level1['exactHierarchy'] and level1['coordinateConventionMatch']
+              assert level1['restBasisToleranceDegrees']==0.001
               assert level1['maxRestBasisErrorDegrees'] <= level1['restBasisToleranceDegrees']
               assert level1['retargeting'] is False and level1['fuzzyMapping'] is False
-              summary[name]={'fidelity':report['fidelity'],'restCompatibility':level1}
+              summary[name]={
+                  'preFbxFidelity':report['preFbxFidelity'],
+                  'postFbxFidelity':report['fidelity'],
+                  'fidelityPolicy':policy,
+                  'sourceRestCompatibility':level1,
+              }
           (root/'diagnostics'/'normalization_summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
           print(json.dumps(summary,indent=2,sort_keys=True))
           PY
@@ -213,6 +233,7 @@ jobs:
               assert level1['pass'] and level1['level']==1
               assert level1['boneCount']==65
               assert level1['exactBoneNames'] and level1['exactHierarchy'] and level1['coordinateConventionMatch']
+              assert level1['restBasisToleranceDegrees']==0.001
               assert level1['maxRestBasisErrorDegrees'] <= level1['restBasisToleranceDegrees']
               assert level1['retargeting'] is False and level1['fuzzyMapping'] is False
               model=render['modelIdentity']
@@ -252,6 +273,7 @@ jobs:
           inplace_level1=validate_level1_rig_compatibility(inplace_rig,character_rig)
           assert inplace_level1['pass'] and inplace_level1['level']==1
           assert inplace_level1['boneCount']==65 and inplace_level1['exactBoneNames'] and inplace_level1['exactHierarchy'] and inplace_level1['coordinateConventionMatch']
+          assert inplace_level1['restBasisToleranceDegrees']==0.001
           assert inplace_level1['maxRestBasisErrorDegrees'] <= inplace_level1['restBasisToleranceDegrees']
           assert inplace_level1['retargeting'] is False and inplace_level1['fuzzyMapping'] is False
 
