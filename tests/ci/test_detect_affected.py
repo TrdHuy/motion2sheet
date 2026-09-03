@@ -16,8 +16,7 @@ def test_component_change_runs_only_dependent_targets():
 def test_vfx_effect_change_does_not_run_motion_or_anim():
     manifest=load_manifest(); components,targets=resolve("motion2sheet/vfx2sheet/effects/splash/config.py",manifest=manifest); assert "vfx-splash" in components; assert "vfx-unit" in targets; assert "vfx-splash-e2e" in targets; assert not anim_e2e_targets(manifest,targets)
 def test_dynamic_animation_discovery_accepts_v2_two_file_clip(tmp_path):
-    make_clip(tmp_path,"walk"); assert discover_animation_clips(tmp_path)==["walk"]; manifest=load_manifest(repo_root=tmp_path); assert manifest["test_targets"]["anim-walk-e2e"]["target"]=="walk"; assert "anim-walk-unit" not in manifest["test_targets"]; assert "anim-walk" not in manifest["components"]
-def test_incomplete_animation_clip_fails_closed(tmp_path):
+    make_clip(tmp_path,"walk"); assert discover_animation_clips(tmp_path)==["walk"]; manifest=load_manifest(repo_root=tmp_path); assert manifest["test_targets"]["anim-walk-e2e"]["target"]=="walk"; assert "anim-walk-unit" not in manifest["test_targets"]; assert "anim-walk" not in manifest["components"]ndef test_incomplete_animation_clip_fails_closed(tmp_path):
     clip=tmp_path/"profiles/anim2sheet/animations/walk"; clip.mkdir(parents=True); (clip/"animation.json5").write_text("{}\n",encoding="utf-8")
     with pytest.raises(ValueError,match="Incomplete animation clip"): discover_animation_clips(tmp_path)
 
@@ -49,6 +48,8 @@ def test_anim_common_profile_change_runs_all_current_anim_e2e(path):
     manifest=load_manifest(); _,targets=resolve(path,manifest=manifest); assert anim_e2e_targets(manifest,targets)=={"anim-gale-slash-e2e","anim-sword-idle-e2e"}
 def test_skin_change_selects_skin_unit_without_unrelated_e2e():
     manifest=load_manifest(); components,targets=resolve("motion2sheet/motion/skin/contract.py",manifest=manifest); assert components=={"motion-skin"}; assert "motion-skin-unit" in targets; assert "motion-mixamo-real" not in targets; assert not anim_e2e_targets(manifest,targets); assert "vfx-splash-e2e" not in targets
+def test_skin_test_change_selects_skin_unit():
+    manifest=load_manifest(); components,targets=resolve("tests/motion/skin/test_contract.py",manifest=manifest); assert components==set(); assert targets=={"motion-skin-unit"}
 def test_unknown_path_fails_safe_to_full_ci():
     manifest=load_manifest(); _,targets=resolve("motion2sheet/new_unmapped_module.py",manifest=manifest); assert targets==set(manifest["test_targets"])
 def test_docs_only_change_runs_no_tests():
