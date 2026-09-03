@@ -1,5 +1,5 @@
 from .authority import build_skin_document
-from .compatibility import validate_level1_rig_compatibility
+from .compatibility import diagnose_level1_rig_compatibility, validate_level1_rig_compatibility
 from .contract import (
     SKIN_SCHEMA,
     SKIN_VERSION,
@@ -20,6 +20,7 @@ __all__ = [
     "build_skin_document",
     "canonical_json_bytes",
     "compare_skin_bindings",
+    "diagnose_level1_rig_compatibility",
     "normalize_influences",
     "rig_fingerprint",
     "skin_statistics",
