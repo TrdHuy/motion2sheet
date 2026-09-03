@@ -11,6 +11,7 @@ from motion2sheet.motion.extract.blender import clean_scene, find_armature, impo
 from motion2sheet.motion.model_render.rest import character_rig_id, character_rest_fingerprint
 from motion2sheet.motion.roundtrip.blender_common import (
     bone_properties,
+    canonical_quaternion_values,
     matrix_to_trs,
     ordered_bones,
     source_sha256,
@@ -54,7 +55,7 @@ def _static_fbx_rig_metadata(path: Path, bone_names: list[str]) -> dict[str, Any
 
 
 def _capture_edit_rest(armature: bpy.types.Object) -> dict[str, dict[str, Any]]:
-    """Capture Blender EditBone authority and its orthogonal matrix without using pose/action state."""
+    """Capture Blender EditBone authority without consulting pose/action state."""
 
     if armature.mode != "OBJECT":
         bpy.ops.object.mode_set(mode="OBJECT")
@@ -63,41 +64,68 @@ def _capture_edit_rest(armature: bpy.types.Object) -> dict[str, dict[str, Any]]:
     bpy.context.view_layer.objects.active = armature
     bpy.ops.object.mode_set(mode="EDIT")
     try:
-        return {
-            edit_bone.name: {
+        result: dict[str, dict[str, Any]] = {}
+        for edit_bone in armature.data.edit_bones:
+            # EditBone.matrix can carry tiny floating-point non-orthogonality after
+            # FBX import. editGeometry remains the sole rest authority. Normalize
+            # only the derived orientation cache through a unit quaternion rather
+            # than loosening PR #11 matrix/TRS tolerances.
+            orientation = edit_bone.matrix.to_quaternion()
+            orientation.normalize()
+            result[edit_bone.name] = {
                 "head": [float(value) for value in edit_bone.head],
                 "tail": [float(value) for value in edit_bone.tail],
                 "roll": float(edit_bone.roll),
-                "matrix": edit_bone.matrix.copy(),
+                "orientation": orientation.copy(),
             }
-            for edit_bone in armature.data.edit_bones
-        }
+        return result
     finally:
         bpy.ops.object.mode_set(mode="OBJECT")
+
+
+def _derived_rest_cache(name: str, parent: str | None, edit: dict[str, dict[str, Any]]) -> dict[str, list[float]]:
+    row = edit[name]
+    child_rotation = row["orientation"].copy()
+    child_rotation.normalize()
+    child_head = Vector(row["head"])
+    if parent is None:
+        translation = child_head
+        local_rotation = child_rotation
+    else:
+        parent_row = edit[parent]
+        parent_rotation = parent_row["orientation"].copy()
+        parent_rotation.normalize()
+        inverse_parent = parent_rotation.inverted()
+        translation = inverse_parent @ (child_head - Vector(parent_row["head"]))
+        local_rotation = inverse_parent @ child_rotation
+        local_rotation.normalize()
+    return {
+        "translation": [float(value) for value in translation],
+        "rotationQuaternion": canonical_quaternion_values(local_rotation),
+        "scale": [1.0, 1.0, 1.0],
+    }
 
 
 def capture_character_rig_document(input_path: Path, armature: bpy.types.Object) -> tuple[dict[str, Any], dict[str, Any]]:
     """Create a clip-independent character rig from FBX edit/rest data.
 
-    `editGeometry` is the sole rest authority. The `rest` TRS fields are derived caches
-    reconstructed from EditBone matrices, avoiding tiny importer shear in Bone.matrix_local
-    and avoiding every animation frame/action as a rest substitute.
+    `editGeometry` is the sole rest authority. The `rest` TRS fields are derived
+    inspection caches reconstructed from orthogonalized EditBone orientation and
+    head positions; no animation action or frame is consulted.
     """
 
     edit = _capture_edit_rest(armature)
     bones: list[dict[str, Any]] = []
     for bone in ordered_bones(armature):
         row = edit[bone.name]
-        local_matrix = row["matrix"].copy()
-        if bone.parent is not None:
-            local_matrix = edit[bone.parent.name]["matrix"].inverted_safe() @ local_matrix
         head = Vector(row["head"])
         tail = Vector(row["tail"])
+        parent = bone.parent.name if bone.parent else None
         bones.append(
             {
                 "name": bone.name,
-                "parent": bone.parent.name if bone.parent else None,
-                "rest": matrix_to_trs(local_matrix, f"character edit-rest cache for bone {bone.name}"),
+                "parent": parent,
+                "rest": _derived_rest_cache(bone.name, parent, edit),
                 "length": float((tail - head).length),
                 "properties": bone_properties(bone),
                 "editGeometry": {
@@ -145,7 +173,7 @@ def capture_character_rig_document(input_path: Path, armature: bpy.types.Object)
     diagnostics = {
         "mode": "fbx-bind-edit-rest-v1",
         "restAuthority": "armature-editGeometry",
-        "derivedRestCache": "EditBone.matrix local TRS",
+        "derivedRestCache": "orthogonalized EditBone orientation + head translation",
         "sourceFormatAuthority": "static-fbx-transform-stack-only",
         "animationIndependent": True,
         "animationActionRead": False,
