@@ -57,7 +57,7 @@ jobs:
           test -s "$ROOT/character/model.glb"
           test -s "$ROOT/character/rig.json"
           test -s "$ROOT/character/skin.json"
-      - name: Normalize motion onto clip-independent rest for locked PR 11 exporter
+      - name: Normalize source FBX encoding without animation-frame rest authority
         run: |
           set -euo pipefail
           NORMALIZED="$RUNNER_TEMP/walking_mixamo_motion_normalized.fbx"
