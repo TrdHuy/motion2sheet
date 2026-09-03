@@ -13,6 +13,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 
 import bpy
 
+from motion2sheet.motion.model_render.blender_level1 import export_armature_only_fbx
 from motion2sheet.motion.roundtrip.blender_common import (
     capture_rig_document,
     import_source,
@@ -60,35 +61,6 @@ def _capture_pose(armature, start: int, end: int) -> dict[int, dict[str, dict[st
             }
         result[frame] = rows
     return result
-
-
-def _export_armature_only(armature, output: Path) -> None:
-    bpy.ops.object.select_all(action="DESELECT")
-    armature.select_set(True)
-    bpy.context.view_layer.objects.active = armature
-    bpy.ops.export_scene.fbx(
-        filepath=str(output),
-        use_selection=True,
-        object_types={"ARMATURE"},
-        apply_unit_scale=True,
-        apply_scale_options="FBX_SCALE_NONE",
-        use_space_transform=True,
-        bake_space_transform=False,
-        axis_forward="-Z",
-        axis_up="Y",
-        primary_bone_axis="Y",
-        secondary_bone_axis="X",
-        add_leaf_bones=False,
-        use_armature_deform_only=False,
-        armature_nodetype="NULL",
-        bake_anim=True,
-        bake_anim_use_all_bones=True,
-        bake_anim_use_nla_strips=False,
-        bake_anim_use_all_actions=False,
-        bake_anim_force_startend_keying=True,
-        bake_anim_step=1.0,
-        bake_anim_simplify_factor=0.0,
-    )
 
 
 def _compare(reference, actual, parents, start: int, end: int) -> dict[str, object]:
@@ -164,7 +136,7 @@ def main() -> None:
     fps, fps_numerator, fps_base = scene_fps(bpy.context.scene)
     parents = {bone.name: bone.parent.name if bone.parent else None for bone in armature.data.bones}
     reference = _capture_pose(armature, start, end)
-    _export_armature_only(armature, output)
+    export_armature_only_fbx(armature, output)
 
     normalized_armature, normalized_action = import_source(output)
     normalized_start, normalized_end = integer_action_range(normalized_action)
@@ -178,8 +150,6 @@ def main() -> None:
     actual = _capture_pose(normalized_armature, start, end)
     fidelity = _compare(reference, actual, parents, start, end)
 
-    # This is the critical proof that the locked PR #11 rig capture can consume the normalized copy
-    # without changing its tolerance or implementation.
     normalized_rig = validate_rig_document(capture_rig_document(output, normalized_armature))
     if len(normalized_rig["bones"]) != len(parents):
         raise RuntimeError("locked Contract B rig capture changed the normalized bone count")
