@@ -1,8 +1,8 @@
+from .authority import build_skin_document
 from .compatibility import validate_level1_rig_compatibility
 from .contract import (
     SKIN_SCHEMA,
     SKIN_VERSION,
-    build_skin_document,
     canonical_json_bytes,
     compare_skin_bindings,
     normalize_influences,
