@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from typing import Any
 
 import bpy
 from io_scene_fbx import parse_fbx
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 from motion2sheet.motion.extract.blender import clean_scene, find_armature, import_motion
 from motion2sheet.motion.model_render.rest import character_rig_id, character_rest_fingerprint
@@ -106,12 +107,15 @@ def _derived_rest_cache(name: str, parent: str | None, edit: dict[str, dict[str,
     }
 
 
-def capture_character_rig_document(input_path: Path, armature: bpy.types.Object) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Create a clip-independent character rig from FBX edit/rest data.
+def capture_imported_rest_rig_document(
+    input_path: Path,
+    armature: bpy.types.Object,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Capture the EditBone rest representation produced by the current FBX import.
 
-    `editGeometry` is the sole rest authority. The `rest` TRS fields are derived
-    inspection caches reconstructed from orthogonalized EditBone orientation and
-    head positions; no animation action or frame is consulted.
+    This is a static rest snapshot only. It never reads the active Action and never
+    samples a scene frame. `capture_character_rig_document` applies the additional
+    rest-only FBX encoding normalization used by the canonical character authority.
     """
 
     edit = _capture_edit_rest(armature)
@@ -171,7 +175,7 @@ def capture_character_rig_document(input_path: Path, armature: bpy.types.Object)
     rig["sourceFormat"] = {"fbx": _static_fbx_rig_metadata(input_path, [bone["name"] for bone in bones])}
     rig = validate_rig_document(rig)
     diagnostics = {
-        "mode": "fbx-bind-edit-rest-v1",
+        "mode": "fbx-imported-edit-rest-v1",
         "restAuthority": "armature-editGeometry",
         "derivedRestCache": "orthogonalized EditBone orientation + head translation",
         "sourceFormatAuthority": "static-fbx-transform-stack-only",
@@ -183,3 +187,116 @@ def capture_character_rig_document(input_path: Path, armature: bpy.types.Object)
         "restFingerprint": character_rest_fingerprint(rig),
     }
     return rig, diagnostics
+
+
+def _export_rest_only_armature_fbx(armature: bpy.types.Object, output: Path) -> None:
+    """Round-trip only static armature rest data through Blender's FBX encoding.
+
+    The duplicate has no animation data and every pose basis is explicitly identity,
+    so the exporter cannot substitute an animation sample for rest authority.
+    """
+
+    duplicate = armature.copy()
+    duplicate_data = armature.data.copy()
+    duplicate.data = duplicate_data
+    duplicate.name = f"{armature.name}__M2S_CANONICAL_REST"
+    duplicate.data.name = f"{armature.data.name}__M2S_CANONICAL_REST"
+    bpy.context.collection.objects.link(duplicate)
+    duplicate.animation_data_clear()
+    for pose_bone in duplicate.pose.bones:
+        pose_bone.rotation_mode = "QUATERNION"
+        pose_bone.matrix_basis = Matrix.Identity(4)
+    bpy.context.view_layer.update()
+
+    try:
+        bpy.ops.object.select_all(action="DESELECT")
+        duplicate.select_set(True)
+        bpy.context.view_layer.objects.active = duplicate
+        bpy.ops.export_scene.fbx(
+            filepath=str(output),
+            use_selection=True,
+            object_types={"ARMATURE"},
+            apply_unit_scale=True,
+            apply_scale_options="FBX_SCALE_NONE",
+            use_space_transform=True,
+            bake_space_transform=False,
+            axis_forward="-Z",
+            axis_up="Y",
+            primary_bone_axis="Y",
+            secondary_bone_axis="X",
+            add_leaf_bones=False,
+            use_armature_deform_only=False,
+            armature_nodetype="NULL",
+            bake_anim=False,
+        )
+    finally:
+        bpy.data.objects.remove(duplicate, do_unlink=True)
+        if duplicate_data.users == 0:
+            bpy.data.armatures.remove(duplicate_data)
+        bpy.context.view_layer.update()
+
+
+def capture_character_rig_document(
+    input_path: Path,
+    armature: bpy.types.Object,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Create the clip-independent canonical character rest rig.
+
+    Authority starts from the source FBX bind/edit rest. A rest-only armature copy
+    with no Action and identity pose basis is exported/re-imported once to normalize
+    Blender FBX bone-roll encoding. This makes character and independent motion FBX
+    representations comparable without using any animation frame as a substitute.
+    """
+
+    imported_rig, imported_diagnostics = capture_imported_rest_rig_document(input_path, armature)
+    original_object_name = armature.name
+    original_data_name = armature.data.name
+
+    with tempfile.TemporaryDirectory(prefix="motion2sheet-character-rest-") as temp_dir:
+        rest_fbx = Path(temp_dir) / "canonical-rest.fbx"
+        _export_rest_only_armature_fbx(armature, rest_fbx)
+        before_names = {obj.name for obj in bpy.context.scene.objects}
+        bpy.ops.import_scene.fbx(filepath=str(rest_fbx))
+        imported_objects = [obj for obj in bpy.context.scene.objects if obj.name not in before_names]
+        canonical_armatures = [obj for obj in imported_objects if obj.type == "ARMATURE"]
+        if len(canonical_armatures) != 1:
+            raise RuntimeError(
+                "rest-only FBX normalization must import exactly one armature; "
+                f"found {len(canonical_armatures)}"
+            )
+        canonical_armature = canonical_armatures[0]
+        canonical_data = canonical_armature.data
+        canonical_rig, _canonical_import_diagnostics = capture_imported_rest_rig_document(
+            input_path,
+            canonical_armature,
+        )
+        # Object/data names are not rest semantics and should remain stable with the
+        # source character rather than expose the private normalization staging name.
+        canonical_rig["armatureObject"]["name"] = original_object_name
+        canonical_rig["armatureObject"]["dataName"] = original_data_name
+        canonical_rig["id"] = character_rig_id(canonical_rig)
+        canonical_rig = validate_rig_document(canonical_rig)
+
+        for obj in imported_objects:
+            bpy.data.objects.remove(obj, do_unlink=True)
+        if canonical_data.users == 0:
+            bpy.data.armatures.remove(canonical_data)
+        bpy.context.view_layer.update()
+
+    diagnostics = {
+        "mode": "fbx-bind-edit-rest-canonical-v1",
+        "restAuthority": "armature-editGeometry",
+        "restEncodingNormalization": "rest-only armature FBX round-trip",
+        "restEncodingAnimationBaked": False,
+        "restEncodingPoseBasis": "identity",
+        "derivedRestCache": "orthogonalized EditBone orientation + head translation",
+        "sourceFormatAuthority": "static-fbx-transform-stack-only",
+        "animationIndependent": True,
+        "animationActionRead": False,
+        "animationFrameSampled": False,
+        "firstAnimationPoseUsed": False,
+        "boneCount": len(canonical_rig["bones"]),
+        "importedRestFingerprint": imported_diagnostics["restFingerprint"],
+        "restFingerprint": character_rest_fingerprint(canonical_rig),
+    }
+    return canonical_rig, diagnostics
