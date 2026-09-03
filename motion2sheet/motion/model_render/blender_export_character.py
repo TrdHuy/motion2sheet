@@ -22,7 +22,13 @@ from motion2sheet.motion.model_render.blender_helpers import (
     strip_source_binding_for_glb,
 )
 from motion2sheet.motion.model_render.blender_level1 import export_armature_only_fbx
-from motion2sheet.motion.roundtrip.blender_common import capture_rig_document, import_source, stable_profile_id
+from motion2sheet.motion.roundtrip.blender_common import (
+    capture_rig_document,
+    import_source,
+    integer_action_range,
+    stable_profile_id,
+)
+from motion2sheet.motion.roundtrip.fbx import extract_fbx_metadata_and_diagnostics
 from motion2sheet.motion.roundtrip.schema import validate_rig_document, write_canonical_json
 from motion2sheet.motion.skin import build_skin_document, skin_statistics, write_skin_document
 
@@ -66,7 +72,9 @@ def main() -> None:
         raise RuntimeError("export-character supports FBX With-Skin sources only")
 
     source_sha = _sha256(source)
-    armature, _action = import_source(source)
+    armature, source_action = import_source(source)
+    source_start, source_end = integer_action_range(source_action)
+    source_frame_count = source_end - source_start + 1
     source_hierarchy = _hierarchy(armature)
     source_bone_names = set(source_hierarchy)
     source_armature_name = armature.name
@@ -95,20 +103,42 @@ def main() -> None:
     # rest basis. Mesh/skin authority never comes from this temporary FBX.
     canonical_fbx = diagnostics / ".character-rig-canonical.fbx"
     export_armature_only_fbx(armature, canonical_fbx)
-    canonical_armature, _canonical_action = import_source(canonical_fbx)
+    canonical_armature, canonical_action = import_source(canonical_fbx)
+    canonical_start, canonical_end = integer_action_range(canonical_action)
+    canonical_frame_count = canonical_end - canonical_start + 1
+    if (canonical_start, canonical_end) != (source_start, source_end):
+        raise RuntimeError(
+            "character Level-1 canonicalization changed animation frame range; "
+            f"source={[source_start, source_end]} canonical={[canonical_start, canonical_end]}"
+        )
+    if canonical_frame_count != source_frame_count:
+        raise RuntimeError("character Level-1 canonicalization changed source frame count")
     canonical_hierarchy = _hierarchy(canonical_armature)
     if canonical_hierarchy != source_hierarchy:
         raise RuntimeError(
             "character Level-1 canonicalization changed bone names/hierarchy; "
             f"source={source_hierarchy} canonical={canonical_hierarchy}"
         )
-    rig = validate_rig_document(capture_rig_document(canonical_fbx, canonical_armature))
-    if {bone["name"] for bone in rig["bones"]} != source_bone_names:
+
+    # Mirror the locked PR #11 exporter ordering: capture the Blender rig first,
+    # then attach static FBX transform-stack/global metadata before schema validation.
+    # Character motion still does not come from this metadata; it is required only
+    # because the canonical Contract B rig schema requires FBX source metadata.
+    rig = capture_rig_document(canonical_fbx, canonical_armature)
+    rig_bone_names = [bone["name"] for bone in rig["bones"]]
+    rig_fbx, _animation_fbx, _diagnostic_curves = extract_fbx_metadata_and_diagnostics(
+        canonical_fbx,
+        rig_bone_names,
+        canonical_frame_count,
+    )
+    rig["sourceFormat"] = {"fbx": rig_fbx}
+    if set(rig_bone_names) != source_bone_names:
         raise RuntimeError("character Level-1 canonicalization changed the source bone set")
 
     # Make the public character-rig identity describe the original release asset,
-    # while diagnostics below explicitly record that its numeric rest basis was
-    # canonicalized through an armature-only FBX to remove non-TRS numeric shear.
+    # while diagnostics below explicitly record that its numeric rest basis and
+    # sourceFormat transform stack were canonicalized through an armature-only FBX
+    # solely to remove importer-level non-TRS numerical shear.
     rig["id"] = stable_profile_id(source.stem, "rig")
     rig["source"] = {
         "format": "FBX",
@@ -169,9 +199,13 @@ def main() -> None:
         "canonicalBoneCount": len(rig["bones"]),
         "exactBoneNames": True,
         "exactHierarchy": True,
+        "sourceFrameRange": [source_start, source_end],
+        "canonicalFrameRange": [canonical_start, canonical_end],
         "temporaryFbxSha256": _sha256(canonical_fbx),
         "temporaryContainsMesh": False,
         "temporaryContainsSkinAuthority": False,
+        "sourceFormatMetadataAuthority": "temporary-armature-only-fbx-static-transform-stack",
+        "motionAuthority": False,
     }
     source_diag = {
         "schema": "motion2sheet.diagnostics.source-skin",
