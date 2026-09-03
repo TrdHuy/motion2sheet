@@ -14,7 +14,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 import bpy
 from mathutils import Matrix
 
-from motion2sheet.motion.model_render.blender_level1 import export_armature_only_fbx
+from motion2sheet.motion.model_render.blender_level1 import export_action_with_static_rest_fbx
 from motion2sheet.motion.model_render.blender_rest_authority import (
     capture_character_rig_document,
     capture_imported_rest_rig_document,
@@ -157,6 +157,11 @@ def _build_canonical_rebased_action(
     """
 
     clean_scene()
+    # Source/temporary Actions can outlive deleted objects. Remove them before making
+    # the clean motion carrier so the FBX all-actions path can only see this one Action.
+    for existing_action in list(bpy.data.actions):
+        bpy.data.actions.remove(existing_action)
+
     armature = build_armature(canonical_rig)
     scene = bpy.context.scene
     scene.render.fps = int(fps_numerator)
@@ -230,7 +235,7 @@ def main() -> None:
     reference = _capture_pose(source_armature, source_start, source_end)
     canonical_source_rig, canonical_rest = capture_character_rig_document(source, source_armature)
 
-    rebased_armature, _rebased_action = _build_canonical_rebased_action(
+    rebased_armature, rebased_action = _build_canonical_rebased_action(
         canonical_source_rig,
         reference,
         source_start,
@@ -246,7 +251,10 @@ def main() -> None:
     if not pre_fbx_fidelity["pass"]:
         raise RuntimeError(f"canonical-rest motion rebase fidelity failed before FBX export: {pre_fbx_fidelity}")
 
-    export_armature_only_fbx(rebased_armature, output)
+    # Critical separation: static FBX transforms are sampled with no active Action and
+    # identity pose basis, while the sole stored Action is baked as the animation stack.
+    # This prevents the first motion pose from being folded back into imported rest.
+    export_action_with_static_rest_fbx(rebased_armature, rebased_action, output)
 
     normalized_armature, normalized_action = import_source(output)
     normalized_start, normalized_end = integer_action_range(normalized_action)
@@ -290,7 +298,7 @@ def main() -> None:
     report = {
         "schema": "motion2sheet.diagnostics.level1-motion-source-normalization",
         "version": 1,
-        "reason": "Source pose matrices are re-expressed as local matrix_basis motion on the clip-independent canonical bind/EditBone rest. This is same-skeleton encoding canonicalization only: exact bone names/hierarchy are preserved, source world pose is gated before and after FBX encoding, and no animation frame defines rest authority.",
+        "reason": "Source pose matrices are re-expressed as local matrix_basis motion on the clip-independent canonical bind/EditBone rest. Static FBX rest is exported with the Action detached and identity pose, while the sole stored Action is baked separately. This is same-skeleton encoding canonicalization only; no animation frame defines rest authority.",
         "source": {"filename": source.name, "sha256": _sha256(source), "frameRange": [source_start, source_end]},
         "sourceImportedRest": imported_rest,
         "sourceCharacterRest": canonical_rest,
@@ -305,6 +313,9 @@ def main() -> None:
         "canonicalizationOnly": True,
         "normalizationRestRebuiltFromCanonicalAuthority": True,
         "normalizationRestDerivedFromAnimationFrame": False,
+        "staticFbxRestActionDetached": True,
+        "staticFbxRestPoseBasisIdentity": True,
+        "animationExportedFromStoredAction": True,
         "frameOffset": frame_offset,
         "frameMapping": "normalizedFrame = sourceFrame + frameOffset",
         "fps": fps,
