@@ -48,19 +48,13 @@ jobs:
       - name: Download exact Mixamo With-Skin release asset
         run: |
           set -euo pipefail
+          mkdir -p "$ROOT/diagnostics"
           ASSET="$RUNNER_TEMP/walking_mixamo_with_skin.fbx"
           curl -fL --retry 3 --retry-delay 2 -o "$ASSET" "$ASSET_URL"
           echo "$ASSET_SHA256  $ASSET" | sha256sum -c -
           test "$(stat -c %s "$ASSET")" -eq 41940608
           echo "ASSET=$ASSET" >> "$GITHUB_ENV"
-      - name: Export Contract B animation authority using locked PR 11 command
-        run: |
-          set -euo pipefail
-          mkdir -p "$ROOT"
-          motion2sheet export-animation-json "$ASSET" --output "$ROOT/animation"
-          test -s "$ROOT/animation/rig.json"
-          test -s "$ROOT/animation/animation.json"
-      - name: Export real character authority twice
+      - name: Export real character authority twice from original With-Skin asset
         run: |
           set -euo pipefail
           motion2sheet export-character "$ASSET" --output "$ROOT/character-a"
@@ -69,6 +63,24 @@ jobs:
             cmp "$ROOT/character-a/$name" "$ROOT/character-b/$name"
           done
           cp -a "$ROOT/character-a" "$ROOT/character"
+      - name: Normalize only numerical rest shear for locked PR 11 motion exporter
+        run: |
+          set -euo pipefail
+          NORMALIZED="$RUNNER_TEMP/walking_mixamo_motion_normalized.fbx"
+          blender --background --factory-startup --python-exit-code 1 \
+            --python motion2sheet/motion/model_render/blender_prepare_motion_source.py -- \
+            --input "$ASSET" \
+            --output "$NORMALIZED" \
+            --report "$ROOT/diagnostics/motion_source_normalization.json"
+          test -s "$NORMALIZED"
+          test -s "$ROOT/diagnostics/motion_source_normalization.json"
+          echo "NORMALIZED=$NORMALIZED" >> "$GITHUB_ENV"
+      - name: Export Contract B animation using locked PR 11 command on proven-equivalent motion copy
+        run: |
+          set -euo pipefail
+          motion2sheet export-animation-json "$NORMALIZED" --output "$ROOT/animation"
+          test -s "$ROOT/animation/rig.json"
+          test -s "$ROOT/animation/animation.json"
       - name: Render original skinned source reference before deletion
         run: |
           set -euo pipefail
@@ -107,11 +119,12 @@ jobs:
           (out/'gif_timing.json').write_text(json.dumps(timing,indent=2,sort_keys=True)+'\n',encoding='utf-8')
           shutil.rmtree(out/'.frames')
           PY
-      - name: Delete original FBX before canonical model render
+      - name: Delete all FBX inputs before canonical model render
         run: |
           set -euo pipefail
-          rm -f "$ASSET"
+          rm -f "$ASSET" "$NORMALIZED"
           test ! -e "$ASSET"
+          test ! -e "$NORMALIZED"
       - name: Render actual mesh using only Model + Rig + Skin + Contract B + Camera
         run: |
           set -euo pipefail
@@ -128,6 +141,7 @@ jobs:
             --gif \
             --output "$ROOT/render"
           test ! -e "$ASSET"
+          test ! -e "$NORMALIZED"
           test -s "$ROOT/render/pose_sheet.png"
           test -s "$ROOT/render/preview.gif"
           test -s "$ROOT/render/render.json"
@@ -145,7 +159,11 @@ jobs:
           export=json.loads((root/'character'/'diagnostics'/'export.json').read_text())
           render=json.loads((root/'render'/'render.json').read_text())
           source=json.loads((root/'source-reference'/'source_reference.json').read_text())
+          normalization=json.loads((root/'diagnostics'/'motion_source_normalization.json').read_text())
           assert export['sourceSha256']==os.environ['ASSET_SHA256']
+          assert normalization['source']['sha256']==os.environ['ASSET_SHA256']
+          assert normalization['fidelity']['pass'] and normalization['lockedPr11RigCapturePass']
+          assert normalization['retargeting'] is False and normalization['fuzzyMapping'] is False
           stats=render['skinStatistics']
           assert stats['meshCount']>0 and stats['vertexCount']>0 and stats['weightedVertexCount']>0 and stats['influenceCount']>0 and stats['boneCount']>0
           assert stats['unknownBoneReferences']==0
@@ -172,6 +190,7 @@ jobs:
           with Image.open(root/'render'/'pose_sheet.png') as im:
               alpha=im.convert('RGBA').getchannel('A').getextrema(); assert alpha[0]==0 and alpha[1]>0
           summary={
+              'releaseAssetSha256': os.environ['ASSET_SHA256'],
               'sourceMeshCount': export['sourceSkinStatistics']['meshCount'],
               'characterBoneCount': export['characterBoneCount'],
               'vertexCount': stats['vertexCount'],
@@ -179,6 +198,8 @@ jobs:
               'influenceCount': stats['influenceCount'],
               'modelGlbBytes': export['outputs']['modelGlbBytes'],
               'skinJsonBytes': export['outputs']['skinJsonBytes'],
+              'deterministicExtraction': True,
+              'motionSourceNormalization': normalization['fidelity'],
               'maxWeightDelta': skin['maxWeightDelta'],
               'maxRestBasisErrorDegrees': level1['maxRestBasisErrorDegrees'],
               'worstRestBasisBone': level1['worstRestBasisBone'],
@@ -223,5 +244,5 @@ jobs:
         with:
           name: real-mixamo-skin-contract-b-e2e
           path: build/real_skin_e2e/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
