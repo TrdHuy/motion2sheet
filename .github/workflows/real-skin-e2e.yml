@@ -91,13 +91,18 @@ jobs:
           from motion2sheet.motion.roundtrip.schema import read_json
           root=Path(os.environ['ROOT'])
           animation=read_json(root/'animation'/'animation.json')
+          normalization=json.loads((root/'diagnostics'/'motion_source_normalization.json').read_text())
           camera=load_camera_profile(Path(os.environ['CAMERA']))
           output=root/'source-reference'
           output.mkdir(parents=True,exist_ok=True)
+          contract_frames=[int(row['frame']) for row in animation['frames']]
+          frame_offset=int(normalization['frameOffset'])
+          assert contract_frames == list(range(int(normalization['normalized']['frameRange'][0]), int(normalization['normalized']['frameRange'][1]) + 1))
           request={
               'sourcePath': os.environ['ASSET'],
               'output': str(output.resolve()),
-              'selectedFrames': [int(row['frame']) for row in animation['frames']],
+              'selectedFrames': contract_frames,
+              'frameOffset': frame_offset,
               'canvas': [320,320],
               'background': {'transparent': True, 'rgba': [0.0,0.0,0.0,0.0]},
               'camera': camera,
@@ -164,6 +169,9 @@ jobs:
           assert normalization['source']['sha256']==os.environ['ASSET_SHA256']
           assert normalization['fidelity']['pass'] and normalization['lockedPr11RigCapturePass']
           assert normalization['retargeting'] is False and normalization['fuzzyMapping'] is False
+          assert source['frameOffset']==normalization['frameOffset']
+          assert source['contractFrames']==render['renderedFrames']
+          assert source['sourceFrames']==[frame-int(normalization['frameOffset']) for frame in source['contractFrames']]
           stats=render['skinStatistics']
           assert stats['meshCount']>0 and stats['vertexCount']>0 and stats['weightedVertexCount']>0 and stats['influenceCount']>0 and stats['boneCount']>0
           assert stats['unknownBoneReferences']==0
@@ -200,6 +208,7 @@ jobs:
               'skinJsonBytes': export['outputs']['skinJsonBytes'],
               'deterministicExtraction': True,
               'motionSourceNormalization': normalization['fidelity'],
+              'sourceReferenceFrameOffset': source['frameOffset'],
               'maxWeightDelta': skin['maxWeightDelta'],
               'maxRestBasisErrorDegrees': level1['maxRestBasisErrorDegrees'],
               'worstRestBasisBone': level1['worstRestBasisBone'],
