@@ -47,6 +47,34 @@ def _source_stats(source_skin: dict[str, dict]) -> dict[str, int]:
     }
 
 
+def _orthogonalize_imported_edit_rest(armature) -> None:
+    """Rewrite imported edit-bone head/tail/roll to themselves.
+
+    Some real Mixamo With-Skin FBX files contain tiny floating-point shear in
+    Bone.matrix_local after import. The character contract's rest authority is
+    Blender edit-bone geometry, so explicitly committing the exact imported
+    head/tail/roll values removes only that non-representable matrix shear.
+    """
+    bpy.ops.object.mode_set(mode="OBJECT") if armature.mode != "OBJECT" else None
+    bpy.ops.object.select_all(action="DESELECT")
+    armature.select_set(True)
+    bpy.context.view_layer.objects.active = armature
+    bpy.ops.object.mode_set(mode="EDIT")
+    try:
+        snapshots = [
+            (bone.name, bone.head.copy(), bone.tail.copy(), float(bone.roll))
+            for bone in armature.data.edit_bones
+        ]
+        for name, head, tail, roll in snapshots:
+            bone = armature.data.edit_bones[name]
+            bone.head = head
+            bone.tail = tail
+            bone.roll = roll
+    finally:
+        bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.context.view_layer.update()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)
@@ -61,8 +89,7 @@ def main() -> None:
         raise RuntimeError("export-character supports FBX With-Skin sources only")
 
     armature, _action = import_source(source)
-    rig = validate_rig_document(capture_rig_document(source, armature))
-    rig_names = {bone["name"] for bone in rig["bones"]}
+    source_bone_names = {bone.name for bone in armature.data.bones}
     armature_name = armature.name
     armature_world = matrix16(armature.matrix_world.copy())
     skinned = [
@@ -71,8 +98,14 @@ def main() -> None:
     ]
     if not skinned:
         raise RuntimeError("source FBX is not a usable With-Skin character: no skinned mesh bound to the animation armature")
-    source_skin = capture_source_skin(skinned, armature, rig_names)
+    source_skin = capture_source_skin(skinned, armature, source_bone_names)
     source_stats = _source_stats(source_skin)
+
+    _orthogonalize_imported_edit_rest(armature)
+    rig = validate_rig_document(capture_rig_document(source, armature))
+    rig_names = {bone["name"] for bone in rig["bones"]}
+    if rig_names != source_bone_names:
+        raise RuntimeError("character rest-basis normalization changed the source bone set")
 
     strip_source_binding_for_glb(skinned)
     staging = diagnostics / ".model-stage.glb"
@@ -122,6 +155,11 @@ def main() -> None:
         "version": 1,
         "source": {"filename": source.name, "sha256": _sha256(source)},
         "armature": {"name": armature_name, "boneCount": len(rig["bones"])},
+        "restBasisNormalization": {
+            "mode": "commit-imported-edit-head-tail-roll",
+            "reason": "remove only non-TRS floating-point shear while preserving exact edit-bone rest authority",
+            "boneSetPreserved": True,
+        },
         "statistics": source_stats,
         "meshes": [
             {
@@ -143,6 +181,7 @@ def main() -> None:
         "sourceSkinStatistics": source_stats,
         "skinStatistics": stats,
         "characterBoneCount": len(rig["bones"]),
+        "restBasisNormalization": source_diag["restBasisNormalization"],
         "modelAuthority": {
             "format": "GLB",
             "sha256": model_sha,
