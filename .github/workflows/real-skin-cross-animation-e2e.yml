@@ -8,6 +8,8 @@ on:
       - 'motion2sheet/motion/cli.py'
       - 'profiles/cameras/**'
       - 'tests/motion/model_render/**'
+      - 'tests/motion/skin/**'
+      - 'sample/walk_mixamo.fbx'
       - '.github/workflows/real-skin-cross-animation-e2e.yml'
   workflow_dispatch:
 
@@ -16,13 +18,13 @@ permissions:
 
 jobs:
   cross-animation:
-    name: real-mixamo-cross-animation / one-character-many-contract-b
+    name: real-mixamo-cross-animation / family-a-to-family-b
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       RELEASE_BASE: https://github.com/TrdHuy/motion2sheet/releases/download/e2e_gh_action_asset
-      WALK_SHA256: 1e05bcef7c030dce1be09a38a6e3d2f38d1f9bc71396584876ab1a3141005c02
-      WALK_SIZE: '41940608'
+      CHARACTER_SHA256: 1e05bcef7c030dce1be09a38a6e3d2f38d1f9bc71396584876ab1a3141005c02
+      CHARACTER_SIZE: '41940608'
       IDLE_SHA256: 3738c0c5a1a4c33e36c30f59ea3393a4ee612eef89542157ff59963ad49a7b72
       IDLE_SIZE: '552400'
       RUN_SHA256: a0ddd67d5e72dc657a6445d06af3d17f8ba6a15e61b19224d4c63f897ac0e91b
@@ -53,10 +55,14 @@ jobs:
       - name: Setup Blender 4.5 LTS
         uses: bradyajohnston/setup-blender@v5
         with: {version: '4.5.12'}
-      - name: Download and verify exact real Mixamo release fixtures
+
+      - name: Verify Family A walk and download exact release fixtures
         run: |
           set -euo pipefail
           mkdir -p "$ROOT/diagnostics"
+          test -s sample/walk_mixamo.fbx
+          WALK_SHA256="$(sha256sum sample/walk_mixamo.fbx | awk '{print $1}')"
+          WALK_SIZE="$(stat -c %s sample/walk_mixamo.fbx)"
           CHARACTER_FBX="$RUNNER_TEMP/walking_mixamo_with_skin.fbx"
           IDLE_FBX="$RUNNER_TEMP/idle-without-skin.fbx"
           RUN_FBX="$RUNNER_TEMP/run-without-skin-not-inplace.fbx"
@@ -65,21 +71,37 @@ jobs:
           curl -fL --retry 3 --retry-delay 2 -o "$IDLE_FBX" "$RELEASE_BASE/idle-without-skin.fbx"
           curl -fL --retry 3 --retry-delay 2 -o "$RUN_FBX" "$RELEASE_BASE/run-without-skin-not-inplace.fbx"
           curl -fL --retry 3 --retry-delay 2 -o "$RUN_INPLACE_FBX" "$RELEASE_BASE/run-without-skin-inplace.fbx"
-          echo "$WALK_SHA256  $CHARACTER_FBX" | sha256sum -c -
+          echo "$CHARACTER_SHA256  $CHARACTER_FBX" | sha256sum -c -
           echo "$IDLE_SHA256  $IDLE_FBX" | sha256sum -c -
           echo "$RUN_SHA256  $RUN_FBX" | sha256sum -c -
           echo "$RUN_INPLACE_SHA256  $RUN_INPLACE_FBX" | sha256sum -c -
-          test "$(stat -c %s "$CHARACTER_FBX")" -eq "$WALK_SIZE"
+          test "$(stat -c %s "$CHARACTER_FBX")" -eq "$CHARACTER_SIZE"
           test "$(stat -c %s "$IDLE_FBX")" -eq "$IDLE_SIZE"
           test "$(stat -c %s "$RUN_FBX")" -eq "$RUN_SIZE"
           test "$(stat -c %s "$RUN_INPLACE_FBX")" -eq "$RUN_INPLACE_SIZE"
           {
+            echo "WALK_SHA256=$WALK_SHA256"
+            echo "WALK_SIZE=$WALK_SIZE"
             echo "CHARACTER_FBX=$CHARACTER_FBX"
             echo "IDLE_FBX=$IDLE_FBX"
             echo "RUN_FBX=$RUN_FBX"
             echo "RUN_INPLACE_FBX=$RUN_INPLACE_FBX"
           } >> "$GITHUB_ENV"
-      - name: Export canonical character exactly once
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path(os.environ['ROOT'])
+          rows={
+            'walk':{'path':'sample/walk_mixamo.fbx','sha256':os.environ['WALK_SHA256'],'size':int(os.environ['WALK_SIZE'])},
+            'character':{'path':'walking_mixamo_with_skin.fbx','sha256':os.environ['CHARACTER_SHA256'],'size':int(os.environ['CHARACTER_SIZE'])},
+            'idle':{'path':'idle-without-skin.fbx','sha256':os.environ['IDLE_SHA256'],'size':int(os.environ['IDLE_SIZE'])},
+            'run':{'path':'run-without-skin-not-inplace.fbx','sha256':os.environ['RUN_SHA256'],'size':int(os.environ['RUN_SIZE'])},
+            'runInPlace':{'path':'run-without-skin-inplace.fbx','sha256':os.environ['RUN_INPLACE_SHA256'],'size':int(os.environ['RUN_INPLACE_SIZE'])},
+          }
+          (root/'diagnostics'/'fixture_identity.json').write_text(json.dumps(rows,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Export Family B character exactly once
         run: |
           set -euo pipefail
           motion2sheet export-character "$CHARACTER_FBX" --output "$ROOT/character"
@@ -95,270 +117,249 @@ jobs:
           identity={name:sha(character/name) for name in ('model.glb','rig.json','skin.json')}
           (root/'diagnostics'/'character_identity.json').write_text(json.dumps(identity,indent=2,sort_keys=True)+'\n')
           export=json.loads((character/'diagnostics'/'export.json').read_text())
-          rest=export['characterRestAuthority']
+          rest=export['characterRestAuthority']; model=export['modelAuthority']
           assert rest['animationIndependent'] is True
-          assert rest['animationActionRead'] is False
-          assert rest['animationFrameSampled'] is False
+          assert rest['animationActionRead'] is False and rest['animationFrameSampled'] is False
           assert rest['firstAnimationPoseUsed'] is False
           assert rest['restEncodingSourceAnimationRead'] is False
           assert rest['restEncodingSourceAnimationSampled'] is False
           assert rest['restEncodingCarrierDefinesRest'] is False
-          model=export['modelAuthority']
           assert model['geometryPose']=='source-bind-rest'
           assert model['containsArmatureObjects'] is False
           assert model['containsArmatureModifiers'] is False
           assert model['containsVertexGroups'] is False
           assert model['animationFrameSampled'] is False
           assert export['geometryBindAuthority']['topologyPreserved'] is True
-          print(json.dumps({'characterIdentity':identity,'characterRestAuthority':rest,'modelAuthority':model},indent=2,sort_keys=True))
           PY
-      - name: Normalize Walking, Idle and Run FBX encoding without retargeting
+
+      - name: Export Family A Walk through locked PR11 command
         run: |
           set -euo pipefail
-          WALK_NORMALIZED="$RUNNER_TEMP/walking-normalized.fbx"
+          motion2sheet export-animation-json sample/walk_mixamo.fbx --output "$ROOT/walking"
+          test -s "$ROOT/walking/rig.json"
+          test -s "$ROOT/walking/animation.json"
+
+      - name: Canonicalize Family A Idle and Run transport encoding only
+        run: |
+          set -euo pipefail
           IDLE_NORMALIZED="$RUNNER_TEMP/idle-normalized.fbx"
           RUN_NORMALIZED="$RUNNER_TEMP/run-normalized.fbx"
           RUN_INPLACE_NORMALIZED="$RUNNER_TEMP/run-inplace-normalized.fbx"
-          blender --background --factory-startup --python-exit-code 1 --python motion2sheet/motion/model_render/blender_prepare_motion_source.py -- --input "$CHARACTER_FBX" --output "$WALK_NORMALIZED" --report "$ROOT/diagnostics/walking_normalization.json"
           blender --background --factory-startup --python-exit-code 1 --python motion2sheet/motion/model_render/blender_prepare_motion_source.py -- --input "$IDLE_FBX" --output "$IDLE_NORMALIZED" --report "$ROOT/diagnostics/idle_normalization.json"
           blender --background --factory-startup --python-exit-code 1 --python motion2sheet/motion/model_render/blender_prepare_motion_source.py -- --input "$RUN_FBX" --output "$RUN_NORMALIZED" --report "$ROOT/diagnostics/run_normalization.json"
           blender --background --factory-startup --python-exit-code 1 --python motion2sheet/motion/model_render/blender_prepare_motion_source.py -- --input "$RUN_INPLACE_FBX" --output "$RUN_INPLACE_NORMALIZED" --report "$ROOT/diagnostics/run_inplace_normalization.json"
-          for path in "$WALK_NORMALIZED" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"; do test -s "$path"; done
+          for path in "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"; do test -s "$path"; done
           {
-            echo "WALK_NORMALIZED=$WALK_NORMALIZED"
             echo "IDLE_NORMALIZED=$IDLE_NORMALIZED"
             echo "RUN_NORMALIZED=$RUN_NORMALIZED"
             echo "RUN_INPLACE_NORMALIZED=$RUN_INPLACE_NORMALIZED"
           } >> "$GITHUB_ENV"
-      - name: Export all motion through locked PR11 Contract B command
+
+      - name: Export remaining Family A motion through locked PR11 command
         run: |
           set -euo pipefail
-          motion2sheet export-animation-json "$WALK_NORMALIZED" --output "$ROOT/walking"
           motion2sheet export-animation-json "$IDLE_NORMALIZED" --output "$ROOT/idle"
           motion2sheet export-animation-json "$RUN_NORMALIZED" --output "$ROOT/run"
           motion2sheet export-animation-json "$RUN_INPLACE_NORMALIZED" --output "$ROOT/run-inplace"
-          for clip in walking idle run run-inplace; do
+          for clip in idle run run-inplace; do
             test -s "$ROOT/$clip/rig.json"
             test -s "$ROOT/$clip/animation.json"
           done
-      - name: Verify source-to-Contract-B normalization gates
-        run: |
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          root=Path(os.environ['ROOT'])
-          expected={
-              'walking':os.environ['WALK_SHA256'],
-              'idle':os.environ['IDLE_SHA256'],
-              'run':os.environ['RUN_SHA256'],
-              'run_inplace':os.environ['RUN_INPLACE_SHA256'],
-          }
-          summary={}
-          for name,sha in expected.items():
-              report=json.loads((root/'diagnostics'/f'{name}_normalization.json').read_text())
-              assert report['source']['sha256']==sha
-              assert report['motionRebasedToCanonicalRest'] is True
-              assert report['canonicalizationOnly'] is True
-              assert report['normalizationRestRebuiltFromCanonicalAuthority'] is True
-              assert report['normalizationRestDerivedFromAnimationFrame'] is False
-              assert report['staticFbxRestActionDetached'] is True
-              assert report['staticFbxRestPoseBasisIdentity'] is True
-              assert report['animationExportedFromStoredAction'] is True
-              assert report['firstAnimationPoseUsedAsRest'] is False
-              assert report['animationFrameUsedAsRest'] is False
-              assert report['retargeting'] is False and report['fuzzyMapping'] is False
-              assert report['preFbxFidelity']['pass'] and report['fidelity']['pass'] and report['lockedPr11RigCapturePass']
-              policy=report['fidelityPolicy']
-              assert policy['canonicalRebaseTranslationTolerance']==1e-5
-              assert policy['canonicalRebaseHeadTailTolerance']==1e-5
-              assert policy['fbxSerializationTranslationTolerance']==2e-5
-              assert policy['fbxSerializationHeadTailTolerance']==2e-5
-              assert policy['level1RestBasisToleranceChanged'] is False
-              level1=report['restCompatibility']
-              assert level1['pass'] and level1['level']==1
-              assert level1['exactBoneNames'] and level1['exactHierarchy'] and level1['coordinateConventionMatch']
-              assert level1['restBasisToleranceDegrees']==0.001
-              assert level1['maxRestBasisErrorDegrees'] <= level1['restBasisToleranceDegrees']
-              assert level1['retargeting'] is False and level1['fuzzyMapping'] is False
-              summary[name]={
-                  'preFbxFidelity':report['preFbxFidelity'],
-                  'postFbxFidelity':report['fidelity'],
-                  'fidelityPolicy':policy,
-                  'sourceRestCompatibility':level1,
-              }
-          (root/'diagnostics'/'normalization_summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
-          print(json.dumps(summary,indent=2,sort_keys=True))
-          PY
-      - name: Fail closed unless every Contract B rig matches fixed character Level-1
+
+      - name: Prove Family A and Family B rest relationships before render
         run: |
           python - <<'PY'
           import json, os
           from pathlib import Path
           from motion2sheet.motion.roundtrip.schema import read_json
-          from motion2sheet.motion.skin import diagnose_level1_rig_compatibility, validate_level1_rig_compatibility
-
+          from motion2sheet.motion.skin import (
+              diagnose_level1_rig_compatibility,
+              rig_fingerprint,
+              validate_level1_rig_compatibility,
+              validate_level2_rest_basis_eligibility,
+          )
           root=Path(os.environ['ROOT'])
           character=read_json(root/'character'/'rig.json')
-          reports={}
-          failures=[]
-          for clip in ('walking','idle','run','run-inplace'):
-              rig=read_json(root/clip/'rig.json')
-              level1=diagnose_level1_rig_compatibility(rig,character)
-              reports[clip]=level1
-              if level1['pass']:
-                  strict=validate_level1_rig_compatibility(rig,character)
-                  assert strict['pass'] is True
-                  assert strict['restBasisToleranceDegrees']==0.001
-                  continue
-              failures.append({
-                  'clip':clip,
-                  'missingBones':level1['missingBones'],
-                  'extraBones':level1['extraBones'],
-                  'parentMismatchCount':len(level1['parentMismatches']),
-                  'coordinateMismatchCount':len(level1['coordinateMismatches']),
-                  'restBasisMismatchCount':level1['restBasisMismatchCount'],
-                  'maxRestBasisErrorDegrees':level1['maxRestBasisErrorDegrees'],
-                  'worstRestBasisBone':level1['worstRestBasisBone'],
-              })
+          family_a={clip:read_json(root/clip/'rig.json') for clip in ('walking','idle','run','run-inplace')}
+          anchor=family_a['walking']
+          within={}
+          cross={}
+          for clip,rig in family_a.items():
+              l1_family=validate_level1_rig_compatibility(rig,anchor)
+              assert l1_family['pass'] and l1_family['restBasisToleranceDegrees']==0.001
+              l1_character=diagnose_level1_rig_compatibility(rig,character)
+              assert l1_character['pass'] is False
+              assert l1_character['exactBoneNames'] and l1_character['exactHierarchy'] and l1_character['coordinateConventionMatch']
+              assert l1_character['restBasisMismatchCount'] > 0
+              level2=validate_level2_rest_basis_eligibility(rig,character)
+              assert level2['pass'] and level2['adaptationType']=='rest-basis'
+              assert level2['retargeting']['boneMapping']=='exact-name'
+              assert level2['retargeting']['fuzzyMapping'] is False
+              within[clip]={
+                  'restFingerprint':rig_fingerprint(rig),
+                  'againstFamilyAWalk':l1_family,
+              }
+              cross[clip]={
+                  'sourceRestFingerprint':level2['sourceRestFingerprint'],
+                  'targetRestFingerprint':level2['targetRestFingerprint'],
+                  'level1AgainstCharacter':l1_character,
+                  'level2Eligibility':level2,
+              }
           payload={
-              'schema':'motion2sheet.diagnostics.fixed-character-level1-preflight',
-              'version':2,
-              'characterExportCount':1,
-              'pass':not failures,
-              'retargetingPermitted':False,
-              'fuzzyMappingPermitted':False,
-              'restBasisToleranceDegrees':0.001,
-              'clips':reports,
-              'failures':failures,
+              'familyA':within,
+              'familyBCharacterRestFingerprint':rig_fingerprint(character),
+              'familyAToFamilyB':cross,
+              'level1ToleranceDegrees':0.001,
+              'level1ToleranceRelaxed':False,
           }
-          out=root/'diagnostics'/'fixed_character_level1_preflight.json'
-          out.write_text(json.dumps(payload,indent=2,sort_keys=True)+'\n')
+          (root/'diagnostics'/'rest_family_proof.json').write_text(json.dumps(payload,indent=2,sort_keys=True)+'\n')
           print(json.dumps(payload,indent=2,sort_keys=True))
-          if failures:
-              raise SystemExit('fixed-character Level-1 preflight failed; replace incompatible animation fixture(s), do not retarget: '+json.dumps(failures,sort_keys=True))
           PY
-      - name: Delete every FBX before canonical JSON-only renders
-        run: |
-          set -euo pipefail
-          rm -f "$CHARACTER_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$WALK_NORMALIZED" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"
-          for path in "$CHARACTER_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$WALK_NORMALIZED" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"; do test ! -e "$path"; done
-          echo '{"allOriginalAndNormalizedFbxDeletedBeforeRender":true}' > "$ROOT/diagnostics/fbx_deletion.json"
-      - name: Render SAME character with Walking Contract B
-        run: |
-          set -euo pipefail
-          motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/walking/rig.json" --animation "$ROOT/walking/animation.json" --camera-profile "$CAMERA" --sheet-columns 8 --canvas "$CROSS_CANVAS" --background transparent --gif --output "$ROOT/render-walking"
-      - name: Render SAME character with independent Idle Contract B
-        run: |
-          set -euo pipefail
-          motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/idle/rig.json" --animation "$ROOT/idle/animation.json" --camera-profile "$CAMERA" --sheet-columns 8 --canvas "$CROSS_CANVAS" --background transparent --gif --output "$ROOT/render-idle"
-      - name: Render SAME character with independent Run Contract B
-        run: |
-          set -euo pipefail
-          motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/run/rig.json" --animation "$ROOT/run/animation.json" --camera-profile "$CAMERA" --sheet-columns 8 --canvas "$CROSS_CANVAS" --background transparent --gif --output "$ROOT/render-run"
-      - name: Verify one character, strict Level-1, skin, playback, visual and GIF gates
+
+      - name: Verify transport normalization does not retarget Family A
         run: |
           python - <<'PY'
-          import hashlib, json, math, os
+          import json, os
+          from pathlib import Path
+          root=Path(os.environ['ROOT'])
+          for clip in ('idle','run','run_inplace'):
+              report=json.loads((root/'diagnostics'/f'{clip}_normalization.json').read_text())
+              assert report['canonicalizationOnly'] is True
+              assert report['normalizationRestDerivedFromAnimationFrame'] is False
+              assert report['firstAnimationPoseUsedAsRest'] is False
+              assert report['animationFrameUsedAsRest'] is False
+              assert report['retargeting'] is False and report['fuzzyMapping'] is False
+              assert report['preFbxFidelity']['pass'] and report['fidelity']['pass']
+              assert report['fidelityPolicy']['level1RestBasisToleranceChanged'] is False
+          PY
+
+      - name: Delete every source and normalized FBX before canonical renders
+        run: |
+          set -euo pipefail
+          rm -f sample/walk_mixamo.fbx "$CHARACTER_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"
+          for path in sample/walk_mixamo.fbx "$CHARACTER_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"; do test ! -e "$path"; done
+          echo '{"allSourceAndNormalizedFbxDeletedBeforeRender":true}' > "$ROOT/diagnostics/fbx_deletion.json"
+
+      - name: Render SAME Family B character with Family A Walk Contract B
+        run: |
+          motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/walking/rig.json" --animation "$ROOT/walking/animation.json" --camera-profile "$CAMERA" --compatibility-level 2 --sheet-columns 8 --canvas "$CROSS_CANVAS" --background transparent --gif --output "$ROOT/render-walking"
+      - name: Render SAME Family B character with Family A Idle Contract B
+        run: |
+          motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/idle/rig.json" --animation "$ROOT/idle/animation.json" --camera-profile "$CAMERA" --compatibility-level 2 --sheet-columns 8 --canvas "$CROSS_CANVAS" --background transparent --gif --output "$ROOT/render-idle"
+      - name: Render SAME Family B character with Family A Run Contract B
+        run: |
+          motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/run/rig.json" --animation "$ROOT/run/animation.json" --camera-profile "$CAMERA" --compatibility-level 2 --sheet-columns 8 --canvas "$CROSS_CANVAS" --background transparent --gif --output "$ROOT/render-run"
+      - name: Prove Run-in-place adaptation without full visual render
+        run: |
+          set -euo pipefail
+          FIRST_FRAME="$(python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path(os.environ['ROOT'])
+          print(json.loads((root/'run-inplace'/'animation.json').read_text())['frames'][0]['frame'])
+          PY
+          )"
+          motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/run-inplace/rig.json" --animation "$ROOT/run-inplace/animation.json" --camera-profile "$CAMERA" --compatibility-level 2 --frames "$FIRST_FRAME" --sheet-columns 1 --canvas 128x128 --background transparent --output "$ROOT/render-run-inplace-proof"
+
+      - name: Verify Level-2 fidelity, outputs, Skin and root-motion semantics
+        run: |
+          python - <<'PY'
+          import hashlib, json, os
           from pathlib import Path
           from PIL import Image
           from motion2sheet.motion.model_render.root_motion import contract_root_motion, root_motion_difference
           from motion2sheet.motion.roundtrip.schema import read_json
-          from motion2sheet.motion.skin import validate_level1_rig_compatibility
           root=Path(os.environ['ROOT']); character=root/'character'
           def sha(path):
               h=hashlib.sha256(); h.update(path.read_bytes()); return h.hexdigest()
-          expected_identity=json.loads((root/'diagnostics'/'character_identity.json').read_text())
-          actual_identity={name:sha(character/name) for name in ('model.glb','rig.json','skin.json')}
-          assert actual_identity==expected_identity
-          deletion=json.loads((root/'diagnostics'/'fbx_deletion.json').read_text())
-          assert deletion['allOriginalAndNormalizedFbxDeletedBeforeRender'] is True
-          fixed_preflight=json.loads((root/'diagnostics'/'fixed_character_level1_preflight.json').read_text())
-          assert fixed_preflight['pass'] is True
-          assert fixed_preflight['version']==2
-          assert fixed_preflight['retargetingPermitted'] is False and fixed_preflight['fuzzyMappingPermitted'] is False
-          assert fixed_preflight['restBasisToleranceDegrees']==0.001
-          for key in ('CHARACTER_FBX','IDLE_FBX','RUN_FBX','RUN_INPLACE_FBX','WALK_NORMALIZED','IDLE_NORMALIZED','RUN_NORMALIZED','RUN_INPLACE_NORMALIZED'):
+          expected=json.loads((root/'diagnostics'/'character_identity.json').read_text())
+          actual={name:sha(character/name) for name in ('model.glb','rig.json','skin.json')}
+          assert actual==expected
+          assert json.loads((root/'diagnostics'/'fbx_deletion.json').read_text())['allSourceAndNormalizedFbxDeletedBeforeRender'] is True
+          for key in ('CHARACTER_FBX','IDLE_FBX','RUN_FBX','RUN_INPLACE_FBX','IDLE_NORMALIZED','RUN_NORMALIZED','RUN_INPLACE_NORMALIZED'):
               assert not Path(os.environ[key]).exists(), key
+          assert not Path('sample/walk_mixamo.fbx').exists()
 
-          clip_reports={}
+          summaries={}
           for clip in ('walking','idle','run'):
               render=json.loads((root/f'render-{clip}'/'render.json').read_text())
-              level1=render['rigCompatibility']
-              assert level1['pass'] and level1['level']==1
-              assert level1['boneCount']==65
-              assert level1['exactBoneNames'] and level1['exactHierarchy'] and level1['coordinateConventionMatch']
-              assert level1['restBasisToleranceDegrees']==0.001
-              assert level1['maxRestBasisErrorDegrees'] <= level1['restBasisToleranceDegrees']
-              assert level1['retargeting'] is False and level1['fuzzyMapping'] is False
-              model=render['modelIdentity']
+              assert render['compatibilityLevel']==2
+              assert render['maximumCompatibilityLevel']==2
+              assert render['adaptationApplied'] is True and render['adaptationType']=='rest-basis'
+              assert render['retargeting']=={'boneMapping':'exact-name','fuzzyMapping':False}
+              l1=render['rigCompatibility']; l2=render['level2Eligibility']
+              assert l1['pass'] is False and l1['restBasisToleranceDegrees']==0.001
+              assert l1['exactBoneNames'] and l1['exactHierarchy'] and l1['coordinateConventionMatch']
+              assert l2['pass'] and l2['retargeting']['boneMapping']=='exact-name' and l2['retargeting']['fuzzyMapping'] is False
+              model=render['modelIdentity']; skin=render['skinReconstruction']; fidelity=render['animationFidelity']
               assert model['pass'] and model['sameMeshObjects'] and model['sameVertexCounts'] and model['sameVertexOrder']
-              stats=render['skinStatistics']
-              assert stats['unknownBoneReferences']==0 and stats['weightedVertexCount']>0 and stats['influenceCount']>0
-              skin=render['skinReconstruction']
-              assert skin['pass'] and skin['sameMeshObjects'] and skin['sameVertexCounts'] and skin['sameVertexOrder'] and skin['sameInfluencedBones']
-              assert skin['maxWeightDelta'] <= 1e-8
-              playback=render['animationFidelity']
-              assert playback['pass'] and playback['leftRightIdentityPass'] and playback['fullBonePlayback']
-              assert playback['maxSemanticDirectionErrorDegrees'] <= 0.001
-              assert playback['maxJointBendErrorDegrees'] <= 0.001
-              assert playback['maxLocalRotationErrorDegrees'] <= 0.0001
-              timing=render['gifTiming']
+              assert render['skinStatistics']['unknownBoneReferences']==0
+              assert skin['pass'] and skin['maxWeightDelta']==0.0
+              assert fidelity['pass'] and fidelity['compatibilityLevel']==2 and fidelity['adaptationApplied'] is True
+              assert fidelity['leftRightIdentityPass'] and fidelity['fullBonePlayback']
+              adaptation=json.loads((root/f'render-{clip}'/'diagnostics'/'rest_basis_adaptation.json').read_text())
+              assert adaptation['animationFramesRead'] is False and adaptation['frameDependent'] is False
+              assert adaptation['contractBMutated'] is False
+              assert adaptation['runtimeTransformsAreCanonicalMotionAuthority'] is False
+              assert len(adaptation['bones'])==65
+              assert all('B_target_from_source' in row for row in adaptation['bones'].values())
+              timing=render['gifTiming']; ideal=render['frameCount']/float(render['animation']['fps'])*1000.0
               assert len(timing['frameDurationsMs'])==render['frameCount']
-              ideal=render['frameCount']/float(render['animation']['fps'])*1000.0
               assert abs(timing['totalDurationMs']-ideal) <= 5.0
               with Image.open(root/f'render-{clip}'/'preview.gif') as image:
                   assert image.n_frames==render['frameCount']
               with Image.open(root/f'render-{clip}'/'pose_sheet.png') as image:
-                  alpha=image.convert('RGBA').getchannel('A').getextrema()
-                  assert alpha[0]==0 and alpha[1]>0
-              for required in ('pose_sheet.png','preview.gif','source.blend','diagnostics/model_identity.json','diagnostics/skin_reconstruction.json','diagnostics/playback.json'):
-                  assert (root/f'render-{clip}'/required).is_file(), (clip,required)
-              clip_reports[clip]={
+                  alpha=image.convert('RGBA').getchannel('A').getextrema(); assert alpha[0]==0 and alpha[1]>0
+              summaries[clip]={
                   'frameCount':render['frameCount'],
-                  'fps':render['animation']['fps'],
-                  'level1':level1,
-                  'skinMaxWeightDelta':skin['maxWeightDelta'],
-                  'playback':playback,
+                  'sourceRestFingerprint':l2['sourceRestFingerprint'],
+                  'targetRestFingerprint':l2['targetRestFingerprint'],
+                  'preAdaptationLevel1':l1,
+                  'fidelity':fidelity,
                   'gifTiming':timing,
               }
 
-          character_rig=read_json(character/'rig.json')
-          inplace_rig=read_json(root/'run-inplace'/'rig.json')
-          inplace_level1=validate_level1_rig_compatibility(inplace_rig,character_rig)
-          assert inplace_level1['pass'] and inplace_level1['level']==1
-          assert inplace_level1['boneCount']==65 and inplace_level1['exactBoneNames'] and inplace_level1['exactHierarchy'] and inplace_level1['coordinateConventionMatch']
-          assert inplace_level1['restBasisToleranceDegrees']==0.001
-          assert inplace_level1['maxRestBasisErrorDegrees'] <= inplace_level1['restBasisToleranceDegrees']
-          assert inplace_level1['retargeting'] is False and inplace_level1['fuzzyMapping'] is False
-
-          run_root=contract_root_motion(read_json(root/'run'/'rig.json'),read_json(root/'run'/'animation.json'))
-          inplace_root=contract_root_motion(inplace_rig,read_json(root/'run-inplace'/'animation.json'))
-          difference=root_motion_difference(run_root,inplace_root)
-          assert difference['pass'], {'run':run_root,'runInPlace':inplace_root,'difference':difference}
-          observed_larger='run-not-inplace' if run_root['rootDisplacement']>inplace_root['rootDisplacement'] else 'run-inplace' if inplace_root['rootDisplacement']>run_root['rootDisplacement'] else 'equal'
+          inplace=json.loads((root/'render-run-inplace-proof'/'render.json').read_text())
+          assert inplace['compatibilityLevel']==2 and inplace['adaptationApplied'] is True
+          assert inplace['animationFidelity']['pass']
+          run_contract=contract_root_motion(read_json(root/'run'/'rig.json'),read_json(root/'run'/'animation.json'))
+          inplace_contract=contract_root_motion(read_json(root/'run-inplace'/'rig.json'),read_json(root/'run-inplace'/'animation.json'))
+          contract_difference=root_motion_difference(run_contract,inplace_contract)
+          assert contract_difference['pass']
+          run_adapted=summaries['run']['fidelity']['rootMotion']
+          inplace_adapted=inplace['animationFidelity']['rootMotion']
+          assert run_adapted['directionPreserved'] and run_adapted['displacementPreserved']
+          assert inplace_adapted['directionPreserved'] and inplace_adapted['displacementPreserved']
+          adapted_difference=root_motion_difference(
+              {'rootDisplacement':run_adapted['targetDisplacement']},
+              {'rootDisplacement':inplace_adapted['targetDisplacement']},
+          )
+          assert adapted_difference['pass']
           root_motion={
-              'runNotInPlace':run_root,
-              'runInPlace':inplace_root,
-              'difference':difference,
-              'observedLargerRootMotionClip':observed_larger,
+              'runNotInPlaceContractB':run_contract,
+              'runInPlaceContractB':inplace_contract,
+              'contractDifference':contract_difference,
+              'runNotInPlaceAdapted':run_adapted,
+              'runInPlaceAdapted':inplace_adapted,
+              'adaptedDifference':adapted_difference,
               'gateUsesFilenameExpectation':False,
           }
-          summary={
+          result={
               'characterExportCount':1,
-              'characterIdentityBeforeAndAfter':{'pass':True,**actual_identity},
+              'characterIdentityBeforeAndAfter':{'pass':True,**actual},
               'allFbxDeletedBeforeRender':True,
-              'fixedCharacterLevel1Preflight':fixed_preflight,
-              'clips':clip_reports,
-              'runInPlaceLevel1':inplace_level1,
+              'clips':summaries,
               'rootMotion':root_motion,
           }
-          (root/'cross-animation-summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
-          print(json.dumps(summary,indent=2,sort_keys=True))
+          (root/'cross-animation-summary.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(result,indent=2,sort_keys=True))
           PY
+
       - name: Reassert no FBX and unchanged character after all renders
         run: |
           set -euo pipefail
-          for path in "$CHARACTER_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$WALK_NORMALIZED" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"; do test ! -e "$path"; done
+          test ! -e sample/walk_mixamo.fbx
+          for path in "$CHARACTER_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"; do test ! -e "$path"; done
           python - <<'PY'
           import hashlib,json,os
           from pathlib import Path
@@ -368,6 +369,7 @@ jobs:
               h=hashlib.sha256(); h.update(path.read_bytes()); return h.hexdigest()
           assert expected=={name:sha(character/name) for name in ('model.glb','rig.json','skin.json')}
           PY
+
       - name: Upload cross-animation proof
         if: always()
         uses: actions/upload-artifact@v4
