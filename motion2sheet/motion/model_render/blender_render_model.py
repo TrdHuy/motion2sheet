@@ -50,6 +50,11 @@ def main() -> None:
     compatibility = validate_level1_rig_compatibility(animation_rig, character_rig)
     if compatibility != request["compatibility"]:
         raise RuntimeError("Level-1 compatibility changed between public validation and Blender execution")
+    roots = [bone["name"] for bone in character_rig["bones"] if bone["parent"] is None]
+    if len(roots) != 1:
+        raise RuntimeError(f"Level-1 real-model renderer requires exactly one root bone; found {roots}")
+    root_bone = roots[0]
+    request["rootBone"] = root_bone
 
     model_objects = import_geometry_glb(model_path)
     layout = mesh_layout(model_objects)
@@ -99,13 +104,13 @@ def main() -> None:
     scene.frame_end = int(animation["frameRange"][1])
 
     setup_camera_and_render(request, character_armature)
-    playback = playback_diagnostics(reference_armature, character_armature, animation, request["rootBone"])
+    playback = playback_diagnostics(reference_armature, character_armature, animation, root_bone)
     _write(diagnostics / "playback.json", playback)
     if not playback["pass"]:
         raise RuntimeError(f"Contract B Level-1 playback fidelity failed: {playback}")
 
     bpy.ops.wm.save_as_mainfile(filepath=str(output / "source.blend"))
-    print(json.dumps({"skinReconstruction": skin_report, "playback": playback, "compatibility": compatibility}, sort_keys=True), flush=True)
+    print(json.dumps({"rootBone": root_bone, "skinReconstruction": skin_report, "playback": playback, "compatibility": compatibility}, sort_keys=True), flush=True)
 
 
 if __name__ == "__main__":
