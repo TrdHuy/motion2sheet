@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from motion2sheet.motion.cli import parser
+from motion2sheet.motion.model_render import runner as runner_module
 from motion2sheet.motion.model_render.profile import load_camera_profile
 from motion2sheet.motion.model_render.rest import character_rest_fingerprint
 from motion2sheet.motion.model_render.root_motion import contract_root_motion, root_motion_difference
@@ -188,3 +189,72 @@ def test_root_motion_difference_requires_material_contract_difference():
     assert root_motion_difference(moving, stationary)["pass"] is True
     almost_same = {"rootDisplacement": 1.99}
     assert root_motion_difference(moving, almost_same)["pass"] is False
+
+
+def test_render_level1_preflight_persists_complete_diagnostic_before_strict_failure(tmp_path: Path, monkeypatch):
+    diagnostic = {
+        "pass": False,
+        "missingBones": [],
+        "extraBones": [],
+        "parentMismatches": [],
+        "coordinateMismatches": [],
+        "restBasisMismatchCount": 43,
+        "maxRestBasisErrorDegrees": 45.24519733854477,
+        "worstRestBasisBone": "mixamorig:RightHandPinky1",
+        "restBasisToleranceDegrees": 0.001,
+        "retargeting": False,
+        "fuzzyMapping": False,
+    }
+    calls = []
+
+    def diagnose(animation_rig, character_rig):
+        calls.append("diagnose")
+        return diagnostic
+
+    def strict(animation_rig, character_rig):
+        calls.append("strict")
+        raise ValueError("Level-1 rest-basis mismatch for mixamorig:LeftArm")
+
+    monkeypatch.setattr(runner_module, "diagnose_level1_rig_compatibility", diagnose)
+    monkeypatch.setattr(runner_module, "validate_level1_rig_compatibility", strict)
+
+    with pytest.raises(ValueError, match=r"restBasisMismatchCount.*43"):
+        runner_module._validate_and_record_level1_compatibility({}, {}, tmp_path)
+
+    assert calls == ["diagnose", "strict"]
+    assert json.loads((tmp_path / "diagnostics" / "rig_compatibility.json").read_text()) == diagnostic
+
+
+def test_render_level1_preflight_still_uses_strict_validator_on_pass(tmp_path: Path, monkeypatch):
+    diagnostic = {
+        "pass": True,
+        "missingBones": [],
+        "extraBones": [],
+        "parentMismatches": [],
+        "coordinateMismatches": [],
+        "restBasisMismatchCount": 0,
+        "maxRestBasisErrorDegrees": 0.0003958822364171372,
+        "worstRestBasisBone": "mixamorig:RightShoulder",
+        "restBasisToleranceDegrees": 0.001,
+        "retargeting": False,
+        "fuzzyMapping": False,
+    }
+    strict_report = {**diagnostic, "level": 1, "boneCount": 65}
+    calls = []
+
+    def diagnose(animation_rig, character_rig):
+        calls.append("diagnose")
+        return diagnostic
+
+    def strict(animation_rig, character_rig):
+        calls.append("strict")
+        return strict_report
+
+    monkeypatch.setattr(runner_module, "diagnose_level1_rig_compatibility", diagnose)
+    monkeypatch.setattr(runner_module, "validate_level1_rig_compatibility", strict)
+
+    result = runner_module._validate_and_record_level1_compatibility({}, {}, tmp_path)
+
+    assert result == strict_report
+    assert calls == ["diagnose", "strict"]
+    assert json.loads((tmp_path / "diagnostics" / "rig_compatibility.json").read_text()) == diagnostic
