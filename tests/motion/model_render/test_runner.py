@@ -139,14 +139,20 @@ def test_character_rest_authority_uses_only_identity_encoding_carrier():
     assert '"restEncodingSourceAnimationSampled": False' in source
 
 
-def test_motion_normalizer_does_not_rebuild_rest_from_json_or_first_pose():
+def test_motion_normalizer_rebases_motion_onto_canonical_rest_without_first_pose_rest():
     source = (Path(__file__).parents[3] / "motion2sheet/motion/model_render/blender_prepare_motion_source.py").read_text(encoding="utf-8")
     assert "build_json_scene" not in source
     assert "capture_animation_document" not in source
-    assert "export_armature_only_fbx(armature, output)" in source
-    assert '"normalizationRestRebuilt": False' in source
+    assert "build_armature(canonical_rig)" in source
+    assert "pose_bone.matrix = reference[frame][bone.name][\"matrixArmature\"].copy()" in source
+    assert "export_armature_only_fbx(rebased_armature, output)" in source
+    assert '"motionRebasedToCanonicalRest": True' in source
+    assert '"canonicalizationOnly": True' in source
+    assert '"normalizationRestDerivedFromAnimationFrame": False' in source
     assert '"firstAnimationPoseUsedAsRest": False' in source
     assert '"animationFrameUsedAsRest": False' in source
+    assert '"retargeting": False' in source
+    assert '"fuzzyMapping": False' in source
 
 
 def test_contract_root_motion_is_data_driven():
