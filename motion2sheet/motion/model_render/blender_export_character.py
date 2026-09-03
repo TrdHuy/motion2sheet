@@ -106,13 +106,17 @@ def main() -> None:
     canonical_armature, canonical_action = import_source(canonical_fbx)
     canonical_start, canonical_end = integer_action_range(canonical_action)
     canonical_frame_count = canonical_end - canonical_start + 1
-    if (canonical_start, canonical_end) != (source_start, source_end):
+    if canonical_frame_count != source_frame_count:
         raise RuntimeError(
-            "character Level-1 canonicalization changed animation frame range; "
+            "character Level-1 canonicalization changed animation sample count; "
             f"source={[source_start, source_end]} canonical={[canonical_start, canonical_end]}"
         )
-    if canonical_frame_count != source_frame_count:
-        raise RuntimeError("character Level-1 canonicalization changed source frame count")
+    frame_offset = canonical_start - source_start
+    if canonical_end - source_end != frame_offset:
+        raise RuntimeError(
+            "character Level-1 canonicalization frame numbering is not a constant offset; "
+            f"source={[source_start, source_end]} canonical={[canonical_start, canonical_end]}"
+        )
     canonical_hierarchy = _hierarchy(canonical_armature)
     if canonical_hierarchy != source_hierarchy:
         raise RuntimeError(
@@ -201,6 +205,7 @@ def main() -> None:
         "exactHierarchy": True,
         "sourceFrameRange": [source_start, source_end],
         "canonicalFrameRange": [canonical_start, canonical_end],
+        "frameOffset": frame_offset,
         "temporaryFbxSha256": _sha256(canonical_fbx),
         "temporaryContainsMesh": False,
         "temporaryContainsSkinAuthority": False,
