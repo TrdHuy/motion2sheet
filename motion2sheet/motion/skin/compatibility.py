@@ -5,6 +5,8 @@ from typing import Any
 
 from motion2sheet.motion.roundtrip.schema import validate_rig_document
 
+from .contract import rig_fingerprint
+
 REST_BASIS_TOLERANCE_DEGREES = 0.001
 _COORDINATE_FIELDS = ("handedness", "rightAxis", "forwardAxis", "upAxis")
 
@@ -232,3 +234,91 @@ def validate_level1_rig_compatibility(
         )
 
     return report
+
+
+def diagnose_level2_rest_basis_eligibility(
+    animation_rig: dict[str, Any],
+    character_rig: dict[str, Any],
+    *,
+    rest_basis_tolerance_degrees: float = REST_BASIS_TOLERANCE_DEGREES,
+) -> dict[str, Any]:
+    """Report eligibility for the narrow exact-skeleton Level-2 rest-basis adapter.
+
+    Level-2 is deliberately *not* a bone-mapping system. It is eligible only when
+    names, parent hierarchy and coordinate convention are already exact and Level-1
+    fails solely because local rest bases differ beyond the unchanged 0.001-degree
+    Level-1 tolerance. Rest fingerprints are derived only from rig rest authority.
+    """
+
+    source = validate_rig_document(animation_rig)
+    target = validate_rig_document(character_rig)
+    level1 = diagnose_level1_rig_compatibility(
+        source,
+        target,
+        rest_basis_tolerance_degrees=rest_basis_tolerance_degrees,
+    )
+    exact_structure = (
+        level1["exactBoneNames"]
+        and level1["exactHierarchy"]
+        and level1["coordinateConventionMatch"]
+    )
+    requires_adaptation = exact_structure and level1["restBasisMismatchCount"] > 0
+    eligible = bool(requires_adaptation)
+    return {
+        "pass": eligible,
+        "level": 2,
+        "adaptationType": "rest-basis",
+        "requiresAdaptation": requires_adaptation,
+        "boneCount": level1["boneCount"],
+        "exactBoneNames": level1["exactBoneNames"],
+        "exactHierarchy": level1["exactHierarchy"],
+        "coordinateConventionMatch": level1["coordinateConventionMatch"],
+        "missingBones": level1["missingBones"],
+        "extraBones": level1["extraBones"],
+        "parentMismatches": level1["parentMismatches"],
+        "coordinateMismatches": level1["coordinateMismatches"],
+        "restBasisToleranceDegrees": level1["restBasisToleranceDegrees"],
+        "restBasisMismatchCount": level1["restBasisMismatchCount"],
+        "restBasisMismatches": level1["restBasisMismatches"],
+        "maxRestBasisErrorDegrees": level1["maxRestBasisErrorDegrees"],
+        "worstRestBasisBone": level1["worstRestBasisBone"],
+        "sourceRestFingerprint": rig_fingerprint(source),
+        "targetRestFingerprint": rig_fingerprint(target),
+        "restAuthorityOnly": True,
+        "animationFramesRead": False,
+        "retargeting": {
+            "type": "rest-basis",
+            "boneMapping": "exact-name",
+            "fuzzyMapping": False,
+            "semanticGuessing": False,
+            "topologyConversion": False,
+            "helperBoneSolver": False,
+        },
+    }
+
+
+def validate_level2_rest_basis_eligibility(
+    animation_rig: dict[str, Any],
+    character_rig: dict[str, Any],
+    *,
+    rest_basis_tolerance_degrees: float = REST_BASIS_TOLERANCE_DEGREES,
+) -> dict[str, Any]:
+    report = diagnose_level2_rest_basis_eligibility(
+        animation_rig,
+        character_rig,
+        rest_basis_tolerance_degrees=rest_basis_tolerance_degrees,
+    )
+    if report["pass"]:
+        return report
+    if not report["exactBoneNames"]:
+        raise ValueError(
+            f"Level-2 rest-basis adaptation requires exact bone names: "
+            f"missing={report['missingBones']} extra={report['extraBones']}"
+        )
+    if not report["exactHierarchy"]:
+        mismatch = report["parentMismatches"][0] if report["parentMismatches"] else None
+        raise ValueError(f"Level-2 rest-basis adaptation requires exact hierarchy: {mismatch}")
+    if not report["coordinateConventionMatch"]:
+        mismatch = report["coordinateMismatches"][0] if report["coordinateMismatches"] else None
+        raise ValueError(f"Level-2 rest-basis adaptation requires the same coordinate convention: {mismatch}")
+    raise ValueError("Level-2 rest-basis adaptation was requested but Level-1 already covers this rig pair")
