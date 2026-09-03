@@ -57,7 +57,7 @@ jobs:
           test -s "$ROOT/character/model.glb"
           test -s "$ROOT/character/rig.json"
           test -s "$ROOT/character/skin.json"
-      - name: Normalize only numerical rest shear for locked PR 11 motion exporter
+      - name: Normalize motion onto clip-independent rest for locked PR 11 exporter
         run: |
           set -euo pipefail
           NORMALIZED="$RUNNER_TEMP/walking_mixamo_motion_normalized.fbx"
@@ -74,6 +74,14 @@ jobs:
           motion2sheet export-animation-json "$NORMALIZED" --output "$ROOT/animation"
           test -s "$ROOT/animation/rig.json"
           test -s "$ROOT/animation/animation.json"
+          PREFLIGHT_FRAME="$(python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path(os.environ['ROOT'])
+          print(int(json.loads((root/'animation'/'animation.json').read_text())['frames'][0]['frame']))
+          PY
+          )"
+          echo "PREFLIGHT_FRAME=$PREFLIGHT_FRAME" >> "$GITHUB_ENV"
       - name: Render one actual-source silhouette before deletion
         run: |
           set -euo pipefail
@@ -81,17 +89,15 @@ jobs:
           import json, os
           from pathlib import Path
           from motion2sheet.motion.model_render.profile import load_camera_profile
-          from motion2sheet.motion.roundtrip.schema import read_json
           root=Path(os.environ['ROOT'])
-          animation=read_json(root/'animation'/'animation.json')
           normalization=json.loads((root/'motion_source_normalization.json').read_text())
-          first=int(animation['frames'][0]['frame'])
+          frame=int(os.environ['PREFLIGHT_FRAME'])
           output=root/'source-reference'
           output.mkdir(parents=True,exist_ok=True)
           request={
               'sourcePath': os.environ['ASSET'],
               'output': str(output.resolve()),
-              'selectedFrames': [first],
+              'selectedFrames': [frame],
               'frameOffset': int(normalization['frameOffset']),
               'canvas': [320,320],
               'background': {'transparent': True, 'rgba': [0.0,0.0,0.0,0.0]},
@@ -102,7 +108,8 @@ jobs:
           blender --background --factory-startup --python-exit-code 1 \
             --python motion2sheet/motion/model_render/blender_source_reference.py -- \
             --request "$ROOT/source-reference/request.json"
-          test -s "$ROOT/source-reference/.frames/frame_0002.png"
+          SOURCE_FRAME="$(printf '%04d' "$PREFLIGHT_FRAME")"
+          test -s "$ROOT/source-reference/.frames/frame_${SOURCE_FRAME}.png"
           test -s "$ROOT/source-reference/source_reference.json"
       - name: Delete every FBX before JSON-only playback preflight
         run: |
@@ -120,14 +127,14 @@ jobs:
             --animation-rig "$ROOT/animation/rig.json" \
             --animation "$ROOT/animation/animation.json" \
             --camera-profile "$CAMERA" \
-            --frames 2 \
+            --frames "$PREFLIGHT_FRAME" \
             --sheet-columns 1 \
             --canvas 320x320 \
             --background transparent \
             --output "$ROOT/render"
           test ! -e "$ASSET"
           test ! -e "$NORMALIZED"
-      - name: Verify strict Skin, playback and silhouette metrics
+      - name: Verify strict Skin, Level-1, playback and silhouette metrics
         run: |
           python - <<'PY'
           import json, os
@@ -136,10 +143,32 @@ jobs:
           root=Path(os.environ['ROOT'])
           report=json.loads((root/'render'/'render.json').read_text())
           export=json.loads((root/'character'/'diagnostics'/'export.json').read_text())
+          normalization=json.loads((root/'motion_source_normalization.json').read_text())
           skin=report['skinReconstruction']
           playback=report['animationFidelity']
-          assert export['modelAuthority']['geometryPose']=='canonical-character-rest'
-          assert export['geometryRestBake']['topologyPreserved']
+          level1=report['rigCompatibility']
+          rest=export['characterRestAuthority']
+          model=export['modelAuthority']
+          assert rest['animationIndependent'] is True
+          assert rest['animationActionRead'] is False
+          assert rest['animationFrameSampled'] is False
+          assert rest['firstAnimationPoseUsed'] is False
+          assert model['geometryPose']=='source-bind-rest'
+          assert model['containsArmatureObjects'] is False
+          assert model['containsArmatureModifiers'] is False
+          assert model['containsVertexGroups'] is False
+          assert export['geometryBindAuthority']['topologyPreserved'] is True
+          assert normalization['motionRebasedToCanonicalRest'] is True
+          assert normalization['normalizationRestRebuiltFromCanonicalAuthority'] is True
+          assert normalization['normalizationRestDerivedFromAnimationFrame'] is False
+          assert normalization['staticFbxRestActionDetached'] is True
+          assert normalization['staticFbxRestPoseBasisIdentity'] is True
+          assert normalization['preFbxFidelity']['pass'] and normalization['fidelity']['pass']
+          assert normalization['fidelityPolicy']['level1RestBasisToleranceChanged'] is False
+          assert normalization['retargeting'] is False and normalization['fuzzyMapping'] is False
+          assert level1['pass'] and level1['level']==1
+          assert level1['maxRestBasisErrorDegrees'] <= level1['restBasisToleranceDegrees'] == 0.001
+          assert level1['retargeting'] is False and level1['fuzzyMapping'] is False
           assert skin['pass'] and skin['maxWeightDelta'] <= 1e-8, skin
           assert playback['pass'], playback
           assert playback['leftRightIdentityPass'] and playback['fullBonePlayback']
@@ -147,7 +176,8 @@ jobs:
           assert playback['maxJointBendErrorDegrees'] <= 0.001
           assert playback['maxLocalRotationErrorDegrees'] <= 0.0001
           assert playback['rootMotion']['directionPreserved']
-          source=Image.open(root/'source-reference'/'.frames'/'frame_0002.png').convert('RGBA')
+          frame=int(os.environ['PREFLIGHT_FRAME'])
+          source=Image.open(root/'source-reference'/'.frames'/f'frame_{frame:04d}.png').convert('RGBA')
           target=Image.open(root/'render'/'pose_sheet.png').convert('RGBA')
           assert source.size==target.size==(320,320)
           source_alpha=source.getchannel('A')
@@ -165,7 +195,10 @@ jobs:
           visual.save(root/'visual-comparison.png')
           source.close(); target.close(); visual.close()
           metrics={
+              'contractFrame':frame,
               'maxWeightDelta': skin['maxWeightDelta'],
+              'maxRestBasisErrorDegrees':level1['maxRestBasisErrorDegrees'],
+              'worstRestBasisBone':level1['worstRestBasisBone'],
               'maxSemanticDirectionErrorDegrees': playback['maxSemanticDirectionErrorDegrees'],
               'maxJointBendErrorDegrees': playback['maxJointBendErrorDegrees'],
               'maxLocalRotationErrorDegrees': playback['maxLocalRotationErrorDegrees'],
