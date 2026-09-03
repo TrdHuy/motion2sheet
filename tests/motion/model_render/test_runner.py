@@ -145,14 +145,24 @@ def test_motion_normalizer_rebases_motion_onto_canonical_rest_without_first_pose
     assert "capture_animation_document" not in source
     assert "build_armature(canonical_rig)" in source
     assert "pose_bone.matrix = reference[frame][bone.name][\"matrixArmature\"].copy()" in source
-    assert "export_armature_only_fbx(rebased_armature, output)" in source
+    assert "export_action_with_static_rest_fbx(rebased_armature, rebased_action, output)" in source
     assert '"motionRebasedToCanonicalRest": True' in source
     assert '"canonicalizationOnly": True' in source
     assert '"normalizationRestDerivedFromAnimationFrame": False' in source
+    assert '"staticFbxRestActionDetached": True' in source
+    assert '"staticFbxRestPoseBasisIdentity": True' in source
     assert '"firstAnimationPoseUsedAsRest": False' in source
     assert '"animationFrameUsedAsRest": False' in source
     assert '"retargeting": False' in source
     assert '"fuzzyMapping": False' in source
+
+
+def test_fbx_static_rest_export_detaches_action_before_export():
+    source = (Path(__file__).parents[3] / "motion2sheet/motion/model_render/blender_level1.py").read_text(encoding="utf-8")
+    assert "armature.animation_data.action = None" in source
+    assert "pose_bone.matrix_basis = Matrix.Identity(4)" in source
+    assert "bake_anim_use_all_actions=True" in source
+    assert "len(bpy.data.actions) != 1" in source
 
 
 def test_contract_root_motion_is_data_driven():
