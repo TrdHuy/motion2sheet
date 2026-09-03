@@ -44,13 +44,16 @@ def _render_model_animation(args) -> int:
         gif=args.gif,
         frames=args.frames,
         blender=args.blender,
+        compatibility_level=args.compatibility_level,
     )
     skin = report["skinReconstruction"]
     playback = report["animationFidelity"]
+    fidelity = playback.get("maxSemanticDirectionErrorDegrees", playback.get("maxWorldMotionRotationErrorDegrees", 0.0))
     print(
         "motion2sheet: render-model-animation PASS; "
-        f"frames={report['frameCount']} maxWeightDelta={skin['maxWeightDelta']:.12g} "
-        f"maxSemanticDirectionDeg={playback['maxSemanticDirectionErrorDegrees']:.12g}"
+        f"frames={report['frameCount']} compatibilityLevel={report['compatibilityLevel']} "
+        f"adaptationApplied={str(report['adaptationApplied']).lower()} "
+        f"maxWeightDelta={skin['maxWeightDelta']:.12g} maxMotionErrorDeg={float(fidelity):.12g}"
     )
     return 0
 
@@ -75,6 +78,13 @@ def add_model_render_subcommands(subparsers) -> None:
     render_parser.add_argument("--animation-rig", required=True)
     render_parser.add_argument("--animation", required=True)
     render_parser.add_argument("--camera-profile", required=True)
+    render_parser.add_argument(
+        "--compatibility-level",
+        type=int,
+        choices=(1, 2),
+        default=1,
+        help="Maximum compatibility level: 1=strict exact rest basis (default), 2=allow exact-name rest-basis adaptation fallback",
+    )
     render_parser.add_argument("--sheet-columns", type=int, default=8)
     render_parser.add_argument("--canvas", type=_canvas, default=(320, 320))
     render_parser.add_argument("--background", default="transparent")
