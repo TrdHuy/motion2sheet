@@ -13,12 +13,17 @@ from motion2sheet.motion.skin import (
 SOURCE_SHA = "0" * 64
 
 
-def _transform(translation=(0.0, 0.0, 0.0)):
+def _transform(translation=(0.0, 0.0, 0.0), quaternion=(1.0, 0.0, 0.0, 0.0)):
     return {
         "translation": list(translation),
-        "rotationQuaternion": [1.0, 0.0, 0.0, 0.0],
+        "rotationQuaternion": list(quaternion),
         "scale": [1.0, 1.0, 1.0],
     }
+
+
+def _y_quaternion(degrees: float):
+    half = math.radians(degrees) * 0.5
+    return (math.cos(half), 0.0, math.sin(half), 0.0)
 
 
 def _properties(*, connected=False):
@@ -118,7 +123,10 @@ def test_level1_diagnostic_collects_all_rest_basis_mismatches():
     source = _rig()
     target = copy.deepcopy(source)
     target["bones"][0]["editGeometry"]["roll"] = math.radians(2.0)
+    target["bones"][0]["rest"]["rotationQuaternion"] = list(_y_quaternion(2.0))
     target["bones"][1]["editGeometry"]["roll"] = math.radians(5.0)
+    # Child local rest is absolute 5deg minus parent absolute 2deg.
+    target["bones"][1]["rest"]["rotationQuaternion"] = list(_y_quaternion(3.0))
 
     report = diagnose_level1_rig_compatibility(source, target)
 
@@ -136,28 +144,26 @@ def test_level1_diagnostic_collects_all_rest_basis_mismatches():
         validate_level1_rig_compatibility(source, target)
 
 
-def test_level1_diagnostic_collects_structural_and_coordinate_mismatches():
+def test_level1_diagnostic_collects_parent_mismatch_without_retaining_false_rest_data():
     source = _rig()
     target = copy.deepcopy(source)
     target["bones"][1]["parent"] = None
     target["bones"][1]["properties"]["useConnect"] = False
-    target["coordinateSystem"]["upAxis"] = "+Y"
 
     report = diagnose_level1_rig_compatibility(source, target)
 
     assert report["pass"] is False
     assert report["exactBoneNames"] is True
     assert report["exactHierarchy"] is False
-    assert report["coordinateConventionMatch"] is False
+    assert report["coordinateConventionMatch"] is True
     assert report["parentMismatches"] == [
         {"bone": "Child", "animationParent": "Root", "characterParent": None}
     ]
-    assert report["coordinateMismatches"] == [
-        {"field": "upAxis", "animation": "+Z", "character": "+Y"}
-    ]
+    assert report["coordinateMismatches"] == []
+    # A structurally different hierarchy makes local-basis comparison non-authoritative.
     assert report["maxRestBasisErrorDegrees"] is None
+    assert report["restBasisMismatchCount"] == 0
     assert report["restBasisMismatches"] == []
 
-    # Validator preserves parent-before-coordinate failure priority.
     with pytest.raises(ValueError, match=r"parent mismatch for Child"):
         validate_level1_rig_compatibility(source, target)
