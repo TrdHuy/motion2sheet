@@ -14,7 +14,10 @@ if str(PACKAGE_ROOT) not in sys.path:
 import bpy
 
 from motion2sheet.motion.model_render.blender_level1 import export_armature_only_fbx
-from motion2sheet.motion.model_render.blender_rest_authority import capture_character_rig_document
+from motion2sheet.motion.model_render.blender_rest_authority import (
+    capture_character_rig_document,
+    capture_imported_rest_rig_document,
+)
 from motion2sheet.motion.roundtrip.blender_common import (
     capture_animation_document,
     capture_rig_document,
@@ -153,13 +156,19 @@ def main() -> None:
     fps, fps_numerator, fps_base = scene_fps(bpy.context.scene)
     parents = {bone.name: bone.parent.name if bone.parent else None for bone in armature.data.bones}
 
-    # Capture clip-independent rest and Contract-B-style local pose deltas separately.
-    # The clean intermediate armature is rebuilt from EditBone rest authority; frame 1
-    # is never copied into the rest skeleton.
-    source_rig, source_rest = capture_character_rig_document(source, armature)
-    source_animation = capture_animation_document(source, armature, action, source_rig)
+    # Keep the source import rest and animation deltas together while preserving the
+    # exact source world motion. Character acceptance uses the separately canonicalized
+    # static rest representation below; no animation sample is used to create either rest.
+    imported_rig, imported_rest = capture_imported_rest_rig_document(source, armature)
+    source_animation = capture_animation_document(source, armature, action, imported_rig)
     reference = _capture_pose(armature, source_start, source_end)
-    clean_armature, _clean_action = build_json_scene(source_rig, source_animation)
+    canonical_source_rig, canonical_rest = capture_character_rig_document(source, armature)
+
+    # Rebuild the imported EditBone rest plus its matrix_basis motion exactly, then let
+    # Blender FBX encoding canonicalize that static rest representation. The exporter
+    # therefore rebases motion representation through FBX encoding while preserving the
+    # source world pose; it does not retarget and does not use frame 1 as rest.
+    clean_armature, _clean_action = build_json_scene(imported_rig, source_animation)
     export_armature_only_fbx(clean_armature, output)
 
     normalized_armature, normalized_action = import_source(output)
@@ -195,17 +204,18 @@ def main() -> None:
     if len(normalized_rig["bones"]) != len(parents):
         raise RuntimeError("locked Contract B rig capture changed the normalized bone count")
 
-    # Critical architecture gate: motion normalization may clean FBX encoding, but it
-    # must preserve the source character's clip-independent rest basis. No first-pose
-    # rebasing is allowed.
-    rest_compatibility = validate_level1_rig_compatibility(normalized_rig, source_rig)
+    # Critical architecture gate: both sides are now the same clip-independent static
+    # rest encoding. Character rest came from a rest-only FBX round-trip; animation rest
+    # came from the motion FBX round-trip. Level-1 remains strict at the existing tolerance.
+    rest_compatibility = validate_level1_rig_compatibility(normalized_rig, canonical_source_rig)
 
     report = {
         "schema": "motion2sheet.diagnostics.level1-motion-source-normalization",
         "version": 1,
-        "reason": "PR12 rebuilds a clean armature from the source FBX EditBone rest authority, reapplies only per-frame matrix_basis motion deltas, then exports an armature-only FBX for the locked PR #11 exporter. Animation frame 1 is never used as rest authority.",
+        "reason": "PR12 keeps source EditBone rest and matrix_basis motion together for exact world-pose preservation, while canonical character rest is normalized independently through a rest-only FBX round-trip with no Action. The motion-only FBX then uses the same Blender FBX rest encoding before locked PR11 extraction. Animation frame 1 is never used as rest authority.",
         "source": {"filename": source.name, "sha256": _sha256(source), "frameRange": [source_start, source_end]},
-        "sourceCharacterRest": source_rest,
+        "sourceImportedRest": imported_rest,
+        "sourceCharacterRest": canonical_rest,
         "normalized": {
             "filename": output.name,
             "sha256": _sha256(output),
@@ -221,6 +231,7 @@ def main() -> None:
         "fidelity": fidelity,
         "restCompatibility": rest_compatibility,
         "firstAnimationPoseUsedAsRest": False,
+        "animationFrameUsedAsRest": False,
         "lockedPr11RigCapturePass": True,
         "retargeting": False,
         "fuzzyMapping": False,
