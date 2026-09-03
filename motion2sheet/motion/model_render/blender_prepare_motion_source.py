@@ -12,6 +12,7 @@ if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
 import bpy
+from mathutils import Matrix
 
 from motion2sheet.motion.model_render.blender_level1 import export_armature_only_fbx
 from motion2sheet.motion.model_render.blender_rest_authority import (
@@ -22,8 +23,10 @@ from motion2sheet.motion.roundtrip.blender_common import (
     capture_rig_document,
     import_source,
     integer_action_range,
+    ordered_bones,
     scene_fps,
 )
+from motion2sheet.motion.roundtrip.blender_json_scene import build_armature, clean_scene
 from motion2sheet.motion.roundtrip.fbx import extract_fbx_metadata_and_diagnostics
 from motion2sheet.motion.roundtrip.schema import validate_rig_document
 from motion2sheet.motion.skin import validate_level1_rig_compatibility
@@ -59,6 +62,7 @@ def _capture_pose(armature, start: int, end: int) -> dict[int, dict[str, dict[st
             head = armature.matrix_world @ bone.head
             tail = armature.matrix_world @ bone.tail
             rows[bone.name] = {
+                "matrixArmature": bone.matrix.copy(),
                 "location": location.copy(),
                 "rotation": rotation.normalized().copy(),
                 "scale": scale.copy(),
@@ -136,6 +140,71 @@ def _compare(
     }
 
 
+def _build_canonical_rebased_action(
+    canonical_rig: dict,
+    reference: dict[int, dict[str, dict[str, object]]],
+    start: int,
+    end: int,
+    fps_numerator: int,
+    fps_base: float,
+) -> tuple[bpy.types.Object, bpy.types.Action]:
+    """Solve source pose matrices as local motion relative to canonical static rest.
+
+    This is a representation rebase on the exact same bone names/hierarchy, not a
+    retarget. The desired per-frame armature-space pose matrices come directly from
+    the source animation. Blender solves each PoseBone.matrix_basis against the clean
+    canonical EditBone rest; no animation sample is ever promoted to rest authority.
+    """
+
+    clean_scene()
+    armature = build_armature(canonical_rig)
+    scene = bpy.context.scene
+    scene.render.fps = int(fps_numerator)
+    scene.render.fps_base = float(fps_base)
+    scene.frame_start = start
+    scene.frame_end = end
+    action = bpy.data.actions.new("M2S_CANONICAL_REST_REBASED_MOTION")
+    armature.animation_data_create().action = action
+    bones = ordered_bones(armature)
+    expected_names = set(reference[start])
+    actual_names = {bone.name for bone in bones}
+    if actual_names != expected_names:
+        raise RuntimeError(
+            "canonical rebase bone set mismatch: "
+            f"missing={sorted(expected_names-actual_names)} extra={sorted(actual_names-expected_names)}"
+        )
+    for pose_bone in armature.pose.bones:
+        pose_bone.rotation_mode = "QUATERNION"
+
+    for frame in range(start, end + 1):
+        scene.frame_set(frame)
+        for pose_bone in armature.pose.bones:
+            pose_bone.matrix_basis = Matrix.Identity(4)
+        bpy.context.view_layer.update()
+
+        # Parent-before-child assignment lets Blender solve each matrix_basis against
+        # the already established parent pose and the canonical rest hierarchy.
+        for bone in bones:
+            pose_bone = armature.pose.bones[bone.name]
+            pose_bone.matrix = reference[frame][bone.name]["matrixArmature"].copy()
+            bpy.context.view_layer.update()
+
+        # Key only the solved local basis. The source armature/action is already gone;
+        # subsequent playback is canonical rest + these rest-relative local deltas.
+        for bone in bones:
+            pose_bone = armature.pose.bones[bone.name]
+            pose_bone.keyframe_insert(data_path="location", frame=frame, group=bone.name)
+            pose_bone.keyframe_insert(data_path="rotation_quaternion", frame=frame, group=bone.name)
+            pose_bone.keyframe_insert(data_path="scale", frame=frame, group=bone.name)
+
+    for fcurve in action.fcurves:
+        for keyframe in fcurve.keyframe_points:
+            keyframe.interpolation = "LINEAR"
+    scene.frame_set(start)
+    bpy.context.view_layer.update()
+    return armature, action
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)
@@ -148,25 +217,36 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
-    armature, action = import_source(source)
-    source_start, source_end = integer_action_range(action)
+    source_armature, source_action = import_source(source)
+    source_start, source_end = integer_action_range(source_action)
     source_frame_count = source_end - source_start + 1
     fps, fps_numerator, fps_base = scene_fps(bpy.context.scene)
-    parents = {bone.name: bone.parent.name if bone.parent else None for bone in armature.data.bones}
+    parents = {bone.name: bone.parent.name if bone.parent else None for bone in source_armature.data.bones}
 
-    # Character rest capture reads only EditBone/static FBX authority. The source action
-    # is used here solely as motion authority for the motion-only FBX; it never defines
-    # character rest. Keep source armature rest and source animation together so Blender
-    # can re-encode the FBX representation without any rest reconstruction step.
-    _imported_rig, imported_rest = capture_imported_rest_rig_document(source, armature)
-    reference = _capture_pose(armature, source_start, source_end)
-    canonical_source_rig, canonical_rest = capture_character_rig_document(source, armature)
+    # Static character authority and motion authority are captured independently.
+    # Character rest reads only bind/EditBone/static-FBX data. Source pose matrices
+    # below are motion samples only and are never used to derive canonical rest.
+    _imported_rig, imported_rest = capture_imported_rest_rig_document(source, source_armature)
+    reference = _capture_pose(source_armature, source_start, source_end)
+    canonical_source_rig, canonical_rest = capture_character_rig_document(source, source_armature)
 
-    # Export the imported armature directly. Rebuilding EditBones from JSON before this
-    # step was the source of a 5.89-degree Head roll representation change. Direct export
-    # preserves the source bind/edit rest while Blender removes only importer-level FBX
-    # numerical encoding differences. No first-frame rest, mapping, or retargeting occurs.
-    export_armature_only_fbx(armature, output)
+    rebased_armature, _rebased_action = _build_canonical_rebased_action(
+        canonical_source_rig,
+        reference,
+        source_start,
+        source_end,
+        fps_numerator,
+        fps_base,
+    )
+    rebased_parents = {bone.name: bone.parent.name if bone.parent else None for bone in rebased_armature.data.bones}
+    if rebased_parents != parents:
+        raise RuntimeError("canonical motion rebase changed hierarchy")
+    rebased_pose = _capture_pose(rebased_armature, source_start, source_end)
+    pre_fbx_fidelity = _compare(reference, rebased_pose, parents, source_start, source_end, 0)
+    if not pre_fbx_fidelity["pass"]:
+        raise RuntimeError(f"canonical-rest motion rebase fidelity failed before FBX export: {pre_fbx_fidelity}")
+
+    export_armature_only_fbx(rebased_armature, output)
 
     normalized_armature, normalized_action = import_source(output)
     normalized_start, normalized_end = integer_action_range(normalized_action)
@@ -185,8 +265,10 @@ def main() -> None:
     normalized_parents = {bone.name: bone.parent.name if bone.parent else None for bone in normalized_armature.data.bones}
     if normalized_parents != parents:
         raise RuntimeError("normalized motion hierarchy changed")
-    actual = _capture_pose(normalized_armature, normalized_start, normalized_end)
-    fidelity = _compare(reference, actual, parents, source_start, source_end, frame_offset)
+    normalized_pose = _capture_pose(normalized_armature, normalized_start, normalized_end)
+    post_fbx_fidelity = _compare(reference, normalized_pose, parents, source_start, source_end, frame_offset)
+    if not post_fbx_fidelity["pass"]:
+        raise RuntimeError(f"canonical-rest motion rebase fidelity failed after FBX export: {post_fbx_fidelity}")
 
     # Reproduce locked PR #11 rig-validation ordering on the generated motion-only FBX.
     normalized_rig = capture_rig_document(output, normalized_armature)
@@ -201,16 +283,14 @@ def main() -> None:
     if len(normalized_rig["bones"]) != len(parents):
         raise RuntimeError("locked Contract B rig capture changed the normalized bone count")
 
-    # Both sides are now clip-independent representations of the same static rest:
-    # character = EditBone/bind authority canonicalized with an identity-only carrier;
-    # motion = the original imported armature rest re-encoded with its actual motion.
-    # Level-1 remains strict at the existing 0.001-degree tolerance.
+    # Strict existing Level-1 validation is the acceptance gate. No tolerance changes,
+    # mappings, retarget solver, or first-pose substitution are permitted here.
     rest_compatibility = validate_level1_rig_compatibility(normalized_rig, canonical_source_rig)
 
     report = {
         "schema": "motion2sheet.diagnostics.level1-motion-source-normalization",
         "version": 1,
-        "reason": "The source armature is exported directly so its FBX bind/edit rest is preserved while its real Action remains motion authority only. Character rest is independently canonicalized from EditBone/static bind data with an identity-only encoding carrier. No animation frame is used as rest authority and no retargeting occurs.",
+        "reason": "Source pose matrices are re-expressed as local matrix_basis motion on the clip-independent canonical bind/EditBone rest. This is same-skeleton encoding canonicalization only: exact bone names/hierarchy are preserved, source world pose is gated before and after FBX encoding, and no animation frame defines rest authority.",
         "source": {"filename": source.name, "sha256": _sha256(source), "frameRange": [source_start, source_end]},
         "sourceImportedRest": imported_rest,
         "sourceCharacterRest": canonical_rest,
@@ -221,13 +301,17 @@ def main() -> None:
             "skinIncluded": False,
             "frameRange": [normalized_start, normalized_end],
         },
-        "normalizationRestRebuilt": False,
+        "motionRebasedToCanonicalRest": True,
+        "canonicalizationOnly": True,
+        "normalizationRestRebuiltFromCanonicalAuthority": True,
+        "normalizationRestDerivedFromAnimationFrame": False,
         "frameOffset": frame_offset,
         "frameMapping": "normalizedFrame = sourceFrame + frameOffset",
         "fps": fps,
         "fpsNumerator": fps_numerator,
         "fpsBase": fps_base,
-        "fidelity": fidelity,
+        "preFbxFidelity": pre_fbx_fidelity,
+        "fidelity": post_fbx_fidelity,
         "restCompatibility": rest_compatibility,
         "firstAnimationPoseUsedAsRest": False,
         "animationFrameUsedAsRest": False,
@@ -236,8 +320,6 @@ def main() -> None:
         "fuzzyMapping": False,
     }
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
-    if not fidelity["pass"]:
-        raise RuntimeError(f"motion-source normalization fidelity failed: {fidelity}")
     print(json.dumps(report, sort_keys=True), flush=True)
 
 
