@@ -9,6 +9,7 @@ from io_scene_fbx import parse_fbx
 from mathutils import Matrix, Vector
 
 from motion2sheet.motion.extract.blender import clean_scene, find_armature, import_motion
+from motion2sheet.motion.model_render.blender_level1 import export_armature_only_fbx
 from motion2sheet.motion.model_render.rest import character_rig_id, character_rest_fingerprint
 from motion2sheet.motion.roundtrip.blender_common import (
     bone_properties,
@@ -19,6 +20,10 @@ from motion2sheet.motion.roundtrip.blender_common import (
 )
 from motion2sheet.motion.roundtrip.fbx import native
 from motion2sheet.motion.roundtrip.schema import validate_rig_document
+
+
+IDENTITY_CARRIER_START = 1
+IDENTITY_CARRIER_END = 2
 
 
 def import_character_fbx(path: Path) -> bpy.types.Object:
@@ -115,7 +120,7 @@ def capture_imported_rest_rig_document(
 
     This is a static rest snapshot only. It never reads the active Action and never
     samples a scene frame. `capture_character_rig_document` applies the additional
-    rest-only FBX encoding normalization used by the canonical character authority.
+    identity-carrier FBX encoding normalization used by canonical character authority.
     """
 
     edit = _capture_edit_rest(armature)
@@ -189,11 +194,40 @@ def capture_imported_rest_rig_document(
     return rig, diagnostics
 
 
-def _export_rest_only_armature_fbx(armature: bpy.types.Object, output: Path) -> None:
-    """Round-trip only static armature rest data through Blender's FBX encoding.
+def _attach_identity_encoding_carrier(armature: bpy.types.Object) -> bpy.types.Action:
+    """Attach a synthetic all-identity Action solely to select FBX animation-stack encoding.
 
-    The duplicate has no animation data and every pose basis is explicitly identity,
-    so the exporter cannot substitute an animation sample for rest authority.
+    This Action is not motion authority and contains no source animation sample. Both
+    keyed frames are exactly PoseBone.matrix_basis = identity for every bone. Its only
+    purpose is to make Blender use the same FBX armature encoding path as motion-only
+    assets so local rest representation is clip-independent and comparable at Level 1.
+    """
+
+    armature.animation_data_clear()
+    action = bpy.data.actions.new("M2S_CANONICAL_REST_IDENTITY_CARRIER")
+    armature.animation_data_create().action = action
+    scene = bpy.context.scene
+    for frame in (IDENTITY_CARRIER_START, IDENTITY_CARRIER_END):
+        scene.frame_set(frame)
+        for pose_bone in armature.pose.bones:
+            pose_bone.rotation_mode = "QUATERNION"
+            pose_bone.matrix_basis = Matrix.Identity(4)
+            pose_bone.keyframe_insert(data_path="location", frame=frame, group=pose_bone.name)
+            pose_bone.keyframe_insert(data_path="rotation_quaternion", frame=frame, group=pose_bone.name)
+            pose_bone.keyframe_insert(data_path="scale", frame=frame, group=pose_bone.name)
+    for fcurve in action.fcurves:
+        for keyframe in fcurve.keyframe_points:
+            keyframe.interpolation = "LINEAR"
+    scene.frame_set(IDENTITY_CARRIER_START)
+    bpy.context.view_layer.update()
+    return action
+
+
+def _export_rest_encoding_fbx(armature: bpy.types.Object, output: Path) -> None:
+    """Encode static rest through the same FBX path used by normalized motion.
+
+    The duplicate never receives the source Action. It carries only a fresh synthetic
+    identity Action, so no animation pose can define or alter character rest.
     """
 
     duplicate = armature.copy()
@@ -202,35 +236,17 @@ def _export_rest_only_armature_fbx(armature: bpy.types.Object, output: Path) -> 
     duplicate.name = f"{armature.name}__M2S_CANONICAL_REST"
     duplicate.data.name = f"{armature.data.name}__M2S_CANONICAL_REST"
     bpy.context.collection.objects.link(duplicate)
-    duplicate.animation_data_clear()
-    for pose_bone in duplicate.pose.bones:
-        pose_bone.rotation_mode = "QUATERNION"
-        pose_bone.matrix_basis = Matrix.Identity(4)
-    bpy.context.view_layer.update()
-
+    carrier = _attach_identity_encoding_carrier(duplicate)
     try:
-        bpy.ops.object.select_all(action="DESELECT")
-        duplicate.select_set(True)
-        bpy.context.view_layer.objects.active = duplicate
-        bpy.ops.export_scene.fbx(
-            filepath=str(output),
-            use_selection=True,
-            object_types={"ARMATURE"},
-            apply_unit_scale=True,
-            apply_scale_options="FBX_SCALE_NONE",
-            use_space_transform=True,
-            bake_space_transform=False,
-            axis_forward="-Z",
-            axis_up="Y",
-            primary_bone_axis="Y",
-            secondary_bone_axis="X",
-            add_leaf_bones=False,
-            use_armature_deform_only=False,
-            armature_nodetype="NULL",
-            bake_anim=False,
-        )
+        # Use exactly the same PR12-local FBX settings/helper as motion normalization.
+        # The helper requires an Action; this identity carrier satisfies that encoding
+        # requirement without reading or sampling the source clip.
+        export_armature_only_fbx(duplicate, output)
     finally:
+        duplicate.animation_data_clear()
         bpy.data.objects.remove(duplicate, do_unlink=True)
+        if carrier.users == 0:
+            bpy.data.actions.remove(carrier)
         if duplicate_data.users == 0:
             bpy.data.armatures.remove(duplicate_data)
         bpy.context.view_layer.update()
@@ -242,10 +258,10 @@ def capture_character_rig_document(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Create the clip-independent canonical character rest rig.
 
-    Authority starts from the source FBX bind/edit rest. A rest-only armature copy
-    with no Action and identity pose basis is exported/re-imported once to normalize
-    Blender FBX bone-roll encoding. This makes character and independent motion FBX
-    representations comparable without using any animation frame as a substitute.
+    Authority starts from source FBX bind/edit rest. A duplicate armature receives a
+    newly generated all-identity two-frame carrier Action and is FBX round-tripped using
+    the same encoding path as motion normalization. The source Action is never read and
+    no source animation frame is sampled or copied into rest authority.
     """
 
     imported_rig, imported_diagnostics = capture_imported_rest_rig_document(input_path, armature)
@@ -254,14 +270,14 @@ def capture_character_rig_document(
 
     with tempfile.TemporaryDirectory(prefix="motion2sheet-character-rest-") as temp_dir:
         rest_fbx = Path(temp_dir) / "canonical-rest.fbx"
-        _export_rest_only_armature_fbx(armature, rest_fbx)
+        _export_rest_encoding_fbx(armature, rest_fbx)
         before_names = {obj.name for obj in bpy.context.scene.objects}
         bpy.ops.import_scene.fbx(filepath=str(rest_fbx))
         imported_objects = [obj for obj in bpy.context.scene.objects if obj.name not in before_names]
         canonical_armatures = [obj for obj in imported_objects if obj.type == "ARMATURE"]
         if len(canonical_armatures) != 1:
             raise RuntimeError(
-                "rest-only FBX normalization must import exactly one armature; "
+                "identity-carrier FBX normalization must import exactly one armature; "
                 f"found {len(canonical_armatures)}"
             )
         canonical_armature = canonical_armatures[0]
@@ -270,8 +286,8 @@ def capture_character_rig_document(
             input_path,
             canonical_armature,
         )
-        # Object/data names are not rest semantics and should remain stable with the
-        # source character rather than expose the private normalization staging name.
+        # Object/data names are provenance rather than rest semantics; do not expose
+        # the private staging names in reusable character authority.
         canonical_rig["armatureObject"]["name"] = original_object_name
         canonical_rig["armatureObject"]["dataName"] = original_data_name
         canonical_rig["id"] = character_rig_id(canonical_rig)
@@ -286,8 +302,12 @@ def capture_character_rig_document(
     diagnostics = {
         "mode": "fbx-bind-edit-rest-canonical-v1",
         "restAuthority": "armature-editGeometry",
-        "restEncodingNormalization": "rest-only armature FBX round-trip",
-        "restEncodingAnimationBaked": False,
+        "restEncodingNormalization": "identity-carrier armature FBX round-trip",
+        "restEncodingCarrier": "synthetic-all-identity-two-frame-action",
+        "restEncodingCarrierFrames": [IDENTITY_CARRIER_START, IDENTITY_CARRIER_END],
+        "restEncodingCarrierDefinesRest": False,
+        "restEncodingSourceAnimationRead": False,
+        "restEncodingSourceAnimationSampled": False,
         "restEncodingPoseBasis": "identity",
         "derivedRestCache": "orthogonalized EditBone orientation + head translation",
         "sourceFormatAuthority": "static-fbx-transform-stack-only",
