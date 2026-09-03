@@ -7,7 +7,9 @@ import pytest
 
 from motion2sheet.motion.skin import (
     diagnose_level1_rig_compatibility,
+    diagnose_level2_rest_basis_eligibility,
     validate_level1_rig_compatibility,
+    validate_level2_rest_basis_eligibility,
 )
 
 SOURCE_SHA = "0" * 64
@@ -125,7 +127,6 @@ def test_level1_diagnostic_collects_all_rest_basis_mismatches():
     target["bones"][0]["editGeometry"]["roll"] = math.radians(2.0)
     target["bones"][0]["rest"]["rotationQuaternion"] = list(_y_quaternion(2.0))
     target["bones"][1]["editGeometry"]["roll"] = math.radians(5.0)
-    # Child local rest is absolute 5deg minus parent absolute 2deg.
     target["bones"][1]["rest"]["rotationQuaternion"] = list(_y_quaternion(3.0))
 
     report = diagnose_level1_rig_compatibility(source, target)
@@ -139,7 +140,6 @@ def test_level1_diagnostic_collects_all_rest_basis_mismatches():
     assert report["maxRestBasisErrorDegrees"] == pytest.approx(3.0, abs=1e-7)
     assert report["worstRestBasisBone"] == "Child"
 
-    # Strict API keeps historical fail-closed ordering: first mismatching bone by name.
     with pytest.raises(ValueError, match=r"rest-basis mismatch for Child"):
         validate_level1_rig_compatibility(source, target)
 
@@ -160,10 +160,51 @@ def test_level1_diagnostic_collects_parent_mismatch_without_retaining_false_rest
         {"bone": "Child", "animationParent": "Root", "characterParent": None}
     ]
     assert report["coordinateMismatches"] == []
-    # A structurally different hierarchy makes local-basis comparison non-authoritative.
     assert report["maxRestBasisErrorDegrees"] is None
     assert report["restBasisMismatchCount"] == 0
     assert report["restBasisMismatches"] == []
 
     with pytest.raises(ValueError, match=r"parent mismatch for Child"):
         validate_level1_rig_compatibility(source, target)
+
+
+def test_level2_accepts_only_exact_skeleton_rest_basis_difference():
+    source = _rig()
+    target = copy.deepcopy(source)
+    target["bones"][0]["editGeometry"]["roll"] = math.radians(2.0)
+    target["bones"][0]["rest"]["rotationQuaternion"] = list(_y_quaternion(2.0))
+
+    report = validate_level2_rest_basis_eligibility(source, target)
+
+    assert report["pass"] is True
+    assert report["level"] == 2
+    assert report["adaptationType"] == "rest-basis"
+    assert report["exactBoneNames"] is True
+    assert report["exactHierarchy"] is True
+    assert report["coordinateConventionMatch"] is True
+    assert report["restBasisMismatchCount"] == 1
+    assert report["sourceRestFingerprint"] != report["targetRestFingerprint"]
+    assert report["animationFramesRead"] is False
+    assert report["restAuthorityOnly"] is True
+    assert report["retargeting"] == {
+        "type": "rest-basis",
+        "boneMapping": "exact-name",
+        "fuzzyMapping": False,
+        "semanticGuessing": False,
+        "topologyConversion": False,
+        "helperBoneSolver": False,
+    }
+
+
+def test_level2_fails_closed_on_non_exact_hierarchy_and_never_relaxes_level1():
+    source = _rig()
+    target = copy.deepcopy(source)
+    target["bones"][1]["parent"] = None
+    target["bones"][1]["properties"]["useConnect"] = False
+
+    report = diagnose_level2_rest_basis_eligibility(source, target)
+    assert report["pass"] is False
+    assert report["exactHierarchy"] is False
+    assert report["restBasisToleranceDegrees"] == 0.001
+    with pytest.raises(ValueError, match="requires exact hierarchy"):
+        validate_level2_rest_basis_eligibility(source, target)
