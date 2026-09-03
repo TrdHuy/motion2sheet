@@ -20,6 +20,7 @@ from motion2sheet.motion.roundtrip.blender_common import (
     integer_action_range,
     scene_fps,
 )
+from motion2sheet.motion.roundtrip.fbx import extract_fbx_metadata_and_diagnostics
 from motion2sheet.motion.roundtrip.schema import validate_rig_document
 
 TRANSLATION_TOLERANCE = 1e-5
@@ -63,15 +64,23 @@ def _capture_pose(armature, start: int, end: int) -> dict[int, dict[str, dict[st
     return result
 
 
-def _compare(reference, actual, parents, start: int, end: int) -> dict[str, object]:
+def _compare(
+    reference,
+    actual,
+    parents,
+    source_start: int,
+    source_end: int,
+    frame_offset: int,
+) -> dict[str, object]:
     max_translation = max_head_tail = max_rotation = max_scale = 0.0
     worst_translation = worst_head_tail = worst_rotation = worst_scale = None
-    for frame in range(start, end + 1):
-        expected_rows = reference[frame]
-        actual_rows = actual[frame]
+    for source_frame in range(source_start, source_end + 1):
+        normalized_frame = source_frame + frame_offset
+        expected_rows = reference[source_frame]
+        actual_rows = actual[normalized_frame]
         if set(expected_rows) != set(actual_rows):
             raise RuntimeError(
-                f"normalized motion bone set mismatch at frame {frame}: "
+                f"normalized motion bone set mismatch at source frame {source_frame} / normalized frame {normalized_frame}: "
                 f"missing={sorted(set(expected_rows)-set(actual_rows))} extra={sorted(set(actual_rows)-set(expected_rows))}"
             )
         for name in sorted(expected_rows):
@@ -83,14 +92,15 @@ def _compare(reference, actual, parents, start: int, end: int) -> dict[str, obje
             head_tail = max(head, tail)
             rotation = math.degrees(first["rotation"].rotation_difference(second["rotation"]).angle)
             scale = max(abs(float(first["scale"][axis]) - float(second["scale"][axis])) for axis in range(3))
+            location = {"sourceFrame": source_frame, "normalizedFrame": normalized_frame, "bone": name}
             if translation > max_translation:
-                max_translation, worst_translation = translation, {"frame": frame, "bone": name}
+                max_translation, worst_translation = translation, location
             if head_tail > max_head_tail:
-                max_head_tail, worst_head_tail = head_tail, {"frame": frame, "bone": name, "headError": head, "tailError": tail}
+                max_head_tail, worst_head_tail = head_tail, {**location, "headError": head, "tailError": tail}
             if rotation > max_rotation:
-                max_rotation, worst_rotation = rotation, {"frame": frame, "bone": name}
+                max_rotation, worst_rotation = rotation, location
             if scale > max_scale:
-                max_scale, worst_scale = scale, {"frame": frame, "bone": name}
+                max_scale, worst_scale = scale, location
     passed = (
         max_translation <= TRANSLATION_TOLERANCE
         and max_head_tail <= HEAD_TAIL_TOLERANCE
@@ -102,8 +112,10 @@ def _compare(reference, actual, parents, start: int, end: int) -> dict[str, obje
         "boneCount": len(parents),
         "exactBoneNames": True,
         "exactHierarchy": True,
-        "frameRange": [start, end],
-        "frameCount": end - start + 1,
+        "sourceFrameRange": [source_start, source_end],
+        "normalizedFrameRange": [source_start + frame_offset, source_end + frame_offset],
+        "frameOffset": frame_offset,
+        "frameCount": source_end - source_start + 1,
         "maxWorldTranslationError": max_translation,
         "translationTolerance": TRANSLATION_TOLERANCE,
         "worstWorldTranslation": worst_translation,
@@ -132,34 +144,61 @@ def main() -> None:
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
     armature, action = import_source(source)
-    start, end = integer_action_range(action)
+    source_start, source_end = integer_action_range(action)
+    source_frame_count = source_end - source_start + 1
     fps, fps_numerator, fps_base = scene_fps(bpy.context.scene)
     parents = {bone.name: bone.parent.name if bone.parent else None for bone in armature.data.bones}
-    reference = _capture_pose(armature, start, end)
+    reference = _capture_pose(armature, source_start, source_end)
     export_armature_only_fbx(armature, output)
 
     normalized_armature, normalized_action = import_source(output)
     normalized_start, normalized_end = integer_action_range(normalized_action)
-    if (normalized_start, normalized_end) != (start, end):
+    normalized_frame_count = normalized_end - normalized_start + 1
+    if normalized_frame_count != source_frame_count:
         raise RuntimeError(
-            f"normalized motion frame range changed: source={[start,end]} normalized={[normalized_start,normalized_end]}"
+            "normalized motion sample count changed: "
+            f"sourceRange={[source_start, source_end]} normalizedRange={[normalized_start, normalized_end]}"
+        )
+    frame_offset = normalized_start - source_start
+    if normalized_end - source_end != frame_offset:
+        raise RuntimeError(
+            "normalized motion frame numbering is not a constant offset: "
+            f"sourceRange={[source_start, source_end]} normalizedRange={[normalized_start, normalized_end]}"
         )
     normalized_parents = {bone.name: bone.parent.name if bone.parent else None for bone in normalized_armature.data.bones}
     if normalized_parents != parents:
         raise RuntimeError("normalized motion hierarchy changed")
-    actual = _capture_pose(normalized_armature, start, end)
-    fidelity = _compare(reference, actual, parents, start, end)
+    actual = _capture_pose(normalized_armature, normalized_start, normalized_end)
+    fidelity = _compare(reference, actual, parents, source_start, source_end, frame_offset)
 
-    normalized_rig = validate_rig_document(capture_rig_document(output, normalized_armature))
+    # Reproduce the locked PR #11 FBX rig-validation ordering without changing
+    # any PR #11 code: capture Blender rest rig, attach static FBX metadata, validate.
+    normalized_rig = capture_rig_document(output, normalized_armature)
+    normalized_bones = [bone["name"] for bone in normalized_rig["bones"]]
+    rig_fbx, _animation_fbx, _diagnostic_curves = extract_fbx_metadata_and_diagnostics(
+        output,
+        normalized_bones,
+        normalized_frame_count,
+    )
+    normalized_rig["sourceFormat"] = {"fbx": rig_fbx}
+    normalized_rig = validate_rig_document(normalized_rig)
     if len(normalized_rig["bones"]) != len(parents):
         raise RuntimeError("locked Contract B rig capture changed the normalized bone count")
 
     report = {
         "schema": "motion2sheet.diagnostics.level1-motion-source-normalization",
         "version": 1,
-        "reason": "The release With-Skin FBX imports with tiny non-TRS numerical rest shear that the locked PR #11 Contract B exporter correctly rejects. This PR12-local armature-only FBX is accepted only after all-frame world-pose equivalence passes.",
-        "source": {"filename": source.name, "sha256": _sha256(source)},
-        "normalized": {"filename": output.name, "sha256": _sha256(output), "meshIncluded": False, "skinIncluded": False},
+        "reason": "The release With-Skin FBX imports with tiny non-TRS numerical rest shear that the locked PR #11 Contract B exporter correctly rejects. This PR12-local armature-only FBX is accepted only after all-frame world-pose equivalence passes. Blender may renumber the baked action by a constant integer frame offset; samples are compared by derived offset, never by guessed correspondence.",
+        "source": {"filename": source.name, "sha256": _sha256(source), "frameRange": [source_start, source_end]},
+        "normalized": {
+            "filename": output.name,
+            "sha256": _sha256(output),
+            "meshIncluded": False,
+            "skinIncluded": False,
+            "frameRange": [normalized_start, normalized_end],
+        },
+        "frameOffset": frame_offset,
+        "frameMapping": "normalizedFrame = sourceFrame + frameOffset",
         "fps": fps,
         "fpsNumerator": fps_numerator,
         "fpsBase": fps_base,
