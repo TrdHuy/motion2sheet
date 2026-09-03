@@ -14,14 +14,18 @@ if str(PACKAGE_ROOT) not in sys.path:
 import bpy
 
 from motion2sheet.motion.model_render.blender_level1 import export_armature_only_fbx
+from motion2sheet.motion.model_render.blender_rest_authority import capture_character_rig_document
 from motion2sheet.motion.roundtrip.blender_common import (
+    capture_animation_document,
     capture_rig_document,
     import_source,
     integer_action_range,
     scene_fps,
 )
+from motion2sheet.motion.roundtrip.blender_json_scene import build_json_scene
 from motion2sheet.motion.roundtrip.fbx import extract_fbx_metadata_and_diagnostics
 from motion2sheet.motion.roundtrip.schema import validate_rig_document
+from motion2sheet.motion.skin import validate_level1_rig_compatibility
 
 TRANSLATION_TOLERANCE = 1e-5
 HEAD_TAIL_TOLERANCE = 1e-5
@@ -148,8 +152,15 @@ def main() -> None:
     source_frame_count = source_end - source_start + 1
     fps, fps_numerator, fps_base = scene_fps(bpy.context.scene)
     parents = {bone.name: bone.parent.name if bone.parent else None for bone in armature.data.bones}
+
+    # Capture clip-independent rest and Contract-B-style local pose deltas separately.
+    # The clean intermediate armature is rebuilt from EditBone rest authority; frame 1
+    # is never copied into the rest skeleton.
+    source_rig, source_rest = capture_character_rig_document(source, armature)
+    source_animation = capture_animation_document(source, armature, action, source_rig)
     reference = _capture_pose(armature, source_start, source_end)
-    export_armature_only_fbx(armature, output)
+    clean_armature, _clean_action = build_json_scene(source_rig, source_animation)
+    export_armature_only_fbx(clean_armature, output)
 
     normalized_armature, normalized_action = import_source(output)
     normalized_start, normalized_end = integer_action_range(normalized_action)
@@ -171,8 +182,7 @@ def main() -> None:
     actual = _capture_pose(normalized_armature, normalized_start, normalized_end)
     fidelity = _compare(reference, actual, parents, source_start, source_end, frame_offset)
 
-    # Reproduce the locked PR #11 FBX rig-validation ordering without changing
-    # any PR #11 code: capture Blender rest rig, attach static FBX metadata, validate.
+    # Reproduce locked PR #11 rig-validation ordering on the generated motion-only FBX.
     normalized_rig = capture_rig_document(output, normalized_armature)
     normalized_bones = [bone["name"] for bone in normalized_rig["bones"]]
     rig_fbx, _animation_fbx, _diagnostic_curves = extract_fbx_metadata_and_diagnostics(
@@ -185,11 +195,17 @@ def main() -> None:
     if len(normalized_rig["bones"]) != len(parents):
         raise RuntimeError("locked Contract B rig capture changed the normalized bone count")
 
+    # Critical architecture gate: motion normalization may clean FBX encoding, but it
+    # must preserve the source character's clip-independent rest basis. No first-pose
+    # rebasing is allowed.
+    rest_compatibility = validate_level1_rig_compatibility(normalized_rig, source_rig)
+
     report = {
         "schema": "motion2sheet.diagnostics.level1-motion-source-normalization",
         "version": 1,
-        "reason": "The release With-Skin FBX imports with tiny non-TRS numerical rest shear that the locked PR #11 Contract B exporter correctly rejects. This PR12-local armature-only FBX is accepted only after all-frame world-pose equivalence passes. Blender may renumber the baked action by a constant integer frame offset; samples are compared by derived offset, never by guessed correspondence.",
+        "reason": "PR12 rebuilds a clean armature from the source FBX EditBone rest authority, reapplies only per-frame matrix_basis motion deltas, then exports an armature-only FBX for the locked PR #11 exporter. Animation frame 1 is never used as rest authority.",
         "source": {"filename": source.name, "sha256": _sha256(source), "frameRange": [source_start, source_end]},
+        "sourceCharacterRest": source_rest,
         "normalized": {
             "filename": output.name,
             "sha256": _sha256(output),
@@ -203,6 +219,8 @@ def main() -> None:
         "fpsNumerator": fps_numerator,
         "fpsBase": fps_base,
         "fidelity": fidelity,
+        "restCompatibility": rest_compatibility,
+        "firstAnimationPoseUsedAsRest": False,
         "lockedPr11RigCapturePass": True,
         "retargeting": False,
         "fuzzyMapping": False,
