@@ -19,13 +19,11 @@ from motion2sheet.motion.model_render.blender_rest_authority import (
     capture_imported_rest_rig_document,
 )
 from motion2sheet.motion.roundtrip.blender_common import (
-    capture_animation_document,
     capture_rig_document,
     import_source,
     integer_action_range,
     scene_fps,
 )
-from motion2sheet.motion.roundtrip.blender_json_scene import build_json_scene
 from motion2sheet.motion.roundtrip.fbx import extract_fbx_metadata_and_diagnostics
 from motion2sheet.motion.roundtrip.schema import validate_rig_document
 from motion2sheet.motion.skin import validate_level1_rig_compatibility
@@ -156,20 +154,19 @@ def main() -> None:
     fps, fps_numerator, fps_base = scene_fps(bpy.context.scene)
     parents = {bone.name: bone.parent.name if bone.parent else None for bone in armature.data.bones}
 
-    # Keep the source import rest and animation deltas together while preserving the
-    # exact source world motion. Character acceptance uses the separately canonicalized
-    # static rest representation below; no animation sample is used to create either rest.
-    imported_rig, imported_rest = capture_imported_rest_rig_document(source, armature)
-    source_animation = capture_animation_document(source, armature, action, imported_rig)
+    # Character rest capture reads only EditBone/static FBX authority. The source action
+    # is used here solely as motion authority for the motion-only FBX; it never defines
+    # character rest. Keep source armature rest and source animation together so Blender
+    # can re-encode the FBX representation without any rest reconstruction step.
+    _imported_rig, imported_rest = capture_imported_rest_rig_document(source, armature)
     reference = _capture_pose(armature, source_start, source_end)
     canonical_source_rig, canonical_rest = capture_character_rig_document(source, armature)
 
-    # Rebuild the imported EditBone rest plus its matrix_basis motion exactly, then let
-    # Blender FBX encoding canonicalize that static rest representation. The exporter
-    # therefore rebases motion representation through FBX encoding while preserving the
-    # source world pose; it does not retarget and does not use frame 1 as rest.
-    clean_armature, _clean_action = build_json_scene(imported_rig, source_animation)
-    export_armature_only_fbx(clean_armature, output)
+    # Export the imported armature directly. Rebuilding EditBones from JSON before this
+    # step was the source of a 5.89-degree Head roll representation change. Direct export
+    # preserves the source bind/edit rest while Blender removes only importer-level FBX
+    # numerical encoding differences. No first-frame rest, mapping, or retargeting occurs.
+    export_armature_only_fbx(armature, output)
 
     normalized_armature, normalized_action = import_source(output)
     normalized_start, normalized_end = integer_action_range(normalized_action)
@@ -204,15 +201,16 @@ def main() -> None:
     if len(normalized_rig["bones"]) != len(parents):
         raise RuntimeError("locked Contract B rig capture changed the normalized bone count")
 
-    # Critical architecture gate: both sides are now the same clip-independent static
-    # rest encoding. Character rest came from a rest-only FBX round-trip; animation rest
-    # came from the motion FBX round-trip. Level-1 remains strict at the existing tolerance.
+    # Both sides are now clip-independent representations of the same static rest:
+    # character = EditBone/bind authority canonicalized with an identity-only carrier;
+    # motion = the original imported armature rest re-encoded with its actual motion.
+    # Level-1 remains strict at the existing 0.001-degree tolerance.
     rest_compatibility = validate_level1_rig_compatibility(normalized_rig, canonical_source_rig)
 
     report = {
         "schema": "motion2sheet.diagnostics.level1-motion-source-normalization",
         "version": 1,
-        "reason": "PR12 keeps source EditBone rest and matrix_basis motion together for exact world-pose preservation, while canonical character rest is normalized independently through a rest-only FBX round-trip with no Action. The motion-only FBX then uses the same Blender FBX rest encoding before locked PR11 extraction. Animation frame 1 is never used as rest authority.",
+        "reason": "The source armature is exported directly so its FBX bind/edit rest is preserved while its real Action remains motion authority only. Character rest is independently canonicalized from EditBone/static bind data with an identity-only encoding carrier. No animation frame is used as rest authority and no retargeting occurs.",
         "source": {"filename": source.name, "sha256": _sha256(source), "frameRange": [source_start, source_end]},
         "sourceImportedRest": imported_rest,
         "sourceCharacterRest": canonical_rest,
@@ -223,6 +221,7 @@ def main() -> None:
             "skinIncluded": False,
             "frameRange": [normalized_start, normalized_end],
         },
+        "normalizationRestRebuilt": False,
         "frameOffset": frame_offset,
         "frameMapping": "normalizedFrame = sourceFrame + frameOffset",
         "fps": fps,
