@@ -24,6 +24,8 @@ jobs:
       ASSET_SHA256: 1e05bcef7c030dce1be09a38a6e3d2f38d1f9bc71396584876ab1a3141005c02
       ROOT: build/real_skin_e2e
       CAMERA: profiles/cameras/front_final.json5
+      SILHOUETTE_MIN_FRAME_IOU: '0.995'
+      SILHOUETTE_OVERALL_IOU: '0.997'
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -154,10 +156,10 @@ jobs:
           test -s "$ROOT/render/diagnostics/model_identity.json"
           test -s "$ROOT/render/diagnostics/skin_reconstruction.json"
           test -s "$ROOT/render/diagnostics/playback.json"
-      - name: Verify skin, Level-1, animation and GIF gates
+      - name: Verify skin, Level-1, animation, silhouette and GIF gates
         run: |
           python - <<'PY'
-          import json, os
+          import json, math, os
           from pathlib import Path
           from PIL import Image
           root=Path(os.environ['ROOT'])
@@ -197,6 +199,41 @@ jobs:
           with Image.open(root/'render'/'preview.gif') as im: assert im.n_frames==render['frameCount']
           with Image.open(root/'render'/'pose_sheet.png') as im:
               alpha=im.convert('RGBA').getchannel('A').getextrema(); assert alpha[0]==0 and alpha[1]>0
+
+          # Full-animation deformation oracle. The source and JSON-only target are
+          # rendered with the same camera/canvas. Alpha silhouette ignores material
+          # sampling differences while still failing on a bad bind/rest pose or
+          # incorrect skinned deformation. The thresholds retain margin below the
+          # observed real-asset minimum (~0.9964) and overall (~0.9981) IoU.
+          source_sheet=Image.open(root/'source-reference'/'pose_sheet.png').convert('RGBA')
+          target_sheet=Image.open(root/'render'/'pose_sheet.png').convert('RGBA')
+          assert source_sheet.size==target_sheet.size
+          frame_count=int(render['frameCount']); columns=8; rows=math.ceil(frame_count/columns)
+          cell_width=target_sheet.width//columns; cell_height=target_sheet.height//rows
+          assert cell_width*columns==target_sheet.width and cell_height*rows==target_sheet.height
+          frame_silhouettes=[]; total_intersection=total_union=total_mismatch=0
+          for index, frame_id in enumerate(source['contractFrames']):
+              row,column=divmod(index,columns)
+              box=(column*cell_width,row*cell_height,(column+1)*cell_width,(row+1)*cell_height)
+              source_alpha=source_sheet.crop(box).getchannel('A')
+              target_alpha=target_sheet.crop(box).getchannel('A')
+              source_mask=bytes(1 if value else 0 for value in source_alpha.getdata())
+              target_mask=bytes(1 if value else 0 for value in target_alpha.getdata())
+              intersection=sum(a and b for a,b in zip(source_mask,target_mask))
+              union=sum(a or b for a,b in zip(source_mask,target_mask))
+              mismatch=sum(a!=b for a,b in zip(source_mask,target_mask))
+              iou=intersection/union if union else 1.0
+              frame_silhouettes.append({'frame':int(frame_id),'iou':iou,'mismatchPixels':mismatch})
+              total_intersection+=intersection; total_union+=union; total_mismatch+=mismatch
+          source_sheet.close(); target_sheet.close()
+          worst_silhouette=min(frame_silhouettes,key=lambda item:item['iou'])
+          overall_silhouette_iou=total_intersection/total_union if total_union else 1.0
+          assert worst_silhouette['iou'] >= float(os.environ['SILHOUETTE_MIN_FRAME_IOU']), worst_silhouette
+          assert overall_silhouette_iou >= float(os.environ['SILHOUETTE_OVERALL_IOU']), {
+              'overallIoU':overall_silhouette_iou,
+              'mismatchPixels':total_mismatch,
+          }
+
           summary={
               'releaseAssetSha256': os.environ['ASSET_SHA256'],
               'sourceMeshCount': export['sourceSkinStatistics']['meshCount'],
@@ -215,6 +252,10 @@ jobs:
               'maxSemanticDirectionErrorDegrees': playback['maxSemanticDirectionErrorDegrees'],
               'maxJointBendErrorDegrees': playback['maxJointBendErrorDegrees'],
               'rootDirectionErrorDegrees': playback['rootMotion']['directionErrorDegrees'],
+              'silhouetteOverallIoU': overall_silhouette_iou,
+              'silhouetteMinFrameIoU': worst_silhouette['iou'],
+              'silhouetteWorstFrame': worst_silhouette['frame'],
+              'silhouetteMismatchPixels': total_mismatch,
               'gifTotalDurationMs': timing['totalDurationMs'],
               'gifEffectiveFps': timing['effectiveFps'],
           }
