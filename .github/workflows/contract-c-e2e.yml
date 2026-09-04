@@ -1,0 +1,207 @@
+name: Contract C Reusable Humanoid E2E
+
+on:
+  pull_request:
+    paths:
+      - 'motion2sheet/motion/contract_c/**'
+      - 'motion2sheet/motion/model_render/**'
+      - 'motion2sheet/motion/skin/**'
+      - 'motion2sheet/motion/cli.py'
+      - 'profiles/contract_c/**'
+      - 'profiles/cameras/**'
+      - 'tests/motion/contract_c/**'
+      - '.github/workflows/contract-c-e2e.yml'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reusable-humanoid:
+    name: contract-c-e2e / one-animation-two-targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RELEASE_BASE: https://github.com/TrdHuy/motion2sheet/releases/download/e2e_gh_action_asset
+      CHARACTER_SHA256: 1e05bcef7c030dce1be09a38a6e3d2f38d1f9bc71396584876ab1a3141005c02
+      CHARACTER_SIZE: '41940608'
+      IDLE_SHA256: 3738c0c5a1a4c33e36c30f59ea3393a4ee612eef89542157ff59963ad49a7b72
+      IDLE_SIZE: '552400'
+      RUN_SHA256: a0ddd67d5e72dc657a6445d06af3d17f8ba6a15e61b19224d4c63f897ac0e91b
+      RUN_SIZE: '333840'
+      RUN_INPLACE_SHA256: a289ced832f2fa618ee90ea9dcf7c397f29490613217c016ed7d0953c0115d08
+      RUN_INPLACE_SIZE: '333840'
+      ROOT: build/contract_c_poc
+      CAMERA: profiles/cameras/front_final.json5
+      CANVAS: 224x224
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12', cache: pip}
+      - name: Install package
+        run: python -m pip install -e '.[dev]'
+      - name: Run Contract C unit tests
+        run: pytest tests/motion/contract_c
+      - name: Assert Contract C authority has no source-rig fields
+        run: |
+          set -euo pipefail
+          ! grep -R "worldPositions\|bindMatrix\|sourceBoneNames" motion2sheet/motion/contract_c/schema.py
+          ! grep -R "motion2sheet\.anim2sheet\|anim2sheet build\|Contract A" motion2sheet/motion/contract_c
+      - name: Install Blender headless runtime libraries
+        run: |
+          set -euo pipefail
+          grep -rl 'packages.microsoft.com' /etc/apt/sources.list.d 2>/dev/null | xargs -r sudo rm -f
+          sudo apt-get update
+          sudo apt-get install -y libegl1 xvfb
+      - name: Setup Blender 4.5 LTS
+        uses: bradyajohnston/setup-blender@v5
+        with: {version: '4.5.12'}
+      - name: Verify Blender
+        run: blender --version
+      - name: Download and verify exact real Mixamo fixtures
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROOT/diagnostics"
+          CHARACTER_FBX="$RUNNER_TEMP/walking_mixamo_with_skin.fbx"
+          IDLE_FBX="$RUNNER_TEMP/idle-without-skin.fbx"
+          RUN_FBX="$RUNNER_TEMP/run-without-skin-not-inplace.fbx"
+          RUN_INPLACE_FBX="$RUNNER_TEMP/run-without-skin-inplace.fbx"
+          curl -fL --retry 3 --retry-delay 2 -o "$CHARACTER_FBX" "$RELEASE_BASE/walking_mixamo_with_skin.fbx"
+          curl -fL --retry 3 --retry-delay 2 -o "$IDLE_FBX" "$RELEASE_BASE/idle-without-skin.fbx"
+          curl -fL --retry 3 --retry-delay 2 -o "$RUN_FBX" "$RELEASE_BASE/run-without-skin-not-inplace.fbx"
+          curl -fL --retry 3 --retry-delay 2 -o "$RUN_INPLACE_FBX" "$RELEASE_BASE/run-without-skin-inplace.fbx"
+          echo "$CHARACTER_SHA256  $CHARACTER_FBX" | sha256sum -c -
+          echo "$IDLE_SHA256  $IDLE_FBX" | sha256sum -c -
+          echo "$RUN_SHA256  $RUN_FBX" | sha256sum -c -
+          echo "$RUN_INPLACE_SHA256  $RUN_INPLACE_FBX" | sha256sum -c -
+          test "$(stat -c %s "$CHARACTER_FBX")" -eq "$CHARACTER_SIZE"
+          test "$(stat -c %s "$IDLE_FBX")" -eq "$IDLE_SIZE"
+          test "$(stat -c %s "$RUN_FBX")" -eq "$RUN_SIZE"
+          test "$(stat -c %s "$RUN_INPLACE_FBX")" -eq "$RUN_INPLACE_SIZE"
+          {
+            echo "CHARACTER_FBX=$CHARACTER_FBX"
+            echo "IDLE_FBX=$IDLE_FBX"
+            echo "RUN_FBX=$RUN_FBX"
+            echo "RUN_INPLACE_FBX=$RUN_INPLACE_FBX"
+          } >> "$GITHUB_ENV"
+      - name: Build two different real-skinned target authorities
+        run: |
+          set -euo pipefail
+          DERIVED_FBX="$RUNNER_TEMP/character-b-derived.fbx"
+          motion2sheet export-character "$CHARACTER_FBX" --output "$ROOT/characters/character-a"
+          blender --background --factory-startup --python-exit-code 1 \
+            --python tests/motion/contract_c/fixtures/blender_derive_character.py -- \
+            --input "$CHARACTER_FBX" \
+            --output "$DERIVED_FBX" \
+            --diagnostics "$ROOT/diagnostics/character-b-derivation.json"
+          motion2sheet export-character "$DERIVED_FBX" --output "$ROOT/characters/character-b"
+          for character in character-a character-b; do
+            test -s "$ROOT/characters/$character/model.glb"
+            test -s "$ROOT/characters/$character/rig.json"
+            test -s "$ROOT/characters/$character/skin.json"
+          done
+          echo "DERIVED_FBX=$DERIVED_FBX" >> "$GITHUB_ENV"
+      - name: Normalize motion encoding without retargeting
+        run: |
+          set -euo pipefail
+          IDLE_NORMALIZED="$RUNNER_TEMP/idle-normalized.fbx"
+          RUN_NORMALIZED="$RUNNER_TEMP/run-normalized.fbx"
+          RUN_INPLACE_NORMALIZED="$RUNNER_TEMP/run-inplace-normalized.fbx"
+          blender --background --factory-startup --python-exit-code 1 --python motion2sheet/motion/model_render/blender_prepare_motion_source.py -- --input "$IDLE_FBX" --output "$IDLE_NORMALIZED" --report "$ROOT/diagnostics/idle-normalization.json"
+          blender --background --factory-startup --python-exit-code 1 --python motion2sheet/motion/model_render/blender_prepare_motion_source.py -- --input "$RUN_FBX" --output "$RUN_NORMALIZED" --report "$ROOT/diagnostics/run-normalization.json"
+          blender --background --factory-startup --python-exit-code 1 --python motion2sheet/motion/model_render/blender_prepare_motion_source.py -- --input "$RUN_INPLACE_FBX" --output "$RUN_INPLACE_NORMALIZED" --report "$ROOT/diagnostics/run-inplace-normalization.json"
+          for path in "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"; do test -s "$path"; done
+          {
+            echo "IDLE_NORMALIZED=$IDLE_NORMALIZED"
+            echo "RUN_NORMALIZED=$RUN_NORMALIZED"
+            echo "RUN_INPLACE_NORMALIZED=$RUN_INPLACE_NORMALIZED"
+          } >> "$GITHUB_ENV"
+      - name: Export Contract B adapter inputs
+        run: |
+          set -euo pipefail
+          motion2sheet export-animation-json "$IDLE_NORMALIZED" --output "$ROOT/contract_b/idle"
+          motion2sheet export-animation-json "$RUN_NORMALIZED" --output "$ROOT/contract_b/run"
+          motion2sheet export-animation-json "$RUN_INPLACE_NORMALIZED" --output "$ROOT/contract_b/run-inplace"
+          for clip in idle run run-inplace; do
+            test -s "$ROOT/contract_b/$clip/rig.json"
+            test -s "$ROOT/contract_b/$clip/animation.json"
+          done
+      - name: Export reusable Contract C authorities
+        run: |
+          set -euo pipefail
+          for clip in idle run run-inplace; do
+            motion2sheet export-contract-c-animation \
+              --source-rig "$ROOT/contract_b/$clip/rig.json" \
+              --source-animation "$ROOT/contract_b/$clip/animation.json" \
+              --mapping profiles/contract_c/mixamo_humanoid_v1.json \
+              --id "$clip" --loop \
+              --output "$ROOT/animations/$clip"
+            test -s "$ROOT/animations/$clip/animation.json"
+            test -s "$ROOT/animations/$clip/export.json"
+          done
+          sha256sum "$ROOT"/animations/*/animation.json | tee "$ROOT/diagnostics/contract-c-authority-sha256.txt"
+      - name: Verify deterministic Contract C serialization
+        run: |
+          set -euo pipefail
+          motion2sheet export-contract-c-animation \
+            --source-rig "$ROOT/contract_b/run/rig.json" \
+            --source-animation "$ROOT/contract_b/run/animation.json" \
+            --mapping profiles/contract_c/mixamo_humanoid_v1.json \
+            --id run --loop \
+            --output "$ROOT/determinism-run"
+          cmp "$ROOT/animations/run/animation.json" "$ROOT/determinism-run/animation.json"
+          rm -rf "$ROOT/determinism-run"
+      - name: Delete source and adapter authorities before Contract C playback
+        run: |
+          set -euo pipefail
+          rm -f "$CHARACTER_FBX" "$DERIVED_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"
+          rm -rf "$ROOT/contract_b"
+          for path in "$CHARACTER_FBX" "$DERIVED_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED" "$ROOT/contract_b"; do
+            test ! -e "$path"
+          done
+      - name: Render exact Run authority on Character A and B
+        run: |
+          set -euo pipefail
+          motion2sheet render-contract-c-animation --model "$ROOT/characters/character-a/model.glb" --character-rig "$ROOT/characters/character-a/rig.json" --skin "$ROOT/characters/character-a/skin.json" --character-mapping profiles/contract_c/mixamo_humanoid_v1.json --animation "$ROOT/animations/run/animation.json" --camera-profile "$CAMERA" --canvas "$CANVAS" --sheet-columns 5 --render-samples 8 --gif --output "$ROOT/renders/character-a/run"
+          motion2sheet render-contract-c-animation --model "$ROOT/characters/character-b/model.glb" --character-rig "$ROOT/characters/character-b/rig.json" --skin "$ROOT/characters/character-b/skin.json" --character-mapping profiles/contract_c/derived_humanoid_v1.json --animation "$ROOT/animations/run/animation.json" --camera-profile "$CAMERA" --canvas "$CANVAS" --sheet-columns 5 --render-samples 8 --gif --output "$ROOT/renders/character-b/run"
+      - name: Render exact Run in-place authority on Character A and B
+        run: |
+          set -euo pipefail
+          motion2sheet render-contract-c-animation --model "$ROOT/characters/character-a/model.glb" --character-rig "$ROOT/characters/character-a/rig.json" --skin "$ROOT/characters/character-a/skin.json" --character-mapping profiles/contract_c/mixamo_humanoid_v1.json --animation "$ROOT/animations/run-inplace/animation.json" --camera-profile "$CAMERA" --canvas "$CANVAS" --sheet-columns 5 --render-samples 8 --gif --output "$ROOT/renders/character-a/run-inplace"
+          motion2sheet render-contract-c-animation --model "$ROOT/characters/character-b/model.glb" --character-rig "$ROOT/characters/character-b/rig.json" --skin "$ROOT/characters/character-b/skin.json" --character-mapping profiles/contract_c/derived_humanoid_v1.json --animation "$ROOT/animations/run-inplace/animation.json" --camera-profile "$CAMERA" --canvas "$CANVAS" --sheet-columns 5 --render-samples 8 --gif --output "$ROOT/renders/character-b/run-inplace"
+      - name: Render exact Idle authority on Character A and B
+        run: |
+          set -euo pipefail
+          IDLE_SAMPLES=0,10,20,30,40,50,60,70,80,90,100,109
+          motion2sheet render-contract-c-animation --model "$ROOT/characters/character-a/model.glb" --character-rig "$ROOT/characters/character-a/rig.json" --skin "$ROOT/characters/character-a/skin.json" --character-mapping profiles/contract_c/mixamo_humanoid_v1.json --animation "$ROOT/animations/idle/animation.json" --camera-profile "$CAMERA" --frames "$IDLE_SAMPLES" --canvas "$CANVAS" --sheet-columns 4 --render-samples 8 --gif --output "$ROOT/renders/character-a/idle"
+          motion2sheet render-contract-c-animation --model "$ROOT/characters/character-b/model.glb" --character-rig "$ROOT/characters/character-b/rig.json" --skin "$ROOT/characters/character-b/skin.json" --character-mapping profiles/contract_c/derived_humanoid_v1.json --animation "$ROOT/animations/idle/animation.json" --camera-profile "$CAMERA" --frames "$IDLE_SAMPLES" --canvas "$CANVAS" --sheet-columns 4 --render-samples 8 --gif --output "$ROOT/renders/character-b/idle"
+      - name: Verify reusable-animation acceptance and FBX independence
+        run: |
+          set -euo pipefail
+          python tests/motion/contract_c/verify_local_acceptance.py --root "$ROOT" --output "$ROOT/acceptance.json"
+          test ! -e "$ROOT/contract_b"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path(os.environ['ROOT'])
+          report=json.loads((root/'acceptance.json').read_text())
+          assert report['pass'] is True and not report['failures']
+          for clip in ('idle','run','run-inplace'):
+              proof=report['proof'][clip]
+              assert proof['sameExactAnimationAuthority'] is True
+              assert len({row['animationPath'] for row in proof['characters'].values()})==1
+              assert all(row['actualSkinnedMesh']['vertexCount']>0 for row in proof['characters'].values())
+          assert report['proof']['run']['rootMotion']['isInPlace'] is False
+          assert report['proof']['run']['rootMotion']['direction'][1] < -0.999
+          assert report['proof']['run-inplace']['rootMotion']['isInPlace'] is True
+          print(json.dumps(report,indent=2,sort_keys=True))
+          PY
+      - name: Upload Contract C reusable humanoid proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-c-reusable-humanoid-e2e
+          path: build/contract_c_poc/
+          if-no-files-found: warn
+          retention-days: 7
