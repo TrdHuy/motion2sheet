@@ -1,5 +1,5 @@
 {
-  "schema": "motion2sheet.contract-c.character-map",
+  "schema": "motion2sheet.humanoid-motion.character-map",
   "version": 1,
   "id": "mixamo_humanoid_v1",
   "canonicalSkeleton": "humanoid_v1",

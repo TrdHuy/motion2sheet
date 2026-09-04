@@ -4,13 +4,13 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$REPO_ROOT"
 
-ROOT="${1:-build/motion/contract-c}"
-FIXTURES="tests/motion/contract_c/fixtures/release_assets.json"
-MAPPING="profiles/contract_c/mixamo_humanoid_v1.json"
-CAMERA="profiles/cameras/front_contract_c_inplace.json5"
+ROOT="${1:-build/motion/humanoid-motion}"
+FIXTURES="tests/motion/humanoid_motion/fixtures/release_assets.json"
+MAPPING="profiles/humanoid_motion/mixamo_humanoid_v1.json"
+CAMERA="profiles/cameras/front_humanoid_motion.json5"
 CANVAS="224x224"
 TMP_PARENT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
-TMP_ROOT="$TMP_PARENT/motion2sheet-contract-c-e2e-$$"
+TMP_ROOT="$TMP_PARENT/motion2sheet-humanoid-motion-e2e-$$"
 mkdir -p "$TMP_ROOT"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
@@ -19,11 +19,11 @@ rm -rf "$ROOT"
 mkdir -p "$ROOT/diagnostics"
 cp "$FIXTURES" "$ROOT/diagnostics/release_assets.json"
 
-# Contract C authority and the independent oracle must stay isolated from
+# Humanoid Motion authority and the independent oracle must stay isolated from
 # source-rig/world-position authority and from the playback implementation.
-! grep -R "worldPositions\|bindMatrix\|sourceBoneNames" motion2sheet/motion/contract_c/schema.py
-! grep -R "motion2sheet\.anim2sheet\|anim2sheet build\|Contract A" motion2sheet/motion/contract_c
-! grep -E "blender_export|blender_render|blender_math|build_json_scene" motion2sheet/motion/contract_c/fidelity.py
+! grep -R "worldPositions\|bindMatrix\|sourceBoneNames" motion2sheet/motion/humanoid_motion/schema.py
+! grep -R "motion2sheet\.anim2sheet\|anim2sheet build\|Contract A" motion2sheet/motion/humanoid_motion
+! grep -E "blender_export|blender_render|blender_math|build_json_scene" motion2sheet/motion/humanoid_motion/fidelity.py
 
 download_fixture() {
   local key="$1"
@@ -79,7 +79,7 @@ python - <<'PY'
 import json
 import os
 from pathlib import Path
-from motion2sheet.motion.contract_c.mapping import mapping_diagnostics, validate_character_mapping
+from motion2sheet.motion.humanoid_motion.mapping import mapping_diagnostics, validate_character_mapping
 from motion2sheet.motion.roundtrip.schema import validate_rig_document
 root = Path(os.environ["ROOT"])
 mapping = json.loads(Path(os.environ["MAPPING"]).read_text(encoding="utf-8"))
@@ -110,26 +110,26 @@ for clip in idle run run-inplace; do
 done
 
 for clip in idle run run-inplace; do
-  motion2sheet export-contract-c-animation \
+  motion2sheet export-humanoid-animation \
     --source-rig "$ROOT/contract_b/$clip/rig.json" \
     --source-animation "$ROOT/contract_b/$clip/animation.json" \
     --mapping "$MAPPING" --id "$clip" --loop \
     --output "$ROOT/animations/$clip"
 done
-sha256sum "$ROOT"/animations/*/animation.json | tee "$ROOT/diagnostics/contract-c-authority-sha256.txt"
+sha256sum "$ROOT"/animations/*/animation.json | tee "$ROOT/diagnostics/humanoid-motion-authority-sha256.txt"
 
 for clip in idle run run-inplace; do
-  motion2sheet verify-contract-c-fidelity \
+  motion2sheet verify-humanoid-animation-fidelity \
     --source-rig "$ROOT/contract_b/$clip/rig.json" \
     --source-animation "$ROOT/contract_b/$clip/animation.json" \
     --source-mapping "$MAPPING" \
     --animation "$ROOT/animations/$clip/animation.json" \
-    --output "$ROOT/animations/$clip/diagnostics/source_contract_c_fidelity.json"
+    --output "$ROOT/animations/$clip/diagnostics/source_humanoid_motion_fidelity.json"
 done
 
 for clip in idle run run-inplace; do
-  deterministic="$TMP_ROOT/contract-c-determinism-$clip"
-  motion2sheet export-contract-c-animation \
+  deterministic="$TMP_ROOT/humanoid-motion-determinism-$clip"
+  motion2sheet export-humanoid-animation \
     --source-rig "$ROOT/contract_b/$clip/rig.json" \
     --source-animation "$ROOT/contract_b/$clip/animation.json" \
     --mapping "$MAPPING" --id "$clip" --loop --output "$deterministic"
@@ -138,7 +138,7 @@ for clip in idle run run-inplace; do
 done
 
 # Standalone playback proof: source FBX, normalized FBX and Contract B adapter
-# are deliberately removed before any Contract C render occurs.
+# are deliberately removed before any Humanoid Motion render occurs.
 rm -f "$CHARACTER_A_FBX" "$MARIA_FBX" "$WARROK_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"
 rm -rf "$ROOT/contract_b"
 for path in "$CHARACTER_A_FBX" "$MARIA_FBX" "$WARROK_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED" "$ROOT/contract_b"; do
@@ -147,7 +147,7 @@ done
 
 for character in character-a maria warrok; do
   for clip in idle run run-inplace; do
-    motion2sheet render-contract-c-animation \
+    motion2sheet render-humanoid-animation \
       --model "$ROOT/characters/$character/model.glb" \
       --character-rig "$ROOT/characters/$character/rig.json" \
       --skin "$ROOT/characters/$character/skin.json" \
@@ -159,7 +159,7 @@ for character in character-a maria warrok; do
   done
 done
 
-python tests/motion/contract_c/verify_local_acceptance.py --root "$ROOT" --output "$ROOT/acceptance.json"
+python tests/motion/humanoid_motion/verify_local_acceptance.py --root "$ROOT" --output "$ROOT/acceptance.json"
 test ! -e "$ROOT/contract_b"
 python - <<'PY'
 import json
@@ -172,4 +172,4 @@ assert report["proof"]["run"]["fidelity"]["locomotionStripping"]["sourceHadPlana
 assert report["proof"]["run"]["fidelity"]["rootInvariant"]["pass"] is True
 PY
 
-echo "Contract C E2E PASS: $ROOT"
+echo "Humanoid Motion E2E PASS: $ROOT"

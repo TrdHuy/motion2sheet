@@ -1,4 +1,4 @@
-name: Contract C Reusable Humanoid E2E
+name: Humanoid Motion Portability E2E
 
 on:
   workflow_dispatch:
@@ -7,8 +7,8 @@ permissions:
   contents: read
 
 jobs:
-  reusable-humanoid:
-    name: contract-c-e2e / in-place-three-independent-targets
+  humanoid-motion:
+    name: humanoid-motion-e2e / three-independent-targets
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -19,8 +19,8 @@ jobs:
           cache: pip
       - name: Install package
         run: python -m pip install -e '.[dev]'
-      - name: Run Contract C unit tests
-        run: pytest tests/motion/contract_c
+      - name: Run Humanoid Motion unit tests
+        run: pytest tests/motion/humanoid_motion
       - name: Install Blender headless runtime libraries
         run: sudo apt-get update && sudo apt-get install -y libegl1 xvfb
       - name: Setup Blender 4.5 LTS
@@ -29,13 +29,13 @@ jobs:
           version: "4.5.12"
       - name: Verify Blender
         run: blender --version
-      - name: Run reusable Contract C E2E proof
-        run: bash tests/motion/contract_c/run_e2e.sh build/motion/contract-c
-      - name: Upload Contract C independent humanoid proof
+      - name: Run reusable Humanoid Motion E2E proof
+        run: bash tests/motion/humanoid_motion/run_e2e.sh build/motion/humanoid-motion
+      - name: Upload Humanoid Motion portability proof
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: contract-c-inplace-independent-humanoid-e2e
-          path: build/motion/contract-c/
+          name: humanoid-motion-portability-e2e
+          path: build/motion/humanoid-motion/
           if-no-files-found: warn
           retention-days: 7

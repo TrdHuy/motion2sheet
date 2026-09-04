@@ -70,8 +70,6 @@ def main() -> None:
     if missing:
         raise RuntimeError(f"source character lacks required derived-fixture bones: {missing}")
 
-    # A deterministic non-uniform world-space rest/proportion change. Applying the
-    # same affine transform to mesh vertices and edit bones preserves skin binding.
     scale = Matrix.Diagonal((1.25, 0.90, 0.78, 1.0))
     for mesh in meshes:
         local_affine = mesh.matrix_world.inverted_safe() @ scale @ mesh.matrix_world
@@ -89,8 +87,6 @@ def main() -> None:
     armature.data.edit_bones["mixamorig:RightArm"].roll -= math.radians(15.0)
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    # Rename the armature and corresponding vertex groups to prove character-side
-    # mapping rather than accidental source bone-name coupling.
     for old, new in RENAMES.items():
         armature.data.bones[old].name = new
     for mesh in meshes:
@@ -111,36 +107,20 @@ def main() -> None:
     for mesh in meshes:
         mesh.select_set(True)
     bpy.context.view_layer.objects.active = armature
-    bpy.ops.export_scene.fbx(
-        filepath=str(output),
-        use_selection=True,
-        object_types={"ARMATURE", "MESH"},
-        add_leaf_bones=False,
-        bake_anim=False,
-        axis_forward="-Z",
-        axis_up="Y",
-    )
+    bpy.ops.export_scene.fbx(filepath=str(output), use_selection=True, object_types={"ARMATURE", "MESH"}, add_leaf_bones=False, bake_anim=False, axis_forward="-Z", axis_up="Y")
     diagnostics.parent.mkdir(parents=True, exist_ok=True)
-    diagnostics.write_text(
-        json.dumps(
-            {
-                "schema": "motion2sheet.contract-c.derived-character-fixture",
-                "version": 1,
-                "sourceSha256": _sha256(source),
-                "outputSha256": _sha256(output),
-                "worldScale": [1.25, 0.90, 0.78],
-                "upperArmRollDegrees": {"left": 15.0, "right": -15.0},
-                "renamedBones": RENAMES,
-                "meshCount": len(meshes),
-                "vertexCount": sum(len(mesh.data.vertices) for mesh in meshes),
-                "purpose": "Local phase-1 target with different proportions, rest basis and bone names; not an independently authored character.",
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    diagnostics.write_text(json.dumps({
+        "schema": "motion2sheet.humanoid-motion.derived-character-fixture",
+        "version": 1,
+        "sourceSha256": _sha256(source),
+        "outputSha256": _sha256(output),
+        "worldScale": [1.25, 0.90, 0.78],
+        "upperArmRollDegrees": {"left": 15.0, "right": -15.0},
+        "renamedBones": RENAMES,
+        "meshCount": len(meshes),
+        "vertexCount": sum(len(mesh.data.vertices) for mesh in meshes),
+        "purpose": "Local phase-1 target with different proportions, rest basis and bone names; not an independently authored character.",
+    }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ def quaternion_values(value: Quaternion) -> list[float]:
     components = [float(value.w), float(value.x), float(value.y), float(value.z)]
     norm = math.sqrt(sum(component * component for component in components))
     if norm <= 1e-15:
-        raise RuntimeError("Contract C quaternion cannot be zero")
+        raise RuntimeError("Humanoid Motion quaternion cannot be zero")
     return [clean_float(component / norm) for component in components]
 
 
@@ -66,7 +66,7 @@ def mean_leg_length(armature, joints: dict[str, str]) -> float:
         totals.append(total)
     result = sum(totals) / len(totals)
     if not math.isfinite(result) or result <= 1e-8:
-        raise RuntimeError(f"Contract C mean leg length must be positive and finite; got {result}")
+        raise RuntimeError(f"Humanoid Motion mean leg length must be positive and finite; got {result}")
     return float(result)
 
 

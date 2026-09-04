@@ -1,7 +1,7 @@
 {
   "schema": "motion2sheet.camera",
   "version": 1,
-  "id": "front_contract_c_inplace",
+  "id": "front_humanoid_motion",
   "projection": "ORTHO",
   "location": [0.0, -6.0, 1.05],
   "target": [0.0, 0.0, 1.05],

@@ -14,7 +14,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 import bpy
 from mathutils import Matrix, Quaternion, Vector
 
-from motion2sheet.motion.contract_c.blender_math import (
+from motion2sheet.motion.humanoid_motion.blender_math import (
     mean_leg_length,
     quaternion_values,
     rotation_error_degrees,
@@ -22,9 +22,9 @@ from motion2sheet.motion.contract_c.blender_math import (
     world_pose_matrix,
     world_rest_matrix,
 )
-from motion2sheet.motion.contract_c.mapping import mapping_diagnostics, read_mapping, validate_character_mapping
-from motion2sheet.motion.contract_c.root_motion import contract_root_motion
-from motion2sheet.motion.contract_c.schema import CANONICAL_SKELETON, MAPPED_JOINTS, read_animation
+from motion2sheet.motion.humanoid_motion.mapping import mapping_diagnostics, read_mapping, validate_character_mapping
+from motion2sheet.motion.humanoid_motion.root_motion import humanoid_root_motion
+from motion2sheet.motion.humanoid_motion.schema import CANONICAL_SKELETON, MAPPED_JOINTS, read_animation
 from motion2sheet.motion.model_render.blender_helpers import (
     import_geometry_glb,
     mesh_layout,
@@ -84,7 +84,7 @@ def _build_runtime_action(armature, animation: dict, mapping: dict) -> tuple[obj
     scene.render.fps_base = scene.render.fps / float(animation["fps"])
     scene.frame_start = 1
     scene.frame_end = int(animation["frameCount"])
-    action = bpy.data.actions.new(f"{animation['id']}__M2S_CONTRACT_C_RUNTIME")
+    action = bpy.data.actions.new(f"{animation['id']}__M2S_HUMANOID_MOTION_RUNTIME")
     armature.animation_data_create().action = action
     for pose_bone in armature.pose.bones:
         pose_bone.rotation_mode = "QUATERNION"
@@ -128,9 +128,7 @@ def _build_runtime_action(armature, animation: dict, mapping: dict) -> tuple[obj
                 desired_scale = rest_world_scale[semantic]
             else:
                 parent_semantic, child_semantic, factor = bridge
-                desired_rotation = semantic_world_rotation[parent_semantic].slerp(
-                    semantic_world_rotation[child_semantic], factor
-                ).normalized()
+                desired_rotation = semantic_world_rotation[parent_semantic].slerp(semantic_world_rotation[child_semantic], factor).normalized()
                 desired_scale = world_rest_matrix(armature, name).decompose()[2]
 
             if semantic == "Hips":
@@ -162,10 +160,7 @@ def _build_runtime_action(armature, animation: dict, mapping: dict) -> tuple[obj
     bpy.context.view_layer.update()
     return action, {
         "targetMeanLegLengthSceneUnits": leg_length,
-        "bridgeHelpers": {
-            name: {"from": value[0], "to": value[1], "factor": value[2]}
-            for name, value in sorted(bridges.items())
-        },
+        "bridgeHelpers": {name: {"from": value[0], "to": value[1], "factor": value[2]} for name, value in sorted(bridges.items())},
         "restWorldRotation": {semantic: quaternion_values(value) for semantic, value in rest_world_rotation.items()},
     }
 
@@ -175,10 +170,7 @@ def _playback_diagnostics(armature, animation: dict, mapping: dict, rig: dict, r
     leg_length = float(runtime["targetMeanLegLengthSceneUnits"])
     hips_name = joints["Hips"]
     hips_rest = armature.matrix_world @ armature.data.bones[hips_name].head_local
-    rest_rotations = {
-        semantic: world_rest_matrix(armature, bone).to_quaternion().normalized()
-        for semantic, bone in joints.items()
-    }
+    rest_rotations = {semantic: world_rest_matrix(armature, bone).to_quaternion().normalized() for semantic, bone in joints.items()}
     max_rotation_error = 0.0
     worst_rotation = None
     max_hips_error = 0.0
@@ -207,7 +199,7 @@ def _playback_diagnostics(armature, animation: dict, mapping: dict, rig: dict, r
                 worst_rotation = {"sample": sample, "canonicalSemantic": semantic, "targetBone": bone_name}
             finite = finite and all(math.isfinite(value) for value in (*actual_delta, *actual_hips))
 
-    root = contract_root_motion(animation)
+    root = humanoid_root_motion(animation)
     root_scene = {
         "unit": "scene-units",
         "start": [value * leg_length for value in root["start"]],
@@ -221,7 +213,7 @@ def _playback_diagnostics(armature, animation: dict, mapping: dict, rig: dict, r
         "isInPlace": root["isInPlace"],
     }
     playback = {
-        "schema": "motion2sheet.contract-c.diagnostics.playback",
+        "schema": "motion2sheet.humanoid-motion.diagnostics.playback",
         "version": 1,
         "pass": finite and max_rotation_error <= 0.001 and max_hips_error <= 1e-5,
         "frameCount": animation["frameCount"],
@@ -258,27 +250,18 @@ def _contact_diagnostics(armature, animation: dict, mapping: dict) -> dict:
             points.append(point)
         min_height = min(float(point.z) for point in points)
         max_height = max(float(point.z) for point in points)
-        planar = max(
-            math.hypot(float(point.x - points[0].x), float(point.y - points[0].y))
-            for point in points
-        )
-        rows[semantic] = {
-            "targetBone": joints[semantic],
-            "minHeight": min_height,
-            "maxHeight": max_height,
-            "minimumRelativeToRestGround": min_height - ground,
-            "maxPlanarTravelFromFirstSample": planar,
-        }
+        planar = max(math.hypot(float(point.x - points[0].x), float(point.y - points[0].y)) for point in points)
+        rows[semantic] = {"targetBone": joints[semantic], "minHeight": min_height, "maxHeight": max_height, "minimumRelativeToRestGround": min_height - ground, "maxPlanarTravelFromFirstSample": planar}
     penetration = min(row["minimumRelativeToRestGround"] for row in rows.values())
     return {
-        "schema": "motion2sheet.contract-c.diagnostics.contact",
+        "schema": "motion2sheet.humanoid-motion.diagnostics.contact",
         "version": 1,
         "acceptanceGate": False,
         "footIkApplied": False,
         "restGroundHeight": ground,
         "minimumGroundClearance": penetration,
         "groundPenetrationObserved": penetration < -1e-4,
-        "note": "Foot sliding, floating and penetration are reported only; Contract C never stores source joint XYZ.",
+        "note": "Foot sliding, floating and penetration are reported only; Humanoid Motion never stores source joint XYZ.",
         "joints": rows,
     }
 
@@ -293,7 +276,7 @@ def main() -> None:
     diagnostics.mkdir(parents=True, exist_ok=True)
     animation_path = Path(request["animationPath"])
     if _sha256(animation_path) != request["animationSha256"]:
-        raise RuntimeError("Contract C animation SHA changed before Blender playback")
+        raise RuntimeError("Humanoid Motion animation SHA changed before Blender playback")
     animation = read_animation(animation_path)
     rig_path = Path(request["characterRigPath"])
     rig = validate_rig_document(read_json(rig_path))
@@ -320,30 +303,25 @@ def main() -> None:
     skin_report = compare_skin_bindings(skin, reconstructed, tolerance=float(request["skinWeightTolerance"]))
     _write(diagnostics / "skin_reconstruction.json", skin_report)
     if not skin_report["pass"]:
-        raise RuntimeError(f"Contract C skin reconstruction failed: {skin_report}")
+        raise RuntimeError(f"Humanoid Motion skin reconstruction failed: {skin_report}")
 
     _action, runtime = _build_runtime_action(armature, animation, mapping)
     semantic_report = mapping_diagnostics(mapping, rig)
     semantic_report["characterId"] = rig["id"]
     _write(diagnostics / "semantic_mapping.json", semantic_report)
     retarget = {
-        "schema": "motion2sheet.contract-c.diagnostics.retarget",
+        "schema": "motion2sheet.humanoid-motion.diagnostics.retarget",
         "version": 1,
         "runtimeTransformsDerived": True,
         "runtimeTransformsAreAnimationAuthority": False,
         "rotationFormula": "RtargetPose = Qroot * Dcanonical * RtargetRest",
-        "translationFormula": "pHips = pRest + Qroot*(Ltarget*inPlaceHipsOffset); Contract C Root translation is zero",
+        "translationFormula": "pHips = pRest + Qroot*(Ltarget*inPlaceHipsOffset); Humanoid Motion Root translation is zero",
         "rootApplication": "virtual Root yaw folded into semantic world rotations; Root translation remains zero",
         "helperPolicy": "deterministic rest-chain slerp",
         "targetMeanLegLengthSceneUnits": runtime["targetMeanLegLengthSceneUnits"],
         "bridgeHelpers": runtime["bridgeHelpers"],
         "joints": [
-            {
-                "canonicalSemantic": semantic,
-                "targetBone": mapping["joints"][semantic],
-                "targetRestWorldRotation": runtime["restWorldRotation"][semantic],
-                "restCorrectionApplied": True,
-            }
+            {"canonicalSemantic": semantic, "targetBone": mapping["joints"][semantic], "targetRestWorldRotation": runtime["restWorldRotation"][semantic], "restCorrectionApplied": True}
             for semantic in MAPPED_JOINTS
         ],
     }
@@ -353,13 +331,13 @@ def main() -> None:
     _write(diagnostics / "root_motion.json", root_motion)
     _write(diagnostics / "contact.json", _contact_diagnostics(armature, animation, mapping))
     if not playback["pass"]:
-        raise RuntimeError(f"Contract C playback fidelity failed: {playback}")
+        raise RuntimeError(f"Humanoid Motion playback fidelity failed: {playback}")
 
     request["rootBone"] = mapping["joints"]["Hips"]
     setup_camera_and_render(request, armature)
     bpy.ops.wm.save_as_mainfile(filepath=str(output / "runtime.blend"))
     if _sha256(animation_path) != request["animationSha256"]:
-        raise RuntimeError("Contract C animation SHA changed during Blender playback")
+        raise RuntimeError("Humanoid Motion animation SHA changed during Blender playback")
     print(json.dumps({"characterId": rig["id"], "playback": playback, "rootMotion": root_motion}, sort_keys=True), flush=True)
 
 

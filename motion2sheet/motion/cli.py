@@ -20,7 +20,7 @@ from .render import compose_sheet, render_sequence
 from .retarget import load_profile
 from .roundtrip.cli import add_roundtrip_subcommands
 from .character_render.cli import add_character_render_subcommands
-from .contract_c.cli import add_contract_c_subcommands
+from .humanoid_motion.cli import add_humanoid_motion_subcommands
 from .model_render.cli import add_model_render_subcommands
 
 
@@ -160,7 +160,7 @@ def parser() -> argparse.ArgumentParser:
     add_roundtrip_subcommands(sub)
     add_character_render_subcommands(sub)
     add_model_render_subcommands(sub)
-    add_contract_c_subcommands(sub)
+    add_humanoid_motion_subcommands(sub)
     return root
 
 

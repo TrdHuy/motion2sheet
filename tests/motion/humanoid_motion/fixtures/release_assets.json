@@ -1,5 +1,5 @@
 {
-  "schema": "motion2sheet.contract-c.release-fixtures",
+  "schema": "motion2sheet.humanoid-motion.release-fixtures",
   "version": 1,
   "repository": "TrdHuy/motion2sheet",
   "releaseTag": "e2e_gh_action_asset",

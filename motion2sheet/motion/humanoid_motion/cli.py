@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .runner import export_contract_c_animation, render_contract_c_animation, verify_contract_c_fidelity
+from .runner import export_humanoid_animation, render_humanoid_animation, verify_humanoid_animation_fidelity
 
 
 def _canvas(value: str) -> tuple[int, int]:
@@ -18,7 +18,7 @@ def _canvas(value: str) -> tuple[int, int]:
 
 
 def _export(args) -> int:
-    report = export_contract_c_animation(
+    report = export_humanoid_animation(
         source_rig_path=Path(args.source_rig),
         source_animation_path=Path(args.source_animation),
         mapping_path=Path(args.mapping),
@@ -28,14 +28,14 @@ def _export(args) -> int:
         blender=args.blender,
     )
     print(
-        "motion2sheet: Contract C export PASS; "
+        "motion2sheet: Humanoid Motion export PASS; "
         f"id={report['animationId']} frames={report['frameCount']} sha256={report['animationSha256']}"
     )
     return 0
 
 
 def _render(args) -> int:
-    report = render_contract_c_animation(
+    report = render_humanoid_animation(
         model_path=Path(args.model),
         character_rig_path=Path(args.character_rig),
         skin_path=Path(args.skin),
@@ -52,14 +52,14 @@ def _render(args) -> int:
         blender=args.blender,
     )
     print(
-        "motion2sheet: Contract C render PASS; "
+        "motion2sheet: Humanoid Motion render PASS; "
         f"character={report['characterId']} animation={report['animationId']} frames={len(report['renderedSamples'])}"
     )
     return 0
 
 
 def _verify_fidelity(args) -> int:
-    report = verify_contract_c_fidelity(
+    report = verify_humanoid_animation_fidelity(
         source_rig_path=Path(args.source_rig),
         source_animation_path=Path(args.source_animation),
         mapping_path=Path(args.source_mapping),
@@ -68,17 +68,17 @@ def _verify_fidelity(args) -> int:
     )
     errors = report["maxErrors"]
     print(
-        "motion2sheet: Source -> Contract C fidelity PASS; "
+        "motion2sheet: Source -> Humanoid Motion fidelity PASS; "
         f"rotationDeg={errors['semanticRotationDegrees']:.12g} "
         f"hips={errors['hipsTranslationMeanLegLength']:.12g}"
     )
     return 0
 
 
-def add_contract_c_subcommands(subparsers) -> None:
+def add_humanoid_motion_subcommands(subparsers) -> None:
     export = subparsers.add_parser(
-        "export-contract-c-animation",
-        help="Convert Contract B rest+motion authorities into reusable semantic humanoid Contract C",
+        "export-humanoid-animation",
+        help="Convert Contract B rest+motion authorities into reusable semantic Humanoid Motion",
     )
     export.add_argument("--source-rig", required=True)
     export.add_argument("--source-animation", required=True)
@@ -90,8 +90,8 @@ def add_contract_c_subcommands(subparsers) -> None:
     export.set_defaults(func=_export)
 
     fidelity = subparsers.add_parser(
-        "verify-contract-c-fidelity",
-        help="Independently compare Contract B source semantics with a Contract C authority",
+        "verify-humanoid-animation-fidelity",
+        help="Independently compare Contract B source semantics with a Humanoid Motion authority",
     )
     fidelity.add_argument("--source-rig", required=True)
     fidelity.add_argument("--source-animation", required=True)
@@ -101,8 +101,8 @@ def add_contract_c_subcommands(subparsers) -> None:
     fidelity.set_defaults(func=_verify_fidelity)
 
     render = subparsers.add_parser(
-        "render-contract-c-animation",
-        help="Retarget one immutable Contract C animation to a mapped real skinned humanoid",
+        "render-humanoid-animation",
+        help="Retarget one immutable Humanoid Motion animation to a mapped real skinned humanoid",
     )
     render.add_argument("--model", required=True)
     render.add_argument("--character-rig", required=True)

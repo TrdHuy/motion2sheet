@@ -121,8 +121,8 @@ jobs:
               motion2sheet validate "$ROOT/sheet"
               python tests/motion/e2e/verify_output_mode.py "$ROOT/frames" "$ROOT/sheet"
               ;;
-            contract-c)
-              bash tests/motion/contract_c/run_e2e.sh "$ROOT"
+            humanoid-motion)
+              bash tests/motion/humanoid_motion/run_e2e.sh "$ROOT"
               ;;
             *)
               echo "Unknown motion E2E target: $TARGET" >&2

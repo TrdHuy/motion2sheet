@@ -6,7 +6,7 @@ from typing import Any
 from .schema import ROOT_TRANSLATION_TOLERANCE
 
 
-def contract_root_motion(animation: dict[str, Any]) -> dict[str, Any]:
+def humanoid_root_motion(animation: dict[str, Any]) -> dict[str, Any]:
     translations = animation["root"]["translations"]
     start = [float(value) for value in translations[0]]
     end = [float(value) for value in translations[-1]]

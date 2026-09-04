@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-ANIMATION_SCHEMA = "motion2sheet.contract-c.animation"
+ANIMATION_SCHEMA = "motion2sheet.humanoid-motion.animation"
 CANONICAL_SKELETON_ID = "humanoid_v1"
 VERSION = 1
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
@@ -14,7 +14,7 @@ QUATERNION_NORM_TOLERANCE = 1e-8
 QUATERNION_CONTINUITY_TOLERANCE = 1e-12
 ROOT_TRANSLATION_TOLERANCE = 1e-8
 
-# Root is a virtual canonical-orientation parent. Contract C v1 is in-place:
+# Root is a virtual canonical-orientation parent. Humanoid Motion v1 is in-place:
 # Root translation is reserved and must remain zero within the strict tolerance.
 # Every other semantic is explicitly mapped to one target bone.
 CANONICAL_SKELETON: dict[str, str | None] = {
@@ -122,16 +122,16 @@ def _quaternion_track(value: Any, frame_count: int, label: str) -> list[list[flo
 def validate_animation(value: Any) -> dict[str, Any]:
     document = _object(
         value,
-        "Contract C animation",
+        "Humanoid Motion animation",
         {
             "schema", "version", "id", "canonicalSkeleton", "fps", "frameCount", "loop",
             "coordinateSystem", "quaternionConvention", "root", "hips", "joints",
         },
     )
     if document["schema"] != ANIMATION_SCHEMA or document["version"] != VERSION:
-        raise ValueError("unsupported Contract C animation schema/version")
+        raise ValueError("unsupported Humanoid Motion animation schema/version")
     if not isinstance(document["id"], str) or not ID_RE.fullmatch(document["id"]):
-        raise ValueError(f"Contract C animation id must match {ID_RE.pattern}")
+        raise ValueError(f"Humanoid Motion animation id must match {ID_RE.pattern}")
     if document["canonicalSkeleton"] != CANONICAL_SKELETON_ID:
         raise ValueError(f"canonicalSkeleton must be {CANONICAL_SKELETON_ID!r}")
     fps = _finite(document["fps"], "fps")
@@ -147,7 +147,7 @@ def validate_animation(value: Any) -> dict[str, Any]:
         raise ValueError("coordinateSystem does not match humanoid_v1")
     convention = _object(document["quaternionConvention"], "quaternionConvention", set(EXPECTED_QUATERNION_CONVENTION))
     if convention != EXPECTED_QUATERNION_CONVENTION:
-        raise ValueError("quaternionConvention does not match Contract C v1")
+        raise ValueError("quaternionConvention does not match Humanoid Motion v1")
 
     root = _object(document["root"], "root", {"translations", "rotations"})
     root["translations"] = _track(root["translations"], 3, frame_count, "root.translations")
@@ -167,7 +167,7 @@ def validate_animation(value: Any) -> dict[str, Any]:
     if not isinstance(joints, dict) or set(joints) != set(ROTATION_JOINTS):
         missing = set(ROTATION_JOINTS) - set(joints or {})
         extra = set(joints or {}) - set(ROTATION_JOINTS)
-        raise ValueError(f"Contract C joint set mismatch; missing={sorted(missing)} extra={sorted(extra)}")
+        raise ValueError(f"Humanoid Motion joint set mismatch; missing={sorted(missing)} extra={sorted(extra)}")
     for semantic in ROTATION_JOINTS:
         row = _object(joints[semantic], f"joints.{semantic}", {"rotations"})
         row["rotations"] = _quaternion_track(row["rotations"], frame_count, f"joints.{semantic}.rotations")

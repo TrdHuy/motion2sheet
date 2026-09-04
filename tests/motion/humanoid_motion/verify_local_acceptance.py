@@ -75,8 +75,8 @@ def _run_equivalence(run: dict[str, Any], inplace: dict[str, Any]) -> dict[str, 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", default="build/contract_c_poc")
-    parser.add_argument("--output", default="build/contract_c_poc/acceptance.json")
+    parser.add_argument("--root", default="build/motion/humanoid-motion")
+    parser.add_argument("--output", default="build/motion/humanoid-motion/acceptance.json")
     args = parser.parse_args()
     root = Path(args.root).resolve()
     failures: list[str] = []
@@ -87,12 +87,12 @@ def main() -> None:
         animation_path = (root / "animations" / clip / "animation.json").resolve()
         animation_sha = _sha256(animation_path)
         animation = _read(animation_path)
-        fidelity = _read(root / "animations" / clip / "diagnostics" / "source_contract_c_fidelity.json")
+        fidelity = _read(root / "animations" / clip / "diagnostics" / "source_humanoid_motion_fidelity.json")
         export = _read(root / "animations" / clip / "export.json")
         if not fidelity["pass"]:
-            failures.append(f"{clip}: independent Source -> Contract C fidelity failed")
+            failures.append(f"{clip}: independent Source -> Humanoid Motion fidelity failed")
         if not fidelity["rootInvariant"]["pass"] or fidelity["rootInvariant"]["maxAbsComponent"] > ROOT_TOLERANCE:
-            failures.append(f"{clip}: Contract C Root invariant failed")
+            failures.append(f"{clip}: Humanoid Motion Root invariant failed")
 
         character_rows = {}
         for character in CHARACTERS:
@@ -108,11 +108,11 @@ def main() -> None:
             if any(value != animation_sha for value in hashes):
                 failures.append(f"{character}/{clip}: animation SHA mismatch")
             if Path(request["animationPath"]).resolve() != animation_path:
-                failures.append(f"{character}/{clip}: did not read the shared Contract C path")
+                failures.append(f"{character}/{clip}: did not read the shared Humanoid Motion path")
             if report["cameraFollowsRoot"] or request["camera"].get("followRoot"):
                 failures.append(f"{character}/{clip}: camera followed Hips and could mask locomotion")
             if report["renderedSamples"] != list(range(animation["frameCount"])):
-                failures.append(f"{character}/{clip}: did not render every Contract C frame")
+                failures.append(f"{character}/{clip}: did not render every Humanoid Motion frame")
             if not playback["pass"] or not playback["leftRightIdentity"] or not playback["nanInfCheck"]:
                 failures.append(f"{character}/{clip}: playback gate failed")
             if not model["pass"] or model["vertexCount"] <= 0 or not skin["pass"]:
@@ -128,40 +128,20 @@ def main() -> None:
                     failures.append(f"{character}/{clip}: missing {relative}")
             character_ids[character] = report["characterId"]
             character_rows[character] = {
-                "characterId": report["characterId"],
-                "mappingId": report["mappingId"],
-                "animationPath": request["animationPath"],
-                "animationSha256Before": hashes[0],
-                "animationSha256After": hashes[1],
-                "mappedJointCount": mapping["mappedJointCount"],
-                "leftRightIdentity": mapping["leftRightVerification"]["pass"],
-                "maxSemanticRotationErrorDegrees": playback["maxSemanticRotationErrorDegrees"],
+                "characterId": report["characterId"], "mappingId": report["mappingId"], "animationPath": request["animationPath"],
+                "animationSha256Before": hashes[0], "animationSha256After": hashes[1], "mappedJointCount": mapping["mappedJointCount"],
+                "leftRightIdentity": mapping["leftRightVerification"]["pass"], "maxSemanticRotationErrorDegrees": playback["maxSemanticRotationErrorDegrees"],
                 "targetMeanLegLengthSceneUnits": retarget["targetMeanLegLengthSceneUnits"],
                 "actualSkinnedMesh": {"meshCount": model["meshCount"], "vertexCount": model["vertexCount"]},
-                "poseSheet": str((render_dir / "pose_sheet.png").resolve()),
-                "previewGif": str((render_dir / "preview.gif").resolve()),
-                "diagnostics": str((render_dir / "diagnostics").resolve()),
+                "poseSheet": str((render_dir / "pose_sheet.png").resolve()), "previewGif": str((render_dir / "preview.gif").resolve()), "diagnostics": str((render_dir / "diagnostics").resolve()),
             }
 
-        same_sha = len({
-            animation_sha,
-            *(row["animationSha256Before"] for row in character_rows.values()),
-            *(row["animationSha256After"] for row in character_rows.values()),
-        }) == 1
+        same_sha = len({animation_sha, *(row["animationSha256Before"] for row in character_rows.values()), *(row["animationSha256After"] for row in character_rows.values())}) == 1
         if not same_sha:
             failures.append(f"{clip}: same exact animation authority proof failed")
         results[clip] = {
-            "animation": {
-                "path": str(animation_path),
-                "sha256": animation_sha,
-                "schema": animation["schema"],
-                "fps": animation["fps"],
-                "frameCount": animation["frameCount"],
-            },
-            "rootMotion": export["rootMotion"],
-            "fidelity": fidelity,
-            "characters": character_rows,
-            "sameExactAnimationAuthority": same_sha,
+            "animation": {"path": str(animation_path), "sha256": animation_sha, "schema": animation["schema"], "fps": animation["fps"], "frameCount": animation["frameCount"]},
+            "rootMotion": export["rootMotion"], "fidelity": fidelity, "characters": character_rows, "sameExactAnimationAuthority": same_sha,
         }
 
     if len(set(character_ids.values())) != len(CHARACTERS):
@@ -172,14 +152,11 @@ def main() -> None:
         failures.append("run: vertical pelvis motion was lost")
     if results["run-inplace"]["fidelity"]["locomotionStripping"]["actualHipsVerticalRange"] <= 1e-4:
         failures.append("run-inplace: vertical pelvis motion was lost")
-    equivalence = _run_equivalence(
-        _read(root / "animations" / "run" / "animation.json"),
-        _read(root / "animations" / "run-inplace" / "animation.json"),
-    )
+    equivalence = _run_equivalence(_read(root / "animations" / "run" / "animation.json"), _read(root / "animations" / "run-inplace" / "animation.json"))
     failures.extend(f"canonical locomotion equivalence: {failure}" for failure in equivalence["failures"])
 
     report = {
-        "schema": "motion2sheet.contract-c.local-acceptance",
+        "schema": "motion2sheet.humanoid-motion.local-acceptance",
         "version": 1,
         "pass": not failures,
         "phase": "in-place-three-independent-real-targets",
@@ -189,16 +166,16 @@ def main() -> None:
         "proof": results,
         "runVsRunInplaceCanonicalEquivalence": equivalence,
         "knownLimitations": [
-            "Contract C v1 strips linear end-to-end planar travel; curved/non-linear paths may leave local residual motion.",
-            "Foot contact remains diagnostic-only; Contract C v1 does not apply IK.",
+            "Humanoid Motion v1 strips linear end-to-end planar travel; curved/non-linear paths may leave local residual motion.",
+            "Foot contact remains diagnostic-only; Humanoid Motion v1 does not apply IK.",
         ],
     }
     output = Path(args.output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
     if failures:
-        raise SystemExit("Contract C local acceptance FAIL: " + "; ".join(failures))
-    print(f"Contract C local acceptance PASS -> {output}")
+        raise SystemExit("Humanoid Motion local acceptance FAIL: " + "; ".join(failures))
+    print(f"Humanoid Motion local acceptance PASS -> {output}")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from motion2sheet.motion.roundtrip.schema import validate_rig_document
 
 from .schema import CANONICAL_SKELETON, CANONICAL_SKELETON_ID, MAPPED_JOINTS
 
-MAPPING_SCHEMA = "motion2sheet.contract-c.character-map"
+MAPPING_SCHEMA = "motion2sheet.humanoid-motion.character-map"
 LEFT_RIGHT_TOLERANCE = 1e-6
 LEFT_RIGHT_SUFFIXES = (
     "Shoulder", "UpperArm", "LowerArm", "Hand", "UpperLeg", "LowerLeg", "Foot", "Toe",
@@ -69,14 +69,14 @@ def read_mapping(path: Path) -> dict[str, Any]:
 def validate_character_mapping(value: Any, rig: dict[str, Any]) -> dict[str, Any]:
     rig = validate_rig_document(rig)
     if not isinstance(value, dict):
-        raise ValueError("Contract C character mapping must be an object")
+        raise ValueError("Humanoid Motion character mapping must be an object")
     required = {"schema", "version", "id", "canonicalSkeleton", "joints"}
     missing_fields = required - set(value)
     unknown_fields = set(value) - required
     if missing_fields or unknown_fields:
         raise ValueError(f"mapping fields mismatch; missing={sorted(missing_fields)} extra={sorted(unknown_fields)}")
     if value["schema"] != MAPPING_SCHEMA or value["version"] != 1:
-        raise ValueError("unsupported Contract C mapping schema/version")
+        raise ValueError("unsupported Humanoid Motion mapping schema/version")
     if not isinstance(value["id"], str) or not value["id"]:
         raise ValueError("mapping.id must be a non-empty string")
     if value["canonicalSkeleton"] != CANONICAL_SKELETON_ID:
@@ -150,7 +150,7 @@ def mapping_diagnostics(value: dict[str, Any], rig: dict[str, Any]) -> dict[str,
         bridge_helpers.update(candidate for candidate in chain[:chain.index(parent_bone)] if candidate not in joints.values())
     mapped_bones = set(joints.values())
     return {
-        "schema": "motion2sheet.contract-c.diagnostics.semantic-mapping",
+        "schema": "motion2sheet.humanoid-motion.diagnostics.semantic-mapping",
         "version": 1,
         "mappingId": mapping["id"],
         "canonicalSkeleton": CANONICAL_SKELETON_ID,

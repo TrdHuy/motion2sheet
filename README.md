@@ -4,7 +4,7 @@
 
 > Hướng dẫn sử dụng chi tiết bằng tiếng Việt: [`docs/huong-dan-su-dung.md`](docs/huong-dan-su-dung.md)
 >
-> Reusable humanoid animation POC: [`docs/contract-c-poc.md`](docs/contract-c-poc.md)
+> Reusable humanoid animation: [`docs/humanoid-motion.md`](docs/humanoid-motion.md)
 
 ## MVP scope
 

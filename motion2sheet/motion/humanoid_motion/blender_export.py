@@ -12,7 +12,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 import bpy
 from mathutils import Quaternion, Vector
 
-from motion2sheet.motion.contract_c.blender_math import (
+from motion2sheet.motion.humanoid_motion.blender_math import (
     continuous_quaternion_values,
     mean_leg_length,
     vector_values,
@@ -20,8 +20,8 @@ from motion2sheet.motion.contract_c.blender_math import (
     world_rest_matrix,
     yaw_twist,
 )
-from motion2sheet.motion.contract_c.mapping import read_mapping, validate_character_mapping
-from motion2sheet.motion.contract_c.schema import (
+from motion2sheet.motion.humanoid_motion.mapping import read_mapping, validate_character_mapping
+from motion2sheet.motion.humanoid_motion.schema import (
     ANIMATION_SCHEMA,
     CANONICAL_SKELETON_ID,
     EXPECTED_COORDINATE_SYSTEM,
@@ -124,7 +124,7 @@ def main() -> None:
     output = Path(request["animationOutput"])
     write_animation(output, document)
     report = {
-        "schema": "motion2sheet.contract-c.export-diagnostics",
+        "schema": "motion2sheet.humanoid-motion.export-diagnostics",
         "version": 1,
         "animationId": document["id"],
         "canonicalSkeleton": CANONICAL_SKELETON_ID,
