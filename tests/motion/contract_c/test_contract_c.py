@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import copy
+import inspect
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from motion2sheet.motion.cli import parser
+from motion2sheet.motion.contract_c.fidelity import compare_source_to_contract_c
 from motion2sheet.motion.contract_c.mapping import mapping_diagnostics, validate_character_mapping
 from motion2sheet.motion.contract_c.root_motion import contract_root_motion
 from motion2sheet.motion.contract_c.runner import parse_samples
@@ -17,6 +20,7 @@ from motion2sheet.motion.contract_c.schema import (
     EXPECTED_QUATERNION_CONVENTION,
     MAPPED_JOINTS,
     ROTATION_JOINTS,
+    ROOT_TRANSLATION_TOLERANCE,
     validate_animation,
 )
 
@@ -34,7 +38,7 @@ def _animation(frame_count=2):
         "coordinateSystem": copy.deepcopy(EXPECTED_COORDINATE_SYSTEM),
         "quaternionConvention": copy.deepcopy(EXPECTED_QUATERNION_CONVENTION),
         "root": {
-            "translations": [[0.0, float(index), 0.0] for index in range(frame_count)],
+            "translations": [[0.0, 0.0, 0.0] for _index in range(frame_count)],
             "rotations": [identity[:] for _ in range(frame_count)],
         },
         "hips": {
@@ -70,7 +74,8 @@ def _rig_and_mapping():
     for semantic in MAPPED_JOINTS:
         parent_semantic = CANONICAL_SKELETON[semantic]
         parent_name = joints.get(parent_semantic)
-        head = [0.0, 0.0, 0.0] if parent_name is None else [heads[parent_name][0], heads[parent_name][1] + 1.0, 0.0]
+        side_x = 1.0 if semantic.startswith("Left") else -1.0 if semantic.startswith("Right") else 0.0
+        head = [0.0, 0.0, 0.0] if parent_name is None else [side_x, heads[parent_name][1] + 1.0, 0.0]
         name = f"bone_{semantic}"
         joints[semantic] = name
         heads[name] = head
@@ -106,6 +111,8 @@ def test_public_cli_exposes_contract_c_commands():
     assert export.command == "export-contract-c-animation"
     render = root.parse_args(["render-contract-c-animation", "--model", "model.glb", "--character-rig", "rig.json", "--skin", "skin.json", "--character-mapping", "map.json", "--animation", "animation.json", "--camera-profile", "camera.json5", "--output", "out"])
     assert render.command == "render-contract-c-animation"
+    fidelity = root.parse_args(["verify-contract-c-fidelity", "--source-rig", "rig.json", "--source-animation", "source.json", "--source-mapping", "map.json", "--animation", "animation.json", "--output", "report.json"])
+    assert fidelity.command == "verify-contract-c-fidelity"
 
 
 def test_contract_c_schema_is_strict_and_complete():
@@ -118,6 +125,13 @@ def test_contract_c_schema_is_strict_and_complete():
     world_positions["joints"]["Head"]["worldPositions"] = [[0, 0, 0], [0, 0, 0]]
     with pytest.raises(ValueError, match="unknown fields"):
         validate_animation(world_positions)
+    moving_root = _animation(3)
+    moving_root["root"]["translations"][1] = [0.0, ROOT_TRANSLATION_TOLERANCE * 2.0, 0.0]
+    with pytest.raises(ValueError, match="must be in-place"):
+        validate_animation(moving_root)
+    tolerated_root = _animation()
+    tolerated_root["root"]["translations"][1] = [ROOT_TRANSLATION_TOLERANCE, 0.0, 0.0]
+    assert validate_animation(tolerated_root)["root"]["translations"][1][0] == ROOT_TRANSLATION_TOLERANCE
 
 
 def test_quaternion_normalization_and_sign_continuity_fail_closed():
@@ -143,13 +157,21 @@ def test_mapping_requires_every_semantic_and_valid_ancestry():
     wrong["joints"]["Head"], wrong["joints"]["LeftHand"] = wrong["joints"]["LeftHand"], wrong["joints"]["Head"]
     with pytest.raises(ValueError, match="hierarchy mismatch"):
         validate_character_mapping(wrong, rig)
+    swapped = copy.deepcopy(mapping)
+    for suffix in ("Shoulder", "UpperArm", "LowerArm", "Hand", "UpperLeg", "LowerLeg", "Foot", "Toe"):
+        left, right = f"Left{suffix}", f"Right{suffix}"
+        swapped["joints"][left], swapped["joints"][right] = swapped["joints"][right], swapped["joints"][left]
+    with pytest.raises(ValueError, match="left/right geometry mismatch"):
+        validate_character_mapping(swapped, rig)
 
 
-def test_root_motion_and_sample_selection_are_data_driven():
+def test_root_motion_checks_every_sample_and_sample_selection_is_data_driven():
     animation = _animation(3)
+    animation["root"]["translations"][1] = [0.0, 2.0, 0.0]
     metrics = contract_root_motion(animation)
-    assert metrics["displacement"] == 2.0
-    assert metrics["direction"] == [0.0, 1.0, 0.0]
+    assert metrics["displacement"] == 0.0
+    assert metrics["maxMagnitude"] == 2.0
+    assert metrics["worstFrame"] == 1
     assert metrics["isInPlace"] is False
     assert parse_samples("0,2", 3) == [0, 2]
     with pytest.raises(ValueError, match="outside"):
@@ -161,3 +183,98 @@ def test_mapping_profiles_contain_no_animation_authority():
     for name in ("mixamo_humanoid_v1.json", "derived_humanoid_v1.json"):
         data = json.loads((root / "profiles" / "contract_c" / name).read_text())
         assert set(data) == {"schema", "version", "id", "canonicalSkeleton", "joints"}
+
+
+def test_release_fixture_manifest_is_immutable_and_records_independent_targets():
+    root = Path(__file__).parents[3]
+    manifest = json.loads(
+        (root / "tests" / "motion" / "contract_c" / "fixtures" / "release_assets.json").read_text()
+    )
+    assert manifest["releaseTag"] == "e2e_gh_action_asset"
+    assert set(manifest["assets"]) == {
+        "character-a", "maria", "warrok", "idle", "run", "run-inplace"
+    }
+    for asset in manifest["assets"].values():
+        assert f"/releases/download/{manifest['releaseTag']}/" in asset["url"]
+        assert "/latest/" not in asset["url"]
+        assert re.fullmatch(r"[0-9a-f]{64}", asset["sha256"])
+        assert asset["size"] > 0
+        assert asset["assetId"].startswith("RA_")
+    assert manifest["assets"]["maria"] | {
+        "filename": "Maria.WProp.J.J.Ong.fbx",
+        "sha256": "98794a114b5b252affa1daf600c000e1051e3ede1a477954cdc464eb12c081b9",
+        "size": 15616896,
+    } == manifest["assets"]["maria"]
+    assert manifest["assets"]["warrok"] | {
+        "filename": "Warrok.W.Kurniawan.fbx",
+        "sha256": "b919cfbca59847285cb95f89f827a682d6f98c7a720047f69d58527c27ae897f",
+        "size": 12072960,
+    } == manifest["assets"]["warrok"]
+
+
+def _source_animation(rig):
+    identity = {
+        bone["name"]: {
+            "translation": [0.0, 0.0, 0.0],
+            "rotationQuaternion": [1.0, 0.0, 0.0, 0.0],
+            "scale": [1.0, 1.0, 1.0],
+        }
+        for bone in rig["bones"]
+    }
+    frames = []
+    for index, (travel, bounce) in enumerate(((0.0, 0.0), (2.0, 0.2), (4.0, 0.0)), start=1):
+        bones = copy.deepcopy(identity)
+        bones["bone_Hips"]["translation"] = [0.0, travel, bounce]
+        frames.append({"frame": index, "bones": bones})
+    return {"id": "source-run", "fps": 30.0, "frameCount": 3, "frames": frames}
+
+
+def test_independent_fidelity_oracle_catches_corruption_and_preserves_bounce():
+    rig, mapping = _rig_and_mapping()
+    source = _source_animation(rig)
+    animation = _animation(3)
+    animation["hips"]["translations"] = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.1], [0.0, 0.0, 0.0]]
+    report = compare_source_to_contract_c(rig, source, mapping, animation)
+    assert report["pass"] is True
+    assert report["locomotionStripping"]["sourcePlanarDisplacement"] == pytest.approx(2.0)
+    assert report["locomotionStripping"]["actualHipsVerticalRange"] == pytest.approx(0.1)
+
+    corrupted_joint = copy.deepcopy(animation)
+    corrupted_joint["joints"]["LeftUpperArm"]["rotations"][1] = [2 ** -0.5, 0.0, 0.0, 2 ** -0.5]
+    assert compare_source_to_contract_c(rig, source, mapping, corrupted_joint)["pass"] is False
+
+    lost_bounce = copy.deepcopy(animation)
+    lost_bounce["hips"]["translations"][1] = [0.0, 0.0, 0.0]
+    failed = compare_source_to_contract_c(rig, source, mapping, lost_bounce)
+    assert failed["pass"] is False
+    assert failed["maxErrors"]["hipsTranslationMeanLegLength"] > 0.09
+
+    wrong_fps = copy.deepcopy(animation)
+    wrong_fps["fps"] = 24.0
+    failed = compare_source_to_contract_c(rig, source, mapping, wrong_fps)
+    assert failed["pass"] is False
+    assert failed["timing"]["pass"] is False
+
+    wrong_frame_count = _animation(2)
+    wrong_frame_count["hips"]["translations"] = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.1]]
+    failed = compare_source_to_contract_c(rig, source, mapping, wrong_frame_count)
+    assert failed["pass"] is False
+    assert failed["timing"]["pass"] is False
+
+    moving_root = copy.deepcopy(animation)
+    moving_root["root"]["translations"][1] = [0.01, 0.0, 0.0]
+    failed = compare_source_to_contract_c(rig, source, mapping, moving_root)
+    assert failed["pass"] is False
+    assert failed["schemaValidation"]["pass"] is False
+
+    invalid_quaternion = copy.deepcopy(animation)
+    invalid_quaternion["joints"]["Head"]["rotations"][1] = [2.0, 0.0, 0.0, 0.0]
+    failed = compare_source_to_contract_c(rig, source, mapping, invalid_quaternion)
+    assert failed["pass"] is False
+    assert failed["schemaValidation"]["pass"] is False
+
+
+def test_fidelity_oracle_is_architecturally_independent_from_export_and_playback():
+    source = inspect.getsource(__import__("motion2sheet.motion.contract_c.fidelity", fromlist=["*"]))
+    for forbidden in ("blender_export", "blender_render", "blender_math", "build_json_scene"):
+        assert forbidden not in source

@@ -1,0 +1,51 @@
+{
+  "schema": "motion2sheet.contract-c.release-fixtures",
+  "version": 1,
+  "repository": "TrdHuy/motion2sheet",
+  "releaseTag": "e2e_gh_action_asset",
+  "releaseUrl": "https://github.com/TrdHuy/motion2sheet/releases/tag/e2e_gh_action_asset",
+  "assets": {
+    "character-a": {
+      "assetId": "RA_kwDOT_qUu84gUGfw",
+      "filename": "walking_mixamo_with_skin.fbx",
+      "url": "https://github.com/TrdHuy/motion2sheet/releases/download/e2e_gh_action_asset/walking_mixamo_with_skin.fbx",
+      "sha256": "1e05bcef7c030dce1be09a38a6e3d2f38d1f9bc71396584876ab1a3141005c02",
+      "size": 41940608
+    },
+    "maria": {
+      "assetId": "RA_kwDOT_qUu84gb1aT",
+      "filename": "Maria.WProp.J.J.Ong.fbx",
+      "url": "https://github.com/TrdHuy/motion2sheet/releases/download/e2e_gh_action_asset/Maria.WProp.J.J.Ong.fbx",
+      "sha256": "98794a114b5b252affa1daf600c000e1051e3ede1a477954cdc464eb12c081b9",
+      "size": 15616896
+    },
+    "warrok": {
+      "assetId": "RA_kwDOT_qUu84gb1aW",
+      "filename": "Warrok.W.Kurniawan.fbx",
+      "url": "https://github.com/TrdHuy/motion2sheet/releases/download/e2e_gh_action_asset/Warrok.W.Kurniawan.fbx",
+      "sha256": "b919cfbca59847285cb95f89f827a682d6f98c7a720047f69d58527c27ae897f",
+      "size": 12072960
+    },
+    "idle": {
+      "assetId": "RA_kwDOT_qUu84gWpPe",
+      "filename": "idle-without-skin.fbx",
+      "url": "https://github.com/TrdHuy/motion2sheet/releases/download/e2e_gh_action_asset/idle-without-skin.fbx",
+      "sha256": "3738c0c5a1a4c33e36c30f59ea3393a4ee612eef89542157ff59963ad49a7b72",
+      "size": 552400
+    },
+    "run": {
+      "assetId": "RA_kwDOT_qUu84gWpVB",
+      "filename": "run-without-skin-not-inplace.fbx",
+      "url": "https://github.com/TrdHuy/motion2sheet/releases/download/e2e_gh_action_asset/run-without-skin-not-inplace.fbx",
+      "sha256": "a0ddd67d5e72dc657a6445d06af3d17f8ba6a15e61b19224d4c63f897ac0e91b",
+      "size": 333840
+    },
+    "run-inplace": {
+      "assetId": "RA_kwDOT_qUu84gWpSY",
+      "filename": "run-without-skin-inplace.fbx",
+      "url": "https://github.com/TrdHuy/motion2sheet/releases/download/e2e_gh_action_asset/run-without-skin-inplace.fbx",
+      "sha256": "a289ced832f2fa618ee90ea9dcf7c397f29490613217c016ed7d0953c0115d08",
+      "size": 333840
+    }
+  }
+}

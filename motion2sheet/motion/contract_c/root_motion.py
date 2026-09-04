@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from .schema import ROOT_TRANSLATION_TOLERANCE
+
 
 def contract_root_motion(animation: dict[str, Any]) -> dict[str, Any]:
     translations = animation["root"]["translations"]
@@ -11,13 +13,21 @@ def contract_root_motion(animation: dict[str, Any]) -> dict[str, Any]:
     delta = [end[index] - start[index] for index in range(3)]
     displacement = math.sqrt(sum(value * value for value in delta))
     direction = [value / displacement for value in delta] if displacement > 0.0 else [0.0, 0.0, 0.0]
+    magnitudes = [math.sqrt(sum(component * component for component in sample)) for sample in translations]
+    max_magnitude = max(magnitudes)
+    worst_frame = magnitudes.index(max_magnitude)
+    max_abs_component = max(abs(component) for sample in translations for component in sample)
     return {
         "unit": "mean-leg-length",
+        "authority": "in-place-zero-translation",
         "start": start,
         "end": end,
         "delta": delta,
         "displacement": displacement,
         "direction": direction,
-        "inPlaceTolerance": 1e-4,
-        "isInPlace": displacement <= 1e-4,
+        "maxMagnitude": max_magnitude,
+        "maxAbsComponent": max_abs_component,
+        "worstFrame": worst_frame,
+        "inPlaceTolerance": ROOT_TRANSLATION_TOLERANCE,
+        "isInPlace": max_abs_component <= ROOT_TRANSLATION_TOLERANCE,
     }

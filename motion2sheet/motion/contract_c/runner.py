@@ -12,6 +12,7 @@ from motion2sheet.motion.model_render.runner import compose_gif, compose_sheet
 from motion2sheet.motion.roundtrip.schema import read_json, validate_animation_document, validate_rig_document
 from motion2sheet.motion.skin import skin_statistics, validate_skin_document
 
+from .fidelity import compare_source_to_contract_c
 from .mapping import mapping_diagnostics, read_mapping, validate_character_mapping
 from .root_motion import contract_root_motion
 from .schema import read_animation
@@ -116,6 +117,9 @@ def export_contract_c_animation(
     _write_json(output / "diagnostics" / "export_request.json", request)
     _run_blender("blender_export.py", blender, ["--request", str(output / "diagnostics" / "export_request.json")])
     animation = read_animation(output / "animation.json")
+    blender_diagnostics = json.loads(
+        (output / "diagnostics" / "export_blender.json").read_text(encoding="utf-8")
+    )
     report = {
         "schema": "motion2sheet.contract-c.export",
         "version": 1,
@@ -133,10 +137,59 @@ def export_contract_c_animation(
         },
         "semanticMapping": mapping_diagnostics(mapping, rig),
         "rootMotion": contract_root_motion(animation),
+        "canonicalization": {
+            "locomotionPolicy": blender_diagnostics["locomotionPolicy"],
+            "sourcePlanarEndToEnd": blender_diagnostics["sourcePlanarEndToEnd"],
+            "sourcePlanarDisplacement": blender_diagnostics["sourcePlanarDisplacement"],
+            "strippedPlanarEndToEnd": blender_diagnostics["strippedPlanarEndToEnd"],
+            "sourceHipsVerticalRange": blender_diagnostics["sourceHipsVerticalRange"],
+            "canonicalHipsVerticalRange": blender_diagnostics["canonicalHipsVerticalRange"],
+        },
         "sourceFbxRequired": False,
         "outputs": {"animation": "animation.json", "diagnostics": "diagnostics/"},
     }
     _write_json(output / "export.json", report)
+    return report
+
+
+def verify_contract_c_fidelity(
+    *,
+    source_rig_path: Path,
+    source_animation_path: Path,
+    mapping_path: Path,
+    animation_path: Path,
+    output: Path,
+) -> dict[str, Any]:
+    paths = [source_rig_path, source_animation_path, mapping_path, animation_path]
+    paths = [path.resolve() for path in paths]
+    source_rig_path, source_animation_path, mapping_path, animation_path = paths
+    for path in paths:
+        if not path.is_file():
+            raise ValueError(f"verify-contract-c-fidelity input does not exist: {path}")
+    source_rig = validate_rig_document(read_json(source_rig_path))
+    source_animation = validate_animation_document(read_json(source_animation_path), source_rig)
+    mapping = validate_character_mapping(read_mapping(mapping_path), source_rig)
+    contract_c = json.loads(animation_path.read_text(encoding="utf-8"))
+    try:
+        report = compare_source_to_contract_c(source_rig, source_animation, mapping, contract_c)
+    except Exception as exc:
+        report = {
+            "schema": "motion2sheet.contract-c.source-fidelity",
+            "version": 1,
+            "pass": False,
+            "independentPath": "pure-python Contract B hierarchy/TRS evaluation; no Contract C exporter or playback imports",
+            "failures": [f"independent fidelity evaluation failed: {exc}"],
+        }
+    report["authorities"] = {
+        "sourceRigSha256": sha256(source_rig_path),
+        "sourceAnimationSha256": sha256(source_animation_path),
+        "sourceMappingSha256": sha256(mapping_path),
+        "contractCAnimationSha256": sha256(animation_path),
+    }
+    output = output.resolve()
+    _write_json(output, report)
+    if not report["pass"]:
+        raise RuntimeError(f"Source -> Contract C fidelity failed; see {output}: {report['failures']}")
     return report
 
 
@@ -221,6 +274,8 @@ def render_contract_c_animation(
         "frameCount": animation["frameCount"],
         "characterId": rig["id"],
         "mappingId": mapping["id"],
+        "cameraProfile": {"id": camera["id"], "path": str(camera_profile_path)},
+        "cameraFollowsRoot": bool(camera.get("followRoot")),
         "animationSha256Before": before_sha,
         "animationSha256After": after_sha,
         "animationMutated": False,

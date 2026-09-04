@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,56 @@ from motion2sheet.motion.roundtrip.schema import validate_rig_document
 from .schema import CANONICAL_SKELETON, CANONICAL_SKELETON_ID, MAPPED_JOINTS
 
 MAPPING_SCHEMA = "motion2sheet.contract-c.character-map"
+LEFT_RIGHT_TOLERANCE = 1e-6
+LEFT_RIGHT_SUFFIXES = (
+    "Shoulder", "UpperArm", "LowerArm", "Hand", "UpperLeg", "LowerLeg", "Foot", "Toe",
+)
+
+
+def _rotate_vector(quaternion: list[float], vector: list[float]) -> list[float]:
+    w, x, y, z = quaternion
+    norm = math.sqrt(sum(value * value for value in quaternion))
+    w, x, y, z = (value / norm for value in (w, x, y, z))
+    vx, vy, vz = vector
+    tx, ty, tz = 2.0 * (y * vz - z * vy), 2.0 * (z * vx - x * vz), 2.0 * (x * vy - y * vx)
+    return [
+        vx + w * tx + (y * tz - z * ty),
+        vy + w * ty + (z * tx - x * tz),
+        vz + w * tz + (x * ty - y * tx),
+    ]
+
+
+def _world_head(bone: dict[str, Any], rig: dict[str, Any]) -> list[float]:
+    transform = rig["armatureObject"]["transform"]
+    scaled = [
+        float(bone["editGeometry"]["head"][index]) * float(transform["scale"][index])
+        for index in range(3)
+    ]
+    rotated = _rotate_vector([float(value) for value in transform["rotationQuaternion"]], scaled)
+    return [rotated[index] + float(transform["translation"][index]) for index in range(3)]
+
+
+def left_right_diagnostics(joints: dict[str, str], bones: dict[str, dict[str, Any]], rig: dict[str, Any]) -> dict[str, Any]:
+    pairs = []
+    for suffix in LEFT_RIGHT_SUFFIXES:
+        left_name = joints[f"Left{suffix}"]
+        right_name = joints[f"Right{suffix}"]
+        left_x = _world_head(bones[left_name], rig)[0]
+        right_x = _world_head(bones[right_name], rig)[0]
+        pairs.append({
+            "semanticPair": suffix,
+            "leftBone": left_name,
+            "rightBone": right_name,
+            "leftX": left_x,
+            "rightX": right_x,
+            "pass": left_name != right_name and left_x > right_x + LEFT_RIGHT_TOLERANCE,
+        })
+    return {
+        "pass": all(row["pass"] for row in pairs),
+        "rightAxis": "+X",
+        "tolerance": LEFT_RIGHT_TOLERANCE,
+        "pairs": pairs,
+    }
 
 
 def read_mapping(path: Path) -> dict[str, Any]:
@@ -69,6 +120,10 @@ def validate_character_mapping(value: Any, rig: dict[str, Any]) -> dict[str, Any
                 f"mapping hierarchy mismatch: {parent_semantic}->{semantic} must map to an ancestor path; "
                 f"got {parent_bone!r}->{bone!r}"
             )
+    left_right = left_right_diagnostics(joints, bones, rig)
+    if not left_right["pass"]:
+        failed = [row["semanticPair"] for row in left_right["pairs"] if not row["pass"]]
+        raise ValueError(f"mapping left/right geometry mismatch on canonical +X axis: {failed}")
     return value
 
 
@@ -104,7 +159,6 @@ def mapping_diagnostics(value: dict[str, Any], rig: dict[str, Any]) -> dict[str,
         "missingRequiredJoints": [],
         "bridgeHelperBones": sorted(bridge_helpers),
         "ignoredBones": sorted(set(bones) - mapped_bones),
-        "leftRightIdentity": all(joints[f"Left{suffix}"] != joints[f"Right{suffix}"] for suffix in (
-            "Shoulder", "UpperArm", "LowerArm", "Hand", "UpperLeg", "LowerLeg", "Foot", "Toe"
-        )),
+        "leftRightIdentity": True,
+        "leftRightVerification": left_right_diagnostics(joints, bones, rig),
     }

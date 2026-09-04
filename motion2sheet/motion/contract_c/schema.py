@@ -12,9 +12,11 @@ VERSION = 1
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 QUATERNION_NORM_TOLERANCE = 1e-8
 QUATERNION_CONTINUITY_TOLERANCE = 1e-12
+ROOT_TRANSLATION_TOLERANCE = 1e-8
 
-# Root is a virtual scene-space locomotion parent. Every other semantic is
-# explicitly mapped to one target bone.
+# Root is a virtual canonical-orientation parent. Contract C v1 is in-place:
+# Root translation is reserved and must remain zero within the strict tolerance.
+# Every other semantic is explicitly mapped to one target bone.
 CANONICAL_SKELETON: dict[str, str | None] = {
     "Root": None,
     "Hips": "Root",
@@ -149,6 +151,13 @@ def validate_animation(value: Any) -> dict[str, Any]:
 
     root = _object(document["root"], "root", {"translations", "rotations"})
     root["translations"] = _track(root["translations"], 3, frame_count, "root.translations")
+    for index, translation in enumerate(root["translations"]):
+        maximum = max(abs(component) for component in translation)
+        if maximum > ROOT_TRANSLATION_TOLERANCE:
+            raise ValueError(
+                f"root.translations[{index}] must be in-place within "
+                f"{ROOT_TRANSLATION_TOLERANCE:.12g}; maxAbsComponent={maximum:.12g}"
+            )
     root["rotations"] = _quaternion_track(root["rotations"], frame_count, "root.rotations")
     hips = _object(document["hips"], "hips", {"translations", "rotations"})
     hips["translations"] = _track(hips["translations"], 3, frame_count, "hips.translations", optional=True)

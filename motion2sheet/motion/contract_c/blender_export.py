@@ -62,25 +62,37 @@ def main() -> None:
         semantic: world_rest_matrix(armature, bone_name).to_quaternion().normalized()
         for semantic, bone_name in joints.items()
     }
+    bpy.context.scene.frame_set(frames[-1])
+    bpy.context.view_layer.update()
+    last_hips_position = armature.matrix_world @ armature.pose.bones[hips_name].head
+    source_planar_displacement = (last_hips_position - first_hips_position) / leg_length
+    source_planar_displacement.z = 0.0
 
     root_translations: list[list[float]] = []
     root_rotations: list[Quaternion] = []
     hips_translations: list[list[float]] = []
     rotations: dict[str, list[Quaternion]] = {semantic: [] for semantic in MAPPED_JOINTS}
-    for frame in frames:
+    source_vertical_offsets: list[float] = []
+    canonical_vertical_offsets: list[float] = []
+    for sample, frame in enumerate(frames):
         bpy.context.scene.frame_set(frame)
         bpy.context.view_layer.update()
         hips_pose = world_pose_matrix(armature, hips_name)
         hips_position = armature.matrix_world @ armature.pose.bones[hips_name].head
         hips_rotation = hips_pose.to_quaternion().normalized()
         root_rotation = yaw_twist(hips_rotation @ first_hips_rotation.inverted())
-        root_translation = (hips_position - first_hips_position) / leg_length
+        progress = sample / (len(frames) - 1) if len(frames) > 1 else 0.0
+        stripped_planar_travel = source_planar_displacement * progress
+        root_translation = Vector((0.0, 0.0, 0.0))
+        source_offset = (hips_position - rest_hips_position) / leg_length
         hips_translation = root_rotation.inverted() @ (
-            (hips_position - rest_hips_position) / leg_length - root_translation
+            source_offset - stripped_planar_travel
         )
         root_translations.append(vector_values(root_translation))
         root_rotations.append(root_rotation)
         hips_translations.append(vector_values(hips_translation))
+        source_vertical_offsets.append(float(source_offset.z))
+        canonical_vertical_offsets.append(float(hips_translation.z))
         for semantic, bone_name in joints.items():
             pose_rotation = world_pose_matrix(armature, bone_name).to_quaternion().normalized()
             delta = root_rotation.inverted() @ pose_rotation @ rest_rotations[semantic].inverted()
@@ -122,7 +134,14 @@ def main() -> None:
         "frameCount": len(frames),
         "fps": document["fps"],
         "sourceMeanLegLengthSceneUnits": leg_length,
-        "rootPolicy": "virtual-root full Hips displacement + relative Hips yaw twist",
+        "rootPolicy": "virtual Root translation fixed at zero; relative Hips yaw retained only as canonical body orientation",
+        "locomotionPolicy": "linear-endpoint-planar-detrend-v1",
+        "sourcePlanarEndToEnd": vector_values(source_planar_displacement),
+        "sourcePlanarDisplacement": float(source_planar_displacement.length),
+        "strippedPlanarEndToEnd": vector_values(source_planar_displacement),
+        "rootTranslationMaxAbsComponent": 0.0,
+        "sourceHipsVerticalRange": max(source_vertical_offsets) - min(source_vertical_offsets),
+        "canonicalHipsVerticalRange": max(canonical_vertical_offsets) - min(canonical_vertical_offsets),
         "translationPolicy": "dimensionless mean-leg-length units",
         "rotationFormula": "D = inverse(Qroot) * Rpose * inverse(Rrest)",
         "sourceBoneNamesStoredInAnimation": False,

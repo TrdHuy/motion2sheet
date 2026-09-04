@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .runner import export_contract_c_animation, render_contract_c_animation
+from .runner import export_contract_c_animation, render_contract_c_animation, verify_contract_c_fidelity
 
 
 def _canvas(value: str) -> tuple[int, int]:
@@ -58,6 +58,23 @@ def _render(args) -> int:
     return 0
 
 
+def _verify_fidelity(args) -> int:
+    report = verify_contract_c_fidelity(
+        source_rig_path=Path(args.source_rig),
+        source_animation_path=Path(args.source_animation),
+        mapping_path=Path(args.source_mapping),
+        animation_path=Path(args.animation),
+        output=Path(args.output),
+    )
+    errors = report["maxErrors"]
+    print(
+        "motion2sheet: Source -> Contract C fidelity PASS; "
+        f"rotationDeg={errors['semanticRotationDegrees']:.12g} "
+        f"hips={errors['hipsTranslationMeanLegLength']:.12g}"
+    )
+    return 0
+
+
 def add_contract_c_subcommands(subparsers) -> None:
     export = subparsers.add_parser(
         "export-contract-c-animation",
@@ -71,6 +88,17 @@ def add_contract_c_subcommands(subparsers) -> None:
     export.add_argument("--output", required=True)
     export.add_argument("--blender", default="blender")
     export.set_defaults(func=_export)
+
+    fidelity = subparsers.add_parser(
+        "verify-contract-c-fidelity",
+        help="Independently compare Contract B source semantics with a Contract C authority",
+    )
+    fidelity.add_argument("--source-rig", required=True)
+    fidelity.add_argument("--source-animation", required=True)
+    fidelity.add_argument("--source-mapping", required=True)
+    fidelity.add_argument("--animation", required=True)
+    fidelity.add_argument("--output", required=True)
+    fidelity.set_defaults(func=_verify_fidelity)
 
     render = subparsers.add_parser(
         "render-contract-c-animation",
