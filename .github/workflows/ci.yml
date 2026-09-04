@@ -80,7 +80,7 @@ jobs:
       - name: Install Python package
         run: python -m pip install -e '.[dev]'
       - name: Install Blender headless runtime libraries
-        run: sudo apt-get update && sudo apt-get install -y libegl1
+        run: sudo apt-get update && sudo apt-get install -y libegl1 xvfb
       - name: Setup Blender 4.5 LTS
         uses: bradyajohnston/setup-blender@v5
         with:
@@ -120,6 +120,9 @@ jobs:
               motion2sheet build sample/walk_mixamo.fbx --action walk --profile chibi_v1 --frames 8 --directions down --canvas 320x320 --output-mode sheet --output "$ROOT/sheet" --keep-raw
               motion2sheet validate "$ROOT/sheet"
               python tests/motion/e2e/verify_output_mode.py "$ROOT/frames" "$ROOT/sheet"
+              ;;
+            contract-c)
+              bash tests/motion/contract_c/run_e2e.sh "$ROOT"
               ;;
             *)
               echo "Unknown motion E2E target: $TARGET" >&2
@@ -215,7 +218,7 @@ jobs:
       - name: Re-render saved 3D helix Blender source
         run: blender --background build/vfx/helix_a/source.blend --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py -- --output build/vfx/helix_reopened_frames
       - name: Verify 3D helix Blender source is authoritative
-        run: python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py build/vfx/helix_a build/vfx/helix_reopened_frames
+        run: python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py build/vfx/helix_a build/vfx/reopened_frames
       - name: Upload generated VFX output
         if: always()
         uses: actions/upload-artifact@v4
