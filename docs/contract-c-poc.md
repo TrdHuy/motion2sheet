@@ -1,105 +1,132 @@
 # Contract C v1 POC
 
-Contract C is reusable semantic humanoid motion. Its authority is one immutable
-`animations/<clip>/animation.json`; target bone transforms produced while playing it
-are runtime data, never a per-character animation asset.
+Contract C v1 is a reusable semantic humanoid **in-place animation authority**.
+One immutable `animations/<clip>/animation.json` is played on every compatible
+character. Target-bone transforms created during playback are runtime data, never
+per-character animation authority.
 
-## Authority and schema
+## Authority separation
 
-The strict schema is `motion2sheet.contract-c.animation`, version 1, canonical
-skeleton `humanoid_v1`. It stores FPS, frame count, loop intent, coordinate and
-quaternion conventions, then:
+| Authority | Owns |
+| --- | --- |
+| Game/world | Absolute X/Y position, movement speed, navigation, pathfinding, collision and gameplay displacement |
+| Contract C | In-place pelvis/body articulation, semantic joint rotations, FPS, frame count and loop intent |
 
-- virtual `Root`: translation and rotation tracks;
-- `Hips`: rotation and optional translation tracks;
-- every other required semantic joint: rotation track only.
+The strict schema remains `motion2sheet.contract-c.animation` version 1 with
+canonical skeleton `humanoid_v1`. It stores:
 
-Translation is dimensionless in mean-leg-length units. No source joint position,
-bone length, bind matrix, source local axis, or actual source/target bone name is
-stored. Required mapped semantics are Hips, Spine, Chest, Neck, Head, and left/right
-Shoulder, UpperArm, LowerArm, Hand, UpperLeg, LowerLeg, Foot, Toe.
+- virtual `Root` translation and yaw tracks;
+- `Hips` local/residual translation and rotation;
+- rotation tracks for every other required humanoid semantic.
 
-Quaternions use `[w,x,y,z]`. In Blender canonical scene space the exporter computes
-`D = inverse(Qroot) * RsourcePose * inverse(RsourceRest)`. Playback computes
-`RtargetPose = Qroot * D * RtargetRest`. Each track is normalized and made
-nearest-hemisphere sign-continuous with a deterministic tie break.
+`Root.translation` is reserved and must remain within `1e-8` mean-leg-length
+units of `[0,0,0]` on every frame. Root yaw is retained only as canonical body
+orientation. It does not own world movement.
 
-Root translation is full Hips displacement from sample zero, normalized by source
-mean leg length. Root rotation is the relative Hips yaw twist. Hips translation
-stores the remaining rest-relative displacement. Runtime multiplies translations by
-the target mean leg length, so target proportions remain authoritative.
+## In-place locomotion canonicalization
 
-## Character mapping
+Translations are dimensionless mean-leg-length units. For source Hips
+rest-relative position `P_i`, frame fraction `u_i`, and relative Hips yaw `Q_i`,
+the v1 exporter applies `linear-endpoint-planar-detrend-v1`:
 
-`motion2sheet.contract-c.character-map` version 1 maps all 21 non-virtual semantics
-to distinct target bones. Validation fails closed for missing bones or an invalid
-ancestor path. Unmapped twist/finger/helper bones are diagnostic-only; bridge bones
-on a required path receive deterministic rest-chain interpolation.
-
-The checked-in examples are `profiles/contract_c/mixamo_humanoid_v1.json` and
-`profiles/contract_c/derived_humanoid_v1.json`.
-
-## Commands
-
-Start from the requested PR #12 commit without touching its branch:
-
-```bash
-git fetch origin
-git switch -c feature/contract-c-poc 48fb394770369a9f6b540d8446fb2b337d7055b1
-python -m venv .venv
-.venv/bin/pip install -e '.[dev]'
+```text
+planarTravel = [P_last.x - P_first.x, P_last.y - P_first.y, 0]
+Root.translation_i = [0, 0, 0]
+Hips.translation_i = inverse(Q_i) * (P_i - u_i * planarTravel)
 ```
 
-Create a Contract B adapter input, then export the reusable authority:
+This strips a source Run's forward travel while retaining cyclic lateral sway,
+vertical pelvis bounce and other local Hips motion. A moving Run and its matching
+Run-in-place source therefore produce equivalent in-place body semantics.
+
+Quaternions use `[w,x,y,z]`. The semantic rotation formula is
+`D = inverse(Qroot) * RsourcePose * inverse(RsourceRest)`. Playback applies
+`RtargetPose = Qroot * D * RtargetRest`. Tracks are normalized and use a
+deterministic nearest-hemisphere continuity policy.
+
+Contract C stores no source joint positions, bone lengths, bind matrices, local
+axes or source/target bone names.
+
+## Independent fidelity oracle
+
+Before Contract B or source FBX files are deleted, run:
 
 ```bash
-/usr/bin/blender --background --factory-startup --python-exit-code 1 \
-  --python motion2sheet/motion/model_render/blender_prepare_motion_source.py -- \
-  --input /home/huy/Downloads/run-without-skin-not-inplace.fbx \
-  --output build/contract_c_poc/intermediate/run-normalized.fbx \
-  --report build/contract_c_poc/diagnostics/run-normalization.json
-.venv/bin/motion2sheet export-animation-json \
-  build/contract_c_poc/intermediate/run-normalized.fbx \
-  --output build/contract_c_poc/contract_b/run --blender /usr/bin/blender
-.venv/bin/motion2sheet export-contract-c-animation \
+motion2sheet verify-contract-c-fidelity \
   --source-rig build/contract_c_poc/contract_b/run/rig.json \
   --source-animation build/contract_c_poc/contract_b/run/animation.json \
-  --mapping profiles/contract_c/mixamo_humanoid_v1.json --id run --loop \
-  --output build/contract_c_poc/animations/run --blender /usr/bin/blender
+  --source-mapping profiles/contract_c/mixamo_humanoid_v1.json \
+  --animation build/contract_c_poc/animations/run/animation.json \
+  --output build/contract_c_poc/animations/run/diagnostics/source_contract_c_fidelity.json
 ```
 
-Render that exact file on a target; use the other mapping and character directory
-for Character B without changing `--animation`:
+The oracle evaluates Contract B hierarchy/rest/matrix-basis transforms in a
+separate pure-Python numeric path. It does not call the Contract C exporter,
+Blender playback, or their math helpers. It compares all frames, timing, Root
+yaw, all 21 semantic rotations, Hips residual translation, left/right identity,
+Root invariants and quaternion validity/continuity.
+
+Tolerances are `1e-9` for FPS, `0.005` degrees for rotations, `1e-5` for Hips
+translation and `1e-8` for Root translation.
+
+## Character mapping and independent targets
+
+`motion2sheet.contract-c.character-map` v1 maps all 21 non-virtual semantics to
+distinct target bones. Validation fails closed for missing bones, invalid
+ancestry, or left/right rest geometry inconsistent with canonical `+X`.
+
+The primary acceptance matrix is:
+
+| Target | Source | Purpose |
+| --- | --- | --- |
+| Character A | `walking_mixamo_with_skin.fbx` | Existing real baseline |
+| Maria | `Maria.WProp.J.J.Ong.fbx` | Independently authored real target #1 |
+| Warrok | `Warrok.W.Kurniawan.fbx` | Independently authored real target #2 |
+
+All three rigs use the validated `mixamo_humanoid_v1` semantic naming profile,
+while their model, rest rig, skin and runtime corrections remain target-specific.
+The derived Character B fixture remains available as optional controlled stress
+tooling but is not run or counted as independent-character acceptance.
+
+Maria and Warrok are pinned release assets under tag `e2e_gh_action_asset`.
+Exact URLs, asset IDs, SHA-256 values and byte sizes are recorded in
+`tests/motion/contract_c/fixtures/release_assets.json`; CI downloads those fixed
+URLs and fails closed on any hash or size mismatch.
+
+## Export and playback
+
+Export one reusable Contract C authority from Contract B:
 
 ```bash
-.venv/bin/motion2sheet render-contract-c-animation \
-  --model build/contract_c_poc/characters/character-a/model.glb \
-  --character-rig build/contract_c_poc/characters/character-a/rig.json \
-  --skin build/contract_c_poc/characters/character-a/skin.json \
+motion2sheet export-contract-c-animation \
+  --source-rig build/contract_c_poc/contract_b/run/rig.json \
+  --source-animation build/contract_c_poc/contract_b/run/animation.json \
+  --mapping profiles/contract_c/mixamo_humanoid_v1.json \
+  --id run --loop --output build/contract_c_poc/animations/run
+```
+
+Then render that same exact file on each target without adaptation:
+
+```bash
+motion2sheet render-contract-c-animation \
+  --model build/contract_c_poc/characters/maria/model.glb \
+  --character-rig build/contract_c_poc/characters/maria/rig.json \
+  --skin build/contract_c_poc/characters/maria/skin.json \
   --character-mapping profiles/contract_c/mixamo_humanoid_v1.json \
   --animation build/contract_c_poc/animations/run/animation.json \
-  --camera-profile profiles/cameras/front_final.json5 --canvas 160x160 \
-  --sheet-columns 5 --render-samples 8 --gif \
-  --output build/contract_c_poc/renders/character-a/run --blender /usr/bin/blender
+  --camera-profile profiles/cameras/front_contract_c_inplace.json5 \
+  --frames all --canvas 224x224 --sheet-columns 10 --render-samples 8 --gif \
+  --output build/contract_c_poc/renders/maria/run
 ```
 
-Verify every artifact, both pre/post playback SHAs, real mesh identity, semantic
-mapping, left/right identity, quaternion playback, and root-motion classification:
+The Contract C camera is fixed (`followRoot: false`) so rendering cannot conceal
+locomotion drift. Each target/clip produces a real-skinned `pose_sheet.png`,
+`preview.gif`, `render.json` and diagnostics directory. Reports record the same
+animation SHA before and after every playback.
 
-```bash
-.venv/bin/python tests/motion/contract_c/verify_local_acceptance.py
-```
+## Known v1 boundary
 
-The POC reuses PR #12 character export, GLB/skin authorities and reconstruction,
-armature reconstruction, camera, PNG/sheet/GIF composition, canonical rest capture,
-and root-motion/reporting patterns. Contract B is only an exporter adapter; final
-Contract C playback reads no FBX and no source rig.
-
-## POC boundary
-
-Character B is deliberately derived from the available real skinned character by a
-deterministic non-uniform mesh/rest-rig transform, upper-arm roll changes, and bone
-renaming. This proves phase-1 variation in proportions, rest basis, and naming. It is
-not a second independently authored model; that remains the final acceptance step
-when such an asset is available. Foot contact is reported without IK and is not a
-gate; source world-space XYZ is never introduced as a workaround.
+The v1 stripping policy treats planar locomotion as linear end-to-end travel.
+Curved or strongly non-linear world paths can leave local residual motion and
+will need a later explicit trajectory policy. Foot contact remains diagnostic;
+Contract C v1 does not store source joint XYZ or apply foot IK.
