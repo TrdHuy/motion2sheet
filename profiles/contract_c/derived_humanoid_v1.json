@@ -1,0 +1,29 @@
+{
+  "schema": "motion2sheet.contract-c.character-map",
+  "version": 1,
+  "id": "derived_humanoid_v1",
+  "canonicalSkeleton": "humanoid_v1",
+  "joints": {
+    "Hips": "Pelvis",
+    "Spine": "SpineLower",
+    "Chest": "ChestUpper",
+    "Neck": "NeckBase",
+    "Head": "Head",
+    "LeftShoulder": "Shoulder_L",
+    "LeftUpperArm": "UpperArm_L",
+    "LeftLowerArm": "LowerArm_L",
+    "LeftHand": "Hand_L",
+    "RightShoulder": "Shoulder_R",
+    "RightUpperArm": "UpperArm_R",
+    "RightLowerArm": "LowerArm_R",
+    "RightHand": "Hand_R",
+    "LeftUpperLeg": "UpperLeg_L",
+    "LeftLowerLeg": "LowerLeg_L",
+    "LeftFoot": "Foot_L",
+    "LeftToe": "Toe_L",
+    "RightUpperLeg": "UpperLeg_R",
+    "RightLowerLeg": "LowerLeg_R",
+    "RightFoot": "Foot_R",
+    "RightToe": "Toe_R"
+  }
+}

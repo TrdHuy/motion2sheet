@@ -274,6 +274,11 @@ def setup_camera_and_render(request: dict[str, Any], armature: bpy.types.Object)
     background = request["background"]
     camera_profile = request["camera"]
     scene.render.engine = "BLENDER_EEVEE_NEXT"
+    if "renderSamples" in request:
+        render_samples = int(request["renderSamples"])
+        if render_samples <= 0:
+            raise ValueError("renderSamples must be positive")
+        scene.eevee.taa_render_samples = render_samples
     scene.render.resolution_x = int(canvas[0])
     scene.render.resolution_y = int(canvas[1])
     scene.render.resolution_percentage = 100

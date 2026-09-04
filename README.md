@@ -3,6 +3,8 @@
 `motion2sheet` converts humanoid motion files into deterministic 2D skeleton pose outputs that can be used as pose-conditioning references for AI sprite generation.
 
 > Hướng dẫn sử dụng chi tiết bằng tiếng Việt: [`docs/huong-dan-su-dung.md`](docs/huong-dan-su-dung.md)
+>
+> Reusable humanoid animation POC: [`docs/contract-c-poc.md`](docs/contract-c-poc.md)
 
 ## MVP scope
 
