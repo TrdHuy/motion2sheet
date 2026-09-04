@@ -14,7 +14,8 @@ def test_cross_animation_proves_rest_families_then_deletes_fbx_before_level2_ren
     assert family_proof in workflow
     assert workflow.index(family_proof) < workflow.index(delete) < workflow.index(render)
     assert "motion2sheet export-animation-json sample/walk_mixamo.fbx" in workflow
-    assert "validate_level1_rig_compatibility(rig,anchor)" in workflow
+    assert "l1_family=diagnose_level1_rig_compatibility(rig,anchor)" in workflow
+    assert "familyAInternalRelationshipIsDiagnosticOnly':True" in workflow
     assert "diagnose_level1_rig_compatibility(rig,character)" in workflow
     assert "validate_level2_rest_basis_eligibility(rig,character)" in workflow
     assert "l1_family['restBasisToleranceDegrees']==0.001" in workflow
