@@ -218,7 +218,7 @@ jobs:
       - name: Re-render saved 3D helix Blender source
         run: blender --background build/vfx/helix_a/source.blend --python tests/vfx2sheet/e2e/render_saved_vfx_blend.py -- --output build/vfx/helix_reopened_frames
       - name: Verify 3D helix Blender source is authoritative
-        run: python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py build/vfx/helix_a build/vfx/reopened_frames
+        run: python tests/vfx2sheet/e2e/verify_vfx_blend_reopen.py build/vfx/helix_a build/vfx/helix_reopened_frames
       - name: Upload generated VFX output
         if: always()
         uses: actions/upload-artifact@v4
