@@ -91,7 +91,9 @@ tooling but is not run or counted as independent-character acceptance.
 Maria and Warrok are pinned release assets under tag `e2e_gh_action_asset`.
 Exact URLs, asset IDs, SHA-256 values and byte sizes are recorded in
 `tests/motion/contract_c/fixtures/release_assets.json`; CI downloads those fixed
-URLs and fails closed on any hash or size mismatch.
+URLs and fails closed on any hash or size mismatch. The dedicated GitHub Actions
+workflow is manual-only (`workflow_dispatch`); routine PR pushes do not consume
+CI capacity. Contract acceptance is run locally with the same commands and gates.
 
 ## Export and playback
 

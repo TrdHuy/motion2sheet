@@ -1,17 +1,6 @@
 name: Contract C Reusable Humanoid E2E
 
 on:
-  pull_request:
-    paths:
-      - 'motion2sheet/motion/contract_c/**'
-      - 'motion2sheet/motion/model_render/**'
-      - 'motion2sheet/motion/skin/**'
-      - 'motion2sheet/motion/cli.py'
-      - 'profiles/contract_c/**'
-      - 'profiles/cameras/**'
-      - 'tests/motion/contract_c/**'
-      - '.github/workflows/contract-c-e2e.yml'
-      - 'pyproject.toml'
   workflow_dispatch:
 
 permissions:
