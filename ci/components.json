@@ -39,6 +39,7 @@
     "motion-skin-unit": {"kind": "unit", "path": "tests/motion/skin", "paths": ["tests/motion/skin/**"], "depends_on": ["motion-skin"]},
     "motion-model-render-unit": {"kind": "unit", "path": "tests/motion/model_render", "paths": ["tests/motion/model_render/**"], "depends_on": ["motion-model-render"]},
     "motion-contract-c-unit": {"kind": "unit", "path": "tests/motion/contract_c", "paths": ["tests/motion/contract_c/**"], "depends_on": ["motion-contract-c"]},
+    "motion-contract-c-e2e": {"kind": "motion-e2e", "target": "contract-c", "paths": ["tests/motion/contract_c/run_e2e.sh", "tests/motion/contract_c/verify_local_acceptance.py", "tests/motion/contract_c/fixtures/release_assets.json"], "depends_on": ["motion-contract-c", "motion-cli"]},
     "motion-synthetic-fbx": {"kind": "motion-e2e", "target": "synthetic-fbx", "paths": ["tests/motion/fixtures/**", "tests/motion/e2e/verify_generated_output.py", "tests/motion/e2e/verify_retarget_output.py"], "depends_on": ["motion-cli"]},
     "motion-synthetic-bvh": {"kind": "motion-e2e", "target": "synthetic-bvh", "paths": ["tests/motion/fixtures/**", "tests/motion/e2e/verify_generated_output.py", "tests/motion/e2e/verify_retarget_output.py"], "depends_on": ["motion-cli"]},
     "motion-mixamo-real": {"kind": "motion-e2e", "target": "mixamo-real", "paths": ["tests/motion/e2e/verify_mixamo_output.py", "sample/walk_mixamo.fbx"], "depends_on": ["motion-cli"]},
