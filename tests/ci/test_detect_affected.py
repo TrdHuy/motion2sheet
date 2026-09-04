@@ -12,9 +12,9 @@ def make_clip(repo_root:Path,name:str,*,unit:bool=False)->None:
     if unit:(repo_root/"tests"/"anim2sheet"/"animations"/name/"unit").mkdir(parents=True)
 def anim_e2e_targets(manifest,targets): return {name for name in targets if manifest["test_targets"][name]["kind"]=="anim-e2e"}
 def test_component_change_runs_only_dependent_targets():
-    _,targets=resolve("motion2sheet/motion/normalize/core.py"); assert "motion-normalize-unit" in targets; assert "motion-synthetic-fbx" in targets; assert "vfx-unit" not in targets; assert not any(name.endswith("-e2e") and name.startswith("anim-") for name in targets)
+    _,targets=resolve("motion2sheet/motion/normalize/core.py"); assert "motion-normalize-unit" in targets; assert "motion-synthetic-fbx" in targets; assert "motion-contract-c-e2e" not in targets; assert "vfx-unit" not in targets; assert not any(name.endswith("-e2e") and name.startswith("anim-") for name in targets)
 def test_vfx_effect_change_does_not_run_motion_or_anim():
-    manifest=load_manifest(); components,targets=resolve("motion2sheet/vfx2sheet/effects/splash/config.py",manifest=manifest); assert "vfx-splash" in components; assert "vfx-unit" in targets; assert "vfx-splash-e2e" in targets; assert not anim_e2e_targets(manifest,targets)
+    manifest=load_manifest(); components,targets=resolve("motion2sheet/vfx2sheet/effects/splash/config.py",manifest=manifest); assert "vfx-splash" in components; assert "vfx-unit" in targets; assert "vfx-splash-e2e" in targets; assert "motion-contract-c-e2e" not in targets; assert not anim_e2e_targets(manifest,targets)
 def test_dynamic_animation_discovery_accepts_v2_two_file_clip(tmp_path):
     make_clip(tmp_path,"walk"); assert discover_animation_clips(tmp_path)==["walk"]; manifest=load_manifest(repo_root=tmp_path); assert manifest["test_targets"]["anim-walk-e2e"]["target"]=="walk"; assert "anim-walk-unit" not in manifest["test_targets"]; assert "anim-walk" not in manifest["components"]
 def test_incomplete_animation_clip_fails_closed(tmp_path):
@@ -48,25 +48,32 @@ def test_sword_idle_profile_change_does_not_pull_gale_e2e():
 def test_anim_common_profile_change_runs_all_current_anim_e2e(path):
     manifest=load_manifest(); _,targets=resolve(path,manifest=manifest); assert anim_e2e_targets(manifest,targets)=={"anim-gale-slash-e2e","anim-sword-idle-e2e"}
 def test_skin_change_selects_skin_unit_without_unrelated_e2e():
-    manifest=load_manifest(); components,targets=resolve("motion2sheet/motion/skin/contract.py",manifest=manifest); assert components=={"motion-skin","motion-model-render","motion-contract-c","motion-cli"}; assert "motion-skin-unit" in targets; assert "motion-model-render-unit" in targets; assert "motion-contract-c-unit" in targets; assert "motion-mixamo-real" in targets; assert "vfx-splash-e2e" not in targets
+    manifest=load_manifest(); components,targets=resolve("motion2sheet/motion/skin/contract.py",manifest=manifest); assert components=={"motion-skin","motion-model-render","motion-contract-c","motion-cli"}; assert "motion-skin-unit" in targets; assert "motion-model-render-unit" in targets; assert "motion-contract-c-unit" in targets; assert "motion-contract-c-e2e" in targets; assert "motion-mixamo-real" in targets; assert "vfx-splash-e2e" not in targets
 def test_skin_test_change_selects_skin_unit():
     manifest=load_manifest(); components,targets=resolve("tests/motion/skin/test_contract.py",manifest=manifest); assert components==set(); assert targets=={"motion-skin-unit"}
 def test_model_render_change_routes_unit_and_motion_cli_dependents():
-    manifest=load_manifest(); components,targets=resolve("motion2sheet/motion/model_render/runner.py",manifest=manifest); assert {"motion-model-render","motion-cli"}.issubset(components); assert "motion-model-render-unit" in targets; assert "motion-mixamo-real" in targets; assert "vfx-splash-e2e" not in targets
+    manifest=load_manifest(); components,targets=resolve("motion2sheet/motion/model_render/runner.py",manifest=manifest); assert {"motion-model-render","motion-contract-c","motion-cli"}.issubset(components); assert "motion-model-render-unit" in targets; assert "motion-contract-c-e2e" in targets; assert "motion-mixamo-real" in targets; assert "vfx-splash-e2e" not in targets
 def test_model_render_test_change_selects_only_model_render_unit():
     manifest=load_manifest(); components,targets=resolve("tests/motion/model_render/test_runner.py",manifest=manifest); assert components==set(); assert targets=={"motion-model-render-unit"}
 def test_contract_c_change_routes_its_unit_and_motion_cli_dependents_only():
     manifest=load_manifest(); components,targets=resolve("motion2sheet/motion/contract_c/schema.py",manifest=manifest)
     assert {"motion-contract-c","motion-cli"}.issubset(components)
     assert "motion-contract-c-unit" in targets
+    assert "motion-contract-c-e2e" in targets
     assert "motion-synthetic-fbx" in targets and "motion-mixamo-real" in targets
     assert "vfx-unit" not in targets and not anim_e2e_targets(manifest,targets)
 def test_contract_c_profile_change_uses_contract_c_component():
     manifest=load_manifest(); components,targets=resolve("profiles/contract_c/mixamo_humanoid_v1.json",manifest=manifest)
-    assert "motion-contract-c" in components and "motion-contract-c-unit" in targets
+    assert "motion-contract-c" in components and "motion-contract-c-unit" in targets and "motion-contract-c-e2e" in targets
 def test_contract_c_test_change_selects_only_contract_c_unit():
     manifest=load_manifest(); components,targets=resolve("tests/motion/contract_c/test_contract_c.py",manifest=manifest)
     assert components==set(); assert targets=={"motion-contract-c-unit"}
+def test_contract_c_e2e_runner_change_selects_unit_and_e2e():
+    manifest=load_manifest(); components,targets=resolve("tests/motion/contract_c/run_e2e.sh",manifest=manifest)
+    assert components==set(); assert targets=={"motion-contract-c-unit","motion-contract-c-e2e"}
+def test_motion_cli_change_selects_contract_c_e2e():
+    manifest=load_manifest(); _,targets=resolve("motion2sheet/motion/cli.py",manifest=manifest)
+    assert "motion-contract-c-e2e" in targets
 def test_unknown_path_fails_safe_to_full_ci():
     manifest=load_manifest(); _,targets=resolve("motion2sheet/new_unmapped_module.py",manifest=manifest); assert targets==set(manifest["test_targets"])
 def test_docs_only_change_runs_no_tests():
