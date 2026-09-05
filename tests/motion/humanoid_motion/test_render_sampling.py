@@ -94,9 +94,9 @@ def _sha256(path: Path) -> str:
 
 
 def _install_render_stubs(monkeypatch, observed_fps: list[float]) -> None:
-    monkeypatch.setattr(runner, "validate_rig_document", lambda value: value)
+    monkeypatch.setattr(runner, "validate_rig_document", lambda value: {"id": "character-fixture"})
     monkeypatch.setattr(runner, "validate_skin_document", lambda value, rig: value)
-    monkeypatch.setattr(runner, "read_mapping", lambda path: {"id": "mapping"})
+    monkeypatch.setattr(runner, "read_mapping", lambda path: {"id": "mapping-fixture"})
     monkeypatch.setattr(runner, "validate_character_mapping", lambda value, rig: value)
     monkeypatch.setattr(runner, "read_animation", lambda path: json.loads(path.read_text(encoding="utf-8")))
     monkeypatch.setattr(runner, "load_camera_profile", lambda path: {"id": "camera", "followRoot": False})
