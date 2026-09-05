@@ -68,7 +68,7 @@ jobs:
             --report "$ROOT/motion_source_normalization.json"
           test -s "$NORMALIZED"
           echo "NORMALIZED=$NORMALIZED" >> "$GITHUB_ENV"
-      - name: Export Contract B animation using locked PR 11 command
+      - name: Export Motion JSON using locked PR 11 command
         run: |
           set -euo pipefail
           motion2sheet export-animation-json "$NORMALIZED" --output "$ROOT/animation"
@@ -117,7 +117,7 @@ jobs:
           rm -f "$ASSET" "$NORMALIZED"
           test ! -e "$ASSET"
           test ! -e "$NORMALIZED"
-      - name: Strict JSON-only Skin + Contract B playback preflight
+      - name: Strict JSON-only Skin + Motion JSON playback preflight
         run: |
           set -euo pipefail
           motion2sheet render-model-animation \
@@ -195,7 +195,7 @@ jobs:
           visual.save(root/'visual-comparison.png')
           source.close(); target.close(); visual.close()
           metrics={
-              'contractFrame':frame,
+              'motionFrame':frame,
               'maxWeightDelta': skin['maxWeightDelta'],
               'maxRestBasisErrorDegrees':level1['maxRestBasisErrorDegrees'],
               'worstRestBasisBone':level1['worstRestBasisBone'],
