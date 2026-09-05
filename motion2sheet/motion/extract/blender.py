@@ -61,12 +61,16 @@ def clean_scene() -> None:
     bpy.ops.object.delete(use_global=False)
 
 
-def import_motion(path: Path) -> None:
+def import_motion(path: Path, *, update_bvh_scene_fps: bool = False) -> None:
     suffix = path.suffix.lower()
     if suffix == ".fbx":
         bpy.ops.import_scene.fbx(filepath=str(path))
     elif suffix == ".bvh":
-        bpy.ops.import_anim.bvh(filepath=str(path), target="ARMATURE")
+        bpy.ops.import_anim.bvh(
+            filepath=str(path),
+            target="ARMATURE",
+            update_scene_fps=update_bvh_scene_fps,
+        )
     else:
         raise RuntimeError(f"Unsupported motion format: {suffix}. Supported: .fbx, .bvh")
 

@@ -20,6 +20,7 @@ def extract_fbx_metadata_and_diagnostics(
     """
 
     root, version = parse_fbx.parse(str(path), use_namedtuple=True)
+    timebase = native._fbx_timebase(root, int(version))
     table = native._node_table(root)
     forward, _reverse = native._connection_maps(root)
     requested = set(bone_names)
@@ -206,6 +207,7 @@ def extract_fbx_metadata_and_diagnostics(
         "stackTiming": stack_timing,
         "sampling": "all-integer-source-frames",
         "sampleKeyTimes": sample_key_times,
+        "ktimeTicksPerSecond": timebase["ticksPerSecond"],
     }
     return (
         rig_metadata,

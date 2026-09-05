@@ -29,6 +29,10 @@ from motion2sheet.motion.roundtrip.blender_common import (
 from motion2sheet.motion.roundtrip.blender_json_scene import build_armature, clean_scene
 from motion2sheet.motion.roundtrip.fbx import extract_fbx_metadata_and_diagnostics
 from motion2sheet.motion.roundtrip.schema import validate_rig_document
+from motion2sheet.motion.roundtrip.native_timing import (
+    DURATION_TOLERANCE_SECONDS,
+    validate_fbx_native_timing,
+)
 from motion2sheet.motion.skin import validate_level1_rig_compatibility
 
 # Canonical rebase itself stays at the original strict 10-micrometer world-space
@@ -239,6 +243,18 @@ def main() -> None:
     fps, fps_numerator, fps_base = scene_fps(bpy.context.scene)
     parents = {bone.name: bone.parent.name if bone.parent else None for bone in source_armature.data.bones}
 
+    source_rig_fbx, source_animation_fbx, _source_diagnostic_curves = extract_fbx_metadata_and_diagnostics(
+        source,
+        sorted(parents),
+        source_frame_count,
+    )
+    source_native_timing = validate_fbx_native_timing(
+        source_animation_fbx,
+        global_settings=source_rig_fbx["globalSettings"],
+        frame_count=source_frame_count,
+        fps=fps,
+    )
+
     # Static character authority and motion authority are captured independently.
     # Character rest reads only bind/EditBone/static-FBX data. Source pose matrices
     # below are motion samples only and are never used to derive canonical rest.
@@ -278,6 +294,7 @@ def main() -> None:
     export_action_with_static_rest_fbx(rebased_armature, rebased_action, output)
 
     normalized_armature, normalized_action = import_source(output)
+    normalized_fps, normalized_fps_numerator, normalized_fps_base = scene_fps(bpy.context.scene)
     normalized_start, normalized_end = integer_action_range(normalized_action)
     normalized_frame_count = normalized_end - normalized_start + 1
     if normalized_frame_count != source_frame_count:
@@ -312,11 +329,27 @@ def main() -> None:
     # Reproduce locked PR #11 rig-validation ordering on the generated motion-only FBX.
     normalized_rig = capture_rig_document(output, normalized_armature)
     normalized_bones = [bone["name"] for bone in normalized_rig["bones"]]
-    rig_fbx, _animation_fbx, _diagnostic_curves = extract_fbx_metadata_and_diagnostics(
+    rig_fbx, animation_fbx, _diagnostic_curves = extract_fbx_metadata_and_diagnostics(
         output,
         normalized_bones,
         normalized_frame_count,
     )
+    normalized_native_timing = validate_fbx_native_timing(
+        animation_fbx,
+        global_settings=rig_fbx["globalSettings"],
+        frame_count=normalized_frame_count,
+        fps=normalized_fps,
+    )
+    native_duration_error = abs(
+        source_native_timing["durationSeconds"] - normalized_native_timing["durationSeconds"]
+    )
+    if native_duration_error > DURATION_TOLERANCE_SECONDS:
+        raise RuntimeError(
+            "motion normalization changed source-native duration: "
+            f"source={source_native_timing['durationSeconds']:.12g} "
+            f"normalized={normalized_native_timing['durationSeconds']:.12g} "
+            f"error={native_duration_error:.12g}"
+        )
     normalized_rig["sourceFormat"] = {"fbx": rig_fbx}
     normalized_rig = validate_rig_document(normalized_rig)
     if len(normalized_rig["bones"]) != len(parents):
@@ -361,6 +394,13 @@ def main() -> None:
         "fps": fps,
         "fpsNumerator": fps_numerator,
         "fpsBase": fps_base,
+        "sourceNativeTiming": source_native_timing,
+        "normalizedNativeTiming": normalized_native_timing,
+        "normalizedFps": normalized_fps,
+        "normalizedFpsNumerator": normalized_fps_numerator,
+        "normalizedFpsBase": normalized_fps_base,
+        "nativeDurationErrorSeconds": native_duration_error,
+        "nativeDurationPreserved": True,
         "preFbxFidelity": pre_fbx_fidelity,
         "fidelity": post_fbx_fidelity,
         "restCompatibility": rest_compatibility,

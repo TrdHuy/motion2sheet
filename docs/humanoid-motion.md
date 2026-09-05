@@ -27,17 +27,27 @@ orientation. It does not own world movement.
 
 ## Timing authority
 
-`export-animation-json` captures `durationSeconds` into the Source Animation
-`animation.json` from the imported source action span. With the current
-`all-integer-source-frames-inclusive` policy:
+`export-animation-json` captures `durationSeconds` from source-native timing,
+independently of Blender's imported/sample FPS:
 
 ```text
-durationSeconds = (frameRange.end - frameRange.start) / fps
+FBX: durationSeconds = (AnimationStack.LocalStop - LocalStart) / KTimeTicksPerSecond
+BVH: durationSeconds = (Frames - 1) * Frame Time
 ```
 
-The Source Animation validator accepts older v1 files without this additive field
-for round-trip compatibility, but when the field is present it must agree with the
-source frame range and FPS within `1e-6` seconds.
+FBX `LocalStart`, `LocalStop`, `ReferenceStart`, `ReferenceStop`, and animation
+curve `KeyTime` values are integer KTime ticks, not frame indices. The timebase is
+resolved from the FBX version and `FBXHeaderExtension/OtherFlags/TCDefinition`:
+legacy KTime is `46186158000` ticks/second and the opt-in v8 definition is
+`141120000` ticks/second. `TimeMode`/`CustomFrameRate` declares the sample rate;
+it never defines duration. Stack spans, curve endpoints, every sample time, and
+the imported representation must agree or export fails closed.
+
+Current Source Animation exports retain the resolved FBX timebase or BVH
+`Frames`/`Frame Time` metadata. The validator accepts older v1 files without the
+additive `durationSeconds` field for round-trip compatibility, but current
+Humanoid Motion export requires duration and asks callers to re-export legacy
+source authority when it is absent.
 
 `export-humanoid-animation` requires that Source Animation field and copies it
 unchanged into Humanoid Motion. It does not recompute duration from its own output.
@@ -47,10 +57,10 @@ Humanoid Motion then requires the invariant:
 durationSeconds = (frameCount - 1) / fps
 ```
 
-within `1e-6` seconds. This makes duration the independent timing anchor: changing
-only `fps`, or only `frameCount`, fails validation instead of silently changing
-action playback speed. `fps` remains the sample rate; it is not the semantic
-source of truth for how long the action lasts.
+within `1e-6` seconds. This formula is a representation consistency check, not a
+source of duration. Changing only `fps` or `frameCount` fails validation instead
+of silently changing action playback speed. `fps` remains the sample rate;
+`frameCount` remains the endpoint-inclusive sample count.
 
 ## In-place locomotion canonicalization
 

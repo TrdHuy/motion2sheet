@@ -1,5 +1,12 @@
 import pytest
 
+from motion2sheet.motion.roundtrip.native_timing import (
+    FBX_KTIME_V7,
+    FBX_KTIME_V8,
+    extract_bvh_native_timing,
+    resolve_fbx_ticks_per_second,
+    validate_fbx_native_timing,
+)
 from motion2sheet.motion.roundtrip.schema import canonical_json_text, validate_animation_document, validate_rig_document
 
 
@@ -111,6 +118,12 @@ def animation():
             "description": "Per-bone PoseBone.matrix_basis: pose-local delta relative to the bone rest basis, serialized as TRS.",
         },
         "frames": frames,
+        "sourceFormat": {
+            "bvh": {
+                "declaredFrameCount": 2,
+                "frameTimeSeconds": 1.0 / 30.0,
+            }
+        },
     }
 
 
@@ -120,12 +133,13 @@ def fbx_animation_metadata():
         "layer": "BaseLayer",
         "stackTiming": {
             "LocalStart": 0,
-            "LocalStop": 1,
+            "LocalStop": 1539538600,
             "ReferenceStart": 0,
-            "ReferenceStop": 1,
+            "ReferenceStop": 1539538600,
         },
         "sampling": "all-integer-source-frames",
-        "sampleKeyTimes": [0, 1],
+        "sampleKeyTimes": [0, 1539538600],
+        "ktimeTicksPerSecond": FBX_KTIME_V7,
     }
 
 
@@ -205,6 +219,87 @@ def test_animation_duration_is_timing_anchor():
     data["fpsNumerator"] = 60
     with pytest.raises(ValueError, match="durationSeconds contradicts"):
         validate_animation_document(data, validated_rig)
+
+
+def test_fbx_native_timing_rejects_wrong_imported_fps_without_rederiving_duration():
+    metadata = fbx_animation_metadata()
+    metadata["stackTiming"] = {
+        "LocalStart": 0,
+        "LocalStop": 29_251_233_400,
+        "ReferenceStart": 0,
+        "ReferenceStop": 29_251_233_400,
+    }
+    metadata["sampleKeyTimes"] = [index * 1_539_538_600 for index in range(20)]
+    settings = make_fbx_rig()["sourceFormat"]["fbx"]["globalSettings"]
+    with pytest.raises(ValueError, match="native duration contradicts"):
+        validate_fbx_native_timing(
+            metadata,
+            global_settings=settings,
+            frame_count=20,
+            fps=60.0,
+        )
+
+
+def test_fbx_timebase_uses_version_and_tc_definition_not_fps():
+    assert resolve_fbx_ticks_per_second(7400, header_version=1003, timecode_definition=None) == FBX_KTIME_V7
+    assert resolve_fbx_ticks_per_second(7700, header_version=1004, timecode_definition=127) == FBX_KTIME_V7
+    assert resolve_fbx_ticks_per_second(7700, header_version=1004, timecode_definition=0) == FBX_KTIME_V8
+    with pytest.raises(ValueError, match="unsupported FBX TCDefinition"):
+        resolve_fbx_ticks_per_second(7700, header_version=1004, timecode_definition=42)
+
+
+def test_fbx_1000fps_time_mode_is_supported():
+    metadata = fbx_animation_metadata()
+    metadata["stackTiming"] = {
+        "LocalStart": 0,
+        "LocalStop": 46_186_158,
+        "ReferenceStart": 0,
+        "ReferenceStop": 46_186_158,
+    }
+    metadata["sampleKeyTimes"] = [0, 46_186_158]
+    settings = make_fbx_rig()["sourceFormat"]["fbx"]["globalSettings"]
+    settings["TimeMode"] = 12
+    timing = validate_fbx_native_timing(
+        metadata,
+        global_settings=settings,
+        frame_count=2,
+        fps=1000.0,
+    )
+    assert timing["durationSeconds"] == pytest.approx(0.001)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("ReferenceStop", 1_539_538_599, "reference span contradicts local span"),
+        ("LocalStop", 1_539_538_599, "sample timeline endpoints contradict"),
+    ],
+)
+def test_fbx_native_stack_and_sample_timeline_must_agree(field, value, message):
+    metadata = fbx_animation_metadata()
+    metadata["stackTiming"][field] = value
+    if field == "LocalStop":
+        metadata["stackTiming"]["ReferenceStop"] = value
+    settings = make_fbx_rig()["sourceFormat"]["fbx"]["globalSettings"]
+    with pytest.raises(ValueError, match=message):
+        validate_fbx_native_timing(
+            metadata,
+            global_settings=settings,
+            frame_count=2,
+            fps=30.0,
+        )
+
+
+def test_bvh_native_timing_is_parsed_from_motion_header(tmp_path):
+    path = tmp_path / "clip.bvh"
+    path.write_text(
+        "HIERARCHY\nROOT Hips\n{\n}\nMOTION\nFrames: 20\nFrame Time: 0.0333333333333333\n",
+        encoding="utf-8",
+    )
+    assert extract_bvh_native_timing(path) == {
+        "declaredFrameCount": 20,
+        "frameTimeSeconds": 0.0333333333333333,
+    }
 
 
 def test_legacy_source_animation_without_duration_still_validates():
@@ -372,7 +467,7 @@ def test_bone_boolean_field_rejects_integer_equivalents(bad_value):
 
 
 def test_fbx_static_encoding_metadata_is_allowed_without_motion_curves():
-    validated_rig = validate_rig_document(rig())
+    validated_rig = validate_rig_document(make_fbx_rig())
     validate_animation_document(make_fbx_animation(), validated_rig)
 
 
@@ -405,7 +500,7 @@ def test_fbx_rotation_active_requires_boolean():
 
 
 def test_fbx_stack_timing_requires_json_integer():
-    validated_rig = validate_rig_document(rig())
+    validated_rig = validate_rig_document(make_fbx_rig())
     data = make_fbx_animation()
     data["sourceFormat"]["fbx"]["stackTiming"]["LocalStart"] = 0.0
     with pytest.raises(ValueError, match="LocalStart must be an integer"):
@@ -413,7 +508,7 @@ def test_fbx_stack_timing_requires_json_integer():
 
 
 def test_fbx_sample_key_times_require_json_integer():
-    validated_rig = validate_rig_document(rig())
+    validated_rig = validate_rig_document(make_fbx_rig())
     data = make_fbx_animation()
     data["sourceFormat"]["fbx"]["sampleKeyTimes"][0] = 0.0
     with pytest.raises(ValueError, match=r"sampleKeyTimes\[0\] must be an integer"):
@@ -421,7 +516,7 @@ def test_fbx_sample_key_times_require_json_integer():
 
 
 def test_fbx_native_curve_values_are_forbidden_in_canonical_animation():
-    validated_rig = validate_rig_document(rig())
+    validated_rig = validate_rig_document(make_fbx_rig())
     data = make_fbx_animation()
     data["sourceFormat"]["fbx"]["curves"] = [
         {

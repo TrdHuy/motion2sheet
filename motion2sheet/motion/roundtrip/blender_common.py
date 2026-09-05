@@ -300,7 +300,7 @@ def capture_animation_document(input_path: Path, armature: bpy.types.Object, act
 
 def import_source(input_path: Path) -> tuple[bpy.types.Object, bpy.types.Action]:
     clean_scene()
-    import_motion(input_path)
+    import_motion(input_path, update_bvh_scene_fps=input_path.suffix.lower() == ".bvh")
     armature = find_armature()
     action = activate_animation(armature)
     bpy.context.view_layer.update()
