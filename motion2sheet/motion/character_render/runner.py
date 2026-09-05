@@ -31,7 +31,7 @@ def parse_frames(value: str, animation: dict[str, Any]) -> list[int]:
     if not out: raise ValueError("--frames selected no frames")
     if len(set(out))!=len(out): raise ValueError("--frames contains duplicate frames")
     missing=[f for f in out if f not in aset]
-    if missing: raise ValueError(f"--frames contains frames outside Contract B: {missing}")
+    if missing: raise ValueError(f"--frames contains frames outside Source Animation: {missing}")
     return out
 
 def _background(value: str) -> dict[str, Any]:
