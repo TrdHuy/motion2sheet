@@ -10,7 +10,7 @@ from motion2sheet.motion.cli import parser
 from motion2sheet.motion.model_render import runner as runner_module
 from motion2sheet.motion.model_render.profile import load_camera_profile
 from motion2sheet.motion.model_render.rest import character_rest_fingerprint
-from motion2sheet.motion.model_render.root_motion import contract_root_motion, root_motion_difference
+from motion2sheet.motion.model_render.root_motion import source_animation_root_motion, root_motion_difference
 from motion2sheet.motion.model_render.runner import gif_frame_durations_ms, parse_frames
 
 
@@ -70,10 +70,10 @@ def test_public_cli_exposes_real_model_commands():
     assert render.sheet_columns == 8
 
 
-def test_parse_frames_preserves_contract_order():
+def test_parse_frames_preserves_source_animation_order():
     assert parse_frames("all", animation()) == list(range(1, 33))
     assert parse_frames("1,4-6,32", animation()) == [1, 4, 5, 6, 32]
-    with pytest.raises(ValueError, match="outside Contract B"):
+    with pytest.raises(ValueError, match="outside Source Animation"):
         parse_frames("33", animation())
 
 
@@ -166,7 +166,7 @@ def test_fbx_static_rest_export_detaches_action_before_export():
     assert "len(bpy.data.actions) != 1" in source
 
 
-def test_contract_root_motion_is_data_driven():
+def test_source_animation_root_motion_is_data_driven():
     rig = {"bones": [{"name": "Root", "parent": None}, {"name": "Child", "parent": "Root"}]}
     animation_doc = {
         "frames": [
@@ -174,7 +174,7 @@ def test_contract_root_motion_is_data_driven():
             {"frame": 9, "bones": {"Root": {"translation": [4.0, 6.0, 3.0]}}},
         ]
     }
-    metrics = contract_root_motion(rig, animation_doc)
+    metrics = source_animation_root_motion(rig, animation_doc)
     assert metrics["rootBone"] == "Root"
     assert metrics["rootTranslationStart"] == [1.0, 2.0, 3.0]
     assert metrics["rootTranslationEnd"] == [4.0, 6.0, 3.0]
@@ -183,7 +183,7 @@ def test_contract_root_motion_is_data_driven():
     assert metrics["rootDirection"] == pytest.approx([0.6, 0.8, 0.0])
 
 
-def test_root_motion_difference_requires_material_contract_difference():
+def test_root_motion_difference_requires_material_source_animation_difference():
     moving = {"rootDisplacement": 2.0}
     stationary = {"rootDisplacement": 0.02}
     assert root_motion_difference(moving, stationary)["pass"] is True
