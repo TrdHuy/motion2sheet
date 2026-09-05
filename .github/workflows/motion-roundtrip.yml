@@ -1,14 +1,6 @@
 name: Motion JSON Round-trip POC
 
 on:
-  pull_request:
-    paths:
-      - 'motion2sheet/motion/**'
-      - 'tests/motion/roundtrip/**'
-      - 'docs/motion-animation-json-roundtrip.md'
-      - 'sample/walk_mixamo.fbx'
-      - '.github/workflows/motion-roundtrip.yml'
-      - 'pyproject.toml'
   workflow_dispatch:
     inputs:
       command:
@@ -32,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.command || 'full' }}
+      MODE: ${{ inputs.command }}
       ROOT: build/motion_json_command/walk_mixamo
     steps:
       - uses: actions/checkout@v6
@@ -181,9 +173,8 @@ jobs:
             --output "$ROOT"
           python tests/motion/roundtrip/e2e/verify_roundtrip.py "$ROOT"
 
-      # Full mode is the pull-request acceptance path and the workflow_dispatch
-      # full path. It preserves the existing A/B/C fidelity proof and adds both
-      # standalone render public commands as first-class acceptance checks.
+      # Full mode remains available explicitly for the independent Motion JSON
+      # reconstruction/renderer proof; PR13 pull requests no longer auto-run it.
       - name: Extract canonical source-authority JSON twice
         if: env.MODE == 'full'
         run: |
