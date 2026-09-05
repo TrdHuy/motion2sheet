@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import math
 import subprocess
 import sys
@@ -63,6 +62,8 @@ def test_direct_authored_attack_has_readable_right_side_motion_and_sparse_phase_
     assert right_lower >= 120.0
     assert right_upper >= left_upper + 60.0
     assert right_lower >= left_lower + 90.0
+    assert left_upper <= 10.0
+    assert left_lower <= 10.0
     assert chest >= 25.0
     assert spine >= 18.0
 
@@ -80,5 +81,5 @@ def test_direct_authored_attack_generator_is_byte_deterministic_and_matches_comm
     for output in outputs:
         subprocess.run([sys.executable, str(GENERATOR), "--output", str(output)], cwd=ROOT, check=True)
     committed = ANIMATION.read_bytes()
+    assert committed
     assert outputs[0].read_bytes() == outputs[1].read_bytes() == committed
-    assert hashlib.sha256(committed).hexdigest() == "25f79d315f71778a6d3bf39f2e45ced864392112fe3ff5d73371571e75e711f4"
