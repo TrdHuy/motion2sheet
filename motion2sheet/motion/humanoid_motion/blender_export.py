@@ -128,7 +128,7 @@ def main() -> None:
         "version": 1,
         "animationId": document["id"],
         "canonicalSkeleton": CANONICAL_SKELETON_ID,
-        "sourceContract": "Contract B",
+        "sourceAuthority": "Motion JSON (Source Rig + Source Animation)",
         "sourceFbxRead": False,
         "sourceFrameRange": frames,
         "frameCount": len(frames),

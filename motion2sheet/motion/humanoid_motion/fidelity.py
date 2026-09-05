@@ -216,7 +216,7 @@ def compare_source_to_humanoid_motion(source_rig: dict[str, Any], source_animati
     try:
         animation = validate_animation(copy.deepcopy(humanoid_motion))
     except (KeyError, TypeError, ValueError) as exc:
-        return {"schema": "motion2sheet.humanoid-motion.source-fidelity", "version": 1, "pass": False, "independentPath": "pure-python Contract B hierarchy/TRS evaluation; no Humanoid Motion exporter or playback imports", "schemaValidation": {"pass": False, "error": str(exc)}, "failures": [f"Humanoid Motion schema validation failed: {exc}"]}
+        return {"schema": "motion2sheet.humanoid-motion.source-fidelity", "version": 1, "pass": False, "independentPath": "pure-python Motion JSON hierarchy/TRS evaluation; no Humanoid Motion exporter or playback imports", "schemaValidation": {"pass": False, "error": str(exc)}, "failures": [f"Humanoid Motion schema validation failed: {exc}"]}
 
     joints = mapping["joints"]
     _validate_source_hierarchy_mode(source_rig, joints)
@@ -225,9 +225,9 @@ def compare_source_to_humanoid_motion(source_rig: dict[str, Any], source_animati
     comparison_count = min(animation["frameCount"], len(frames))
     fps_error = abs(float(animation["fps"]) - float(source_animation["fps"]))
     if not frame_count_pass:
-        failures.append("frameCount does not match the Contract B source")
+        failures.append("frameCount does not match the Source Animation")
     if fps_error > FPS_TOLERANCE:
-        failures.append("FPS does not match the Contract B source")
+        failures.append("FPS does not match the Source Animation")
 
     identities = {bone["name"]: _identity_transform() for bone in source_rig["bones"]}
     rest_world = _world_matrices(source_rig, identities)
@@ -315,7 +315,7 @@ def compare_source_to_humanoid_motion(source_rig: dict[str, Any], source_animati
 
     return {
         "schema": "motion2sheet.humanoid-motion.source-fidelity", "version": 1, "pass": not failures,
-        "independentPath": "pure-python Contract B hierarchy/TRS evaluation; no Humanoid Motion exporter or playback imports",
+        "independentPath": "pure-python Motion JSON hierarchy/TRS evaluation; no Humanoid Motion exporter or playback imports",
         "schemaValidation": {"pass": True},
         "source": {"rigId": source_rig["id"], "animationId": source_animation["id"], "frameCount": source_animation["frameCount"], "fps": source_animation["fps"], "meanLegLengthSceneUnits": leg_length},
         "humanoidMotion": {"animationId": animation["id"], "frameCount": animation["frameCount"], "fps": animation["fps"]},

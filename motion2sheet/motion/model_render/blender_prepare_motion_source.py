@@ -320,7 +320,7 @@ def main() -> None:
     normalized_rig["sourceFormat"] = {"fbx": rig_fbx}
     normalized_rig = validate_rig_document(normalized_rig)
     if len(normalized_rig["bones"]) != len(parents):
-        raise RuntimeError("locked Contract B rig capture changed the normalized bone count")
+        raise RuntimeError("locked Motion JSON Source Rig capture changed the normalized bone count")
 
     # Strict existing Level-1 validation is the acceptance gate. No tolerance changes,
     # mappings, retarget solver, or first-pose substitution are permitted here.

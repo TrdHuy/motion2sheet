@@ -67,7 +67,7 @@ def add_model_render_subcommands(subparsers) -> None:
 
     render_parser = subparsers.add_parser(
         "render-model-animation",
-        help="Render an actual skinned model from model.glb + character rig + skin.json + Contract B animation",
+        help="Render an actual skinned model from model.glb + character rig + skin.json + Motion JSON Source Rig + Source Animation",
     )
     render_parser.add_argument("--model", required=True)
     render_parser.add_argument("--character-rig", required=True)

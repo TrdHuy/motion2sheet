@@ -19,22 +19,22 @@ def _argv() -> list[str]:
     return sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
 
 
-def _rename_frames_to_contract_ids(
+def _rename_frames_to_motion_ids(
     output: Path,
     source_frames: list[int],
-    contract_frames: list[int],
+    motion_frames: list[int],
 ) -> None:
-    if len(source_frames) != len(contract_frames):
+    if len(source_frames) != len(motion_frames):
         raise RuntimeError("source/reference frame mapping length mismatch")
     frame_dir = output / ".frames"
     staged: list[tuple[Path, Path]] = []
-    for index, (source_frame, contract_frame) in enumerate(zip(source_frames, contract_frames)):
+    for index, (source_frame, motion_frame) in enumerate(zip(source_frames, motion_frames)):
         source_path = frame_dir / f"frame_{source_frame:04d}.png"
         if not source_path.is_file():
             raise RuntimeError(f"source reference renderer did not produce mapped frame: {source_path}")
         temporary = frame_dir / f".m2s_remap_{index:04d}.png"
         source_path.replace(temporary)
-        staged.append((temporary, frame_dir / f"frame_{contract_frame:04d}.png"))
+        staged.append((temporary, frame_dir / f"frame_{motion_frame:04d}.png"))
     for temporary, target in staged:
         if target.exists():
             raise RuntimeError(f"source reference frame remap would overwrite an existing output: {target}")
@@ -62,11 +62,11 @@ def main() -> None:
 
     start, end = integer_action_range(action)
     available = set(range(start, end + 1))
-    contract_frames = [int(frame) for frame in request["selectedFrames"]]
-    if len(set(contract_frames)) != len(contract_frames):
-        raise RuntimeError("source reference Contract B frame ids must be unique")
+    motion_frames = [int(frame) for frame in request["selectedFrames"]]
+    if len(set(motion_frames)) != len(motion_frames):
+        raise RuntimeError("source reference Motion JSON frame ids must be unique")
     frame_offset = int(request.get("frameOffset", 0))
-    source_frames = [frame - frame_offset for frame in contract_frames]
+    source_frames = [frame - frame_offset for frame in motion_frames]
     if len(set(source_frames)) != len(source_frames):
         raise RuntimeError("source reference mapped source frame ids must be unique")
     missing = [frame for frame in source_frames if frame not in available]
@@ -85,7 +85,7 @@ def main() -> None:
     setup_camera_and_render(render_request, armature)
 
     output = Path(request["output"])
-    _rename_frames_to_contract_ids(output, source_frames, contract_frames)
+    _rename_frames_to_motion_ids(output, source_frames, motion_frames)
     report = {
         "schema": "motion2sheet.diagnostics.source-skinned-render",
         "version": 1,
@@ -96,10 +96,10 @@ def main() -> None:
         "rootBone": roots[0],
         "sourceFrameRange": [start, end],
         "sourceFrames": source_frames,
-        "contractFrames": contract_frames,
+        "motionFrames": motion_frames,
         "frameOffset": frame_offset,
-        "frameMapping": "sourceFrame = contractFrame - frameOffset",
-        "frameCount": len(contract_frames),
+        "frameMapping": "sourceFrame = motionFrame - frameOffset",
+        "frameCount": len(motion_frames),
         "fps": fps,
         "actualSkinnedMesh": True,
     }

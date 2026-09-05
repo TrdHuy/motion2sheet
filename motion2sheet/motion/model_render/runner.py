@@ -86,7 +86,7 @@ def parse_frames(value: str, animation: dict[str, Any]) -> list[int]:
         raise ValueError("--frames contains duplicate frames")
     missing = [frame for frame in selected if frame not in available_set]
     if missing:
-        raise ValueError(f"--frames contains frames outside Contract B: {missing}")
+        raise ValueError(f"--frames contains frames outside Source Animation: {missing}")
     return selected
 
 
@@ -261,7 +261,7 @@ def render_model_animation(
     if not skin_reconstruction.get("pass"):
         raise RuntimeError(f"skin reconstruction fidelity failed: {skin_reconstruction}")
     if not playback.get("pass"):
-        raise RuntimeError(f"Contract B playback fidelity failed: {playback}")
+        raise RuntimeError(f"Motion JSON playback fidelity failed: {playback}")
     report = {
         "schema": "motion2sheet.model-animation-render",
         "version": 1,

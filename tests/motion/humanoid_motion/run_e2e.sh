@@ -101,18 +101,18 @@ blender --background --factory-startup --python-exit-code 1 --python motion2shee
 blender --background --factory-startup --python-exit-code 1 --python motion2sheet/motion/model_render/blender_prepare_motion_source.py -- --input "$RUN_INPLACE_FBX" --output "$RUN_INPLACE_NORMALIZED" --report "$ROOT/diagnostics/run-inplace-normalization.json"
 for path in "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"; do test -s "$path"; done
 
-motion2sheet export-animation-json "$IDLE_NORMALIZED" --output "$ROOT/contract_b/idle"
-motion2sheet export-animation-json "$RUN_NORMALIZED" --output "$ROOT/contract_b/run"
-motion2sheet export-animation-json "$RUN_INPLACE_NORMALIZED" --output "$ROOT/contract_b/run-inplace"
+motion2sheet export-animation-json "$IDLE_NORMALIZED" --output "$ROOT/motion_json/idle"
+motion2sheet export-animation-json "$RUN_NORMALIZED" --output "$ROOT/motion_json/run"
+motion2sheet export-animation-json "$RUN_INPLACE_NORMALIZED" --output "$ROOT/motion_json/run-inplace"
 for clip in idle run run-inplace; do
-  test -s "$ROOT/contract_b/$clip/rig.json"
-  test -s "$ROOT/contract_b/$clip/animation.json"
+  test -s "$ROOT/motion_json/$clip/rig.json"
+  test -s "$ROOT/motion_json/$clip/animation.json"
 done
 
 for clip in idle run run-inplace; do
   motion2sheet export-humanoid-animation \
-    --source-rig "$ROOT/contract_b/$clip/rig.json" \
-    --source-animation "$ROOT/contract_b/$clip/animation.json" \
+    --source-rig "$ROOT/motion_json/$clip/rig.json" \
+    --source-animation "$ROOT/motion_json/$clip/animation.json" \
     --mapping "$MAPPING" --id "$clip" --loop \
     --output "$ROOT/animations/$clip"
 done
@@ -120,8 +120,8 @@ sha256sum "$ROOT"/animations/*/animation.json | tee "$ROOT/diagnostics/humanoid-
 
 for clip in idle run run-inplace; do
   motion2sheet verify-humanoid-animation-fidelity \
-    --source-rig "$ROOT/contract_b/$clip/rig.json" \
-    --source-animation "$ROOT/contract_b/$clip/animation.json" \
+    --source-rig "$ROOT/motion_json/$clip/rig.json" \
+    --source-animation "$ROOT/motion_json/$clip/animation.json" \
     --source-mapping "$MAPPING" \
     --animation "$ROOT/animations/$clip/animation.json" \
     --output "$ROOT/animations/$clip/diagnostics/source_humanoid_motion_fidelity.json"
@@ -130,18 +130,18 @@ done
 for clip in idle run run-inplace; do
   deterministic="$TMP_ROOT/humanoid-motion-determinism-$clip"
   motion2sheet export-humanoid-animation \
-    --source-rig "$ROOT/contract_b/$clip/rig.json" \
-    --source-animation "$ROOT/contract_b/$clip/animation.json" \
+    --source-rig "$ROOT/motion_json/$clip/rig.json" \
+    --source-animation "$ROOT/motion_json/$clip/animation.json" \
     --mapping "$MAPPING" --id "$clip" --loop --output "$deterministic"
   cmp "$ROOT/animations/$clip/animation.json" "$deterministic/animation.json"
   rm -rf "$deterministic"
 done
 
-# Standalone playback proof: source FBX, normalized FBX and Contract B adapter
-# are deliberately removed before any Humanoid Motion render occurs.
+# Standalone playback proof: source FBX, normalized FBX and Motion JSON source
+# authorities are deliberately removed before any Humanoid Motion render occurs.
 rm -f "$CHARACTER_A_FBX" "$MARIA_FBX" "$WARROK_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"
-rm -rf "$ROOT/contract_b"
-for path in "$CHARACTER_A_FBX" "$MARIA_FBX" "$WARROK_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED" "$ROOT/contract_b"; do
+rm -rf "$ROOT/motion_json"
+for path in "$CHARACTER_A_FBX" "$MARIA_FBX" "$WARROK_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED" "$ROOT/motion_json"; do
   test ! -e "$path"
 done
 
@@ -160,7 +160,7 @@ for character in character-a maria warrok; do
 done
 
 python tests/motion/humanoid_motion/verify_local_acceptance.py --root "$ROOT" --output "$ROOT/acceptance.json"
-test ! -e "$ROOT/contract_b"
+test ! -e "$ROOT/motion_json"
 python - <<'PY'
 import json
 import os

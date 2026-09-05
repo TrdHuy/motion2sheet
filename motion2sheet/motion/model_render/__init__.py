@@ -1,4 +1,4 @@
-"""Real model + rig + skin Contract B rendering.
+"""Real model + rig + skin Motion JSON rendering.
 
 Keep package import Blender-safe: Blender scripts import submodules from this
 package using Blender's bundled Python, which does not include Pillow. Public

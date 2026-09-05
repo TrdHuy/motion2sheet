@@ -89,8 +89,8 @@ def main() -> None:
 
     reference_rig = copy.deepcopy(animation_rig)
     reference_rig["armatureObject"] = copy.deepcopy(reference_rig["armatureObject"])
-    reference_rig["armatureObject"]["name"] = "ContractBAnimationReference"
-    reference_rig["armatureObject"]["dataName"] = "ContractBAnimationReference"
+    reference_rig["armatureObject"]["name"] = "SourceAnimationReference"
+    reference_rig["armatureObject"]["dataName"] = "SourceAnimationReference"
     reference_armature = build_armature(reference_rig)
     # Keep the oracle out of renders, but do not hide it from the viewport/depsgraph:
     # playback_diagnostics changes frames and requires the reference pose to evaluate.
@@ -108,7 +108,7 @@ def main() -> None:
     playback = playback_diagnostics(reference_armature, character_armature, animation, root_bone)
     _write(diagnostics / "playback.json", playback)
     if not playback["pass"]:
-        raise RuntimeError(f"Contract B Level-1 playback fidelity failed: {playback}")
+        raise RuntimeError(f"Motion JSON Level-1 playback fidelity failed: {playback}")
 
     setup_camera_and_render(request, character_armature)
     bpy.ops.wm.save_as_mainfile(filepath=str(output / "source.blend"))

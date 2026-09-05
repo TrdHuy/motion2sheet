@@ -117,7 +117,7 @@ def verify_humanoid_animation_fidelity(*, source_rig_path: Path, source_animatio
     try:
         report = compare_source_to_humanoid_motion(source_rig, source_animation, mapping, humanoid_motion)
     except Exception as exc:
-        report = {"schema": "motion2sheet.humanoid-motion.source-fidelity", "version": 1, "pass": False, "independentPath": "pure-python Contract B hierarchy/TRS evaluation; no Humanoid Motion exporter or playback imports", "failures": [f"independent fidelity evaluation failed: {exc}"]}
+        report = {"schema": "motion2sheet.humanoid-motion.source-fidelity", "version": 1, "pass": False, "independentPath": "pure-python Motion JSON hierarchy/TRS evaluation; no Humanoid Motion exporter or playback imports", "failures": [f"independent fidelity evaluation failed: {exc}"]}
     report["authorities"] = {"sourceRigSha256": sha256(source_rig_path), "sourceAnimationSha256": sha256(source_animation_path), "sourceMappingSha256": sha256(mapping_path), "humanoidMotionAnimationSha256": sha256(animation_path)}
     output = output.resolve(); _write_json(output, report)
     if not report["pass"]:

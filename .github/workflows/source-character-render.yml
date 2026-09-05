@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: Contract B direct character render proof
+        description: Motion JSON direct character render proof
         required: true
         default: render-character-and-verify
         type: choice
@@ -55,16 +55,16 @@ jobs:
       - name: Setup Blender 4.5 LTS
         uses: bradyajohnston/setup-blender@v5
         with: {version: '4.5.12'}
-      - name: Existing PR 11 export creates canonical Contract B
+      - name: Existing PR 11 export creates canonical Motion JSON
         run: |
           set -euo pipefail
           mkdir -p "$ROOT"
-          motion2sheet export-animation-json sample/walk_mixamo.fbx --output "$ROOT/contract-b"
-          test -f "$ROOT/contract-b/rig.json"
-          test -f "$ROOT/contract-b/animation.json"
+          motion2sheet export-animation-json sample/walk_mixamo.fbx --output "$ROOT/motion-json"
+          test -f "$ROOT/motion-json/rig.json"
+          test -f "$ROOT/motion-json/animation.json"
       - name: Existing PR 11 renderer creates source reference
         run: |
-          motion2sheet render-animation-json --rig "$ROOT/contract-b/rig.json" --animation "$ROOT/contract-b/animation.json" --renderer blender --gif --output "$ROOT/source-json"
+          motion2sheet render-animation-json --rig "$ROOT/motion-json/rig.json" --animation "$ROOT/motion-json/animation.json" --renderer blender --gif --output "$ROOT/source-json"
           test -f "$ROOT/source-json/pose_sheet.png"
           test -f "$ROOT/source-json/preview.gif"
           test -f "$ROOT/source-json/render.json"
@@ -75,8 +75,8 @@ jobs:
       - name: New motion2sheet command renders compatible character from JSON only
         run: |
           motion2sheet render-character-animation \
-            --rig "$ROOT/contract-b/rig.json" \
-            --animation "$ROOT/contract-b/animation.json" \
+            --rig "$ROOT/motion-json/rig.json" \
+            --animation "$ROOT/motion-json/animation.json" \
             --character-profile "$CHARACTER" \
             --camera-profile "$CAMERA" \
             --sheet-columns 8 \
@@ -90,7 +90,7 @@ jobs:
           test -f "$ROOT/character-render/render.json"
           test -f "$ROOT/character-render/source.blend"
           test -f "$ROOT/character-render/diagnostics/playback.json"
-      - name: Verify direct Contract B playback semantics and GIF timing
+      - name: Verify direct Motion JSON playback semantics and GIF timing
         if: matrix.mode == 'render-character-and-verify'
         run: |
           python - <<'PY'
@@ -139,7 +139,7 @@ jobs:
           w,h=character.size
           out=Image.new("RGBA",(w*2,h+48),(255,255,255,255))
           out.alpha_composite(source_scaled,(0,48)); out.alpha_composite(character,(w,48)); draw=ImageDraw.Draw(out)
-          draw.text((12,14),"Contract B source skeleton",fill=(0,0,0,255)); draw.text((w+12,14),"Direct Mixamo-compatible character",fill=(0,0,0,255)); out.save(root/"visual-comparison.png")
+          draw.text((12,14),"Motion JSON source skeleton",fill=(0,0,0,255)); draw.text((w+12,14),"Direct Mixamo-compatible character",fill=(0,0,0,255)); out.save(root/"visual-comparison.png")
           source.close(); source_scaled.close(); character.close(); out.close()
 
           source_gif=Image.open(root/"source-json/preview.gif")
@@ -152,7 +152,7 @@ jobs:
               fw,fh=right.size
               frame=Image.new("RGBA",(fw*2,fh+36),(255,255,255,255))
               frame.alpha_composite(left,(0,36)); frame.alpha_composite(right,(fw,36)); d=ImageDraw.Draw(frame)
-              d.text((8,10),"Contract B source",fill=(0,0,0,255)); d.text((fw+8,10),"Character render",fill=(0,0,0,255))
+              d.text((8,10),"Motion JSON source",fill=(0,0,0,255)); d.text((fw+8,10),"Character render",fill=(0,0,0,255))
               frames.append(frame); left.close(); right.close()
           durations=report["gifTiming"]["frameDurationsMs"]
           frames[0].save(root/"visual-comparison.gif",save_all=True,append_images=frames[1:],duration=durations,loop=0,disposal=2,optimize=False)

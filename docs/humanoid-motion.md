@@ -49,22 +49,22 @@ local axes or source/target bone names.
 
 ## Independent fidelity oracle
 
-Before Contract B or source FBX files are deleted, run:
+Before Motion JSON or source FBX files are deleted, run:
 
 ```bash
 motion2sheet verify-humanoid-animation-fidelity \
-  --source-rig build/motion/humanoid-motion/contract_b/run/rig.json \
-  --source-animation build/motion/humanoid-motion/contract_b/run/animation.json \
+  --source-rig build/motion/humanoid-motion/motion_json/run/rig.json \
+  --source-animation build/motion/humanoid-motion/motion_json/run/animation.json \
   --source-mapping profiles/humanoid_motion/mixamo_humanoid_v1.json \
   --animation build/motion/humanoid-motion/animations/run/animation.json \
   --output build/motion/humanoid-motion/animations/run/diagnostics/source_humanoid_motion_fidelity.json
 ```
 
-The oracle evaluates Contract B hierarchy/rest/matrix-basis transforms in a
-separate pure-Python numeric path. It does not call the Humanoid Motion exporter,
-Blender playback, or their math helpers. It compares all frames, timing, Root
-yaw, all 21 semantic rotations, Hips residual translation, left/right identity,
-Root invariants and quaternion validity/continuity.
+The oracle evaluates the Source Rig + Source Animation hierarchy/rest/matrix-basis
+transforms in a separate pure-Python numeric path. It does not call the Humanoid
+Motion exporter, Blender playback, or their math helpers. It compares all frames,
+timing, Root yaw, all 21 semantic rotations, Hips residual translation,
+left/right identity, Root invariants and quaternion validity/continuity.
 
 Tolerances are `1e-9` for FPS, `0.005` degrees for rotations, `1e-5` for Hips
 translation and `1e-8` for Root translation.
@@ -101,12 +101,12 @@ proof runs.
 
 ## Export and playback
 
-Export one reusable Humanoid Motion authority from Contract B:
+Export one reusable Humanoid Motion authority from Motion JSON:
 
 ```bash
 motion2sheet export-humanoid-animation \
-  --source-rig build/motion/humanoid-motion/contract_b/run/rig.json \
-  --source-animation build/motion/humanoid-motion/contract_b/run/animation.json \
+  --source-rig build/motion/humanoid-motion/motion_json/run/rig.json \
+  --source-animation build/motion/humanoid-motion/motion_json/run/animation.json \
   --mapping profiles/humanoid_motion/mixamo_humanoid_v1.json \
   --id run --loop --output build/motion/humanoid-motion/animations/run
 ```
