@@ -255,10 +255,15 @@ def test_motion_cli_change_selects_parser_unit_without_motion_e2e():
     assert not any(manifest["test_targets"][name]["kind"] == "motion-e2e" for name in targets)
 
 
-def test_character_render_change_is_classified_without_humanoid_fanout():
-    components, targets = resolve("motion2sheet/motion/character_render/runner.py")
-    assert components == {"motion-character-render"}
-    assert targets == {"motion-character-render-unit"}
+def test_retired_character_render_paths_do_not_expand_main_ci():
+    for path in (
+        "motion2sheet/motion/character_render/runner.py",
+        "profiles/characters/swordsman_mixamo.json5",
+        "tests/motion/character_render/test_character_render.py",
+    ):
+        components, targets = resolve(path)
+        assert components == set(), path
+        assert targets == set(), path
 
 
 def test_unknown_path_still_fails_safe_to_full_ci():

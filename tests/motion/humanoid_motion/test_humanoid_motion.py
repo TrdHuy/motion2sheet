@@ -187,11 +187,10 @@ def test_root_motion_checks_every_sample_and_sample_selection_is_data_driven():
         parse_samples("3", 3)
 
 
-def test_mapping_profiles_contain_no_animation_authority():
+def test_mapping_profile_contains_no_animation_authority():
     root = Path(__file__).parents[3]
-    for name in ("mixamo_humanoid_v1.json", "derived_humanoid_v1.json"):
-        data = json.loads((root / "profiles" / "humanoid_motion" / name).read_text())
-        assert set(data) == {"schema", "version", "id", "canonicalSkeleton", "joints"}
+    data = json.loads((root / "profiles" / "humanoid_motion" / "mixamo_humanoid_v1.json").read_text())
+    assert set(data) == {"schema", "version", "id", "canonicalSkeleton", "joints"}
 
 
 def test_release_fixture_manifest_is_immutable_and_records_independent_targets():

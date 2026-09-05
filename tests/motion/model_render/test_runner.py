@@ -7,15 +7,9 @@ from pathlib import Path
 import pytest
 
 from motion2sheet.motion.cli import parser
-from motion2sheet.motion.model_render import runner as runner_module
 from motion2sheet.motion.model_render.profile import load_camera_profile
 from motion2sheet.motion.model_render.rest import character_rest_fingerprint
-from motion2sheet.motion.model_render.root_motion import source_animation_root_motion, root_motion_difference
-from motion2sheet.motion.model_render.runner import gif_frame_durations_ms, parse_frames
-
-
-def animation():
-    return {"frames": [{"frame": frame} for frame in range(1, 33)]}
+from motion2sheet.motion.model_render.runner import gif_frame_durations_ms
 
 
 def _rest_rig():
@@ -51,30 +45,13 @@ def _rest_rig():
     }
 
 
-def test_public_cli_exposes_real_model_commands():
+def test_public_cli_keeps_export_character_without_direct_source_playback():
     root = parser()
+    choices = root._subparsers._group_actions[0].choices
     export = root.parse_args(["export-character", "character.fbx", "--output", "build/character"])
     assert export.command == "export-character"
-    render = root.parse_args([
-        "render-model-animation",
-        "--model", "model.glb",
-        "--character-rig", "character-rig.json",
-        "--skin", "skin.json",
-        "--animation-rig", "animation-rig.json",
-        "--animation", "animation.json",
-        "--camera-profile", "camera.json5",
-        "--output", "build/render",
-    ])
-    assert render.command == "render-model-animation"
-    assert render.canvas == (320, 320)
-    assert render.sheet_columns == 8
-
-
-def test_parse_frames_preserves_source_animation_order():
-    assert parse_frames("all", animation()) == list(range(1, 33))
-    assert parse_frames("1,4-6,32", animation()) == [1, 4, 5, 6, 32]
-    with pytest.raises(ValueError, match="outside Source Animation"):
-        parse_frames("33", animation())
+    assert "render-model-animation" not in choices
+    assert "render-character-animation" not in choices
 
 
 def test_gif_timing_uses_cumulative_centisecond_quantization():
@@ -164,97 +141,3 @@ def test_fbx_static_rest_export_detaches_action_before_export():
     assert "pose_bone.matrix_basis = Matrix.Identity(4)" in source
     assert "bake_anim_use_all_actions=True" in source
     assert "len(bpy.data.actions) != 1" in source
-
-
-def test_source_animation_root_motion_is_data_driven():
-    rig = {"bones": [{"name": "Root", "parent": None}, {"name": "Child", "parent": "Root"}]}
-    animation_doc = {
-        "frames": [
-            {"frame": 4, "bones": {"Root": {"translation": [1.0, 2.0, 3.0]}}},
-            {"frame": 9, "bones": {"Root": {"translation": [4.0, 6.0, 3.0]}}},
-        ]
-    }
-    metrics = source_animation_root_motion(rig, animation_doc)
-    assert metrics["rootBone"] == "Root"
-    assert metrics["rootTranslationStart"] == [1.0, 2.0, 3.0]
-    assert metrics["rootTranslationEnd"] == [4.0, 6.0, 3.0]
-    assert metrics["rootTranslationDelta"] == [3.0, 4.0, 0.0]
-    assert metrics["rootDisplacement"] == 5.0
-    assert metrics["rootDirection"] == pytest.approx([0.6, 0.8, 0.0])
-
-
-def test_root_motion_difference_requires_material_source_animation_difference():
-    moving = {"rootDisplacement": 2.0}
-    stationary = {"rootDisplacement": 0.02}
-    assert root_motion_difference(moving, stationary)["pass"] is True
-    almost_same = {"rootDisplacement": 1.99}
-    assert root_motion_difference(moving, almost_same)["pass"] is False
-
-
-def test_render_level1_preflight_persists_complete_diagnostic_before_strict_failure(tmp_path: Path, monkeypatch):
-    diagnostic = {
-        "pass": False,
-        "missingBones": [],
-        "extraBones": [],
-        "parentMismatches": [],
-        "coordinateMismatches": [],
-        "restBasisMismatchCount": 43,
-        "maxRestBasisErrorDegrees": 45.24519733854477,
-        "worstRestBasisBone": "mixamorig:RightHandPinky1",
-        "restBasisToleranceDegrees": 0.001,
-        "retargeting": False,
-        "fuzzyMapping": False,
-    }
-    calls = []
-
-    def diagnose(animation_rig, character_rig):
-        calls.append("diagnose")
-        return diagnostic
-
-    def strict(animation_rig, character_rig):
-        calls.append("strict")
-        raise ValueError("Level-1 rest-basis mismatch for mixamorig:LeftArm")
-
-    monkeypatch.setattr(runner_module, "diagnose_level1_rig_compatibility", diagnose)
-    monkeypatch.setattr(runner_module, "validate_level1_rig_compatibility", strict)
-
-    with pytest.raises(ValueError, match=r"restBasisMismatchCount.*43"):
-        runner_module._validate_and_record_level1_compatibility({}, {}, tmp_path)
-
-    assert calls == ["diagnose", "strict"]
-    assert json.loads((tmp_path / "diagnostics" / "rig_compatibility.json").read_text()) == diagnostic
-
-
-def test_render_level1_preflight_still_uses_strict_validator_on_pass(tmp_path: Path, monkeypatch):
-    diagnostic = {
-        "pass": True,
-        "missingBones": [],
-        "extraBones": [],
-        "parentMismatches": [],
-        "coordinateMismatches": [],
-        "restBasisMismatchCount": 0,
-        "maxRestBasisErrorDegrees": 0.0003958822364171372,
-        "worstRestBasisBone": "mixamorig:RightShoulder",
-        "restBasisToleranceDegrees": 0.001,
-        "retargeting": False,
-        "fuzzyMapping": False,
-    }
-    strict_report = {**diagnostic, "level": 1, "boneCount": 65}
-    calls = []
-
-    def diagnose(animation_rig, character_rig):
-        calls.append("diagnose")
-        return diagnostic
-
-    def strict(animation_rig, character_rig):
-        calls.append("strict")
-        return strict_report
-
-    monkeypatch.setattr(runner_module, "diagnose_level1_rig_compatibility", diagnose)
-    monkeypatch.setattr(runner_module, "validate_level1_rig_compatibility", strict)
-
-    result = runner_module._validate_and_record_level1_compatibility({}, {}, tmp_path)
-
-    assert result == strict_report
-    assert calls == ["diagnose", "strict"]
-    assert json.loads((tmp_path / "diagnostics" / "rig_compatibility.json").read_text()) == diagnostic
