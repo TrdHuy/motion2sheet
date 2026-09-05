@@ -23,7 +23,7 @@ jobs:
       RELEASE_BASE: https://github.com/TrdHuy/motion2sheet/releases/download/e2e_gh_action_asset
       WALK_SHA256: 1e05bcef7c030dce1be09a38a6e3d2f38d1f9bc71396584876ab1a3141005c02
       WALK_SIZE: '41940608'
-      IDLE_SHA256: 3738c0c5a4c33e36c30f59ea3393a4ee612eef89542157ff59963ad49a7b72
+      IDLE_SHA256: 3738c0c5a1a4c33e36c30f59ea3393a4ee612eef89542157ff59963ad49a7b72
       IDLE_SIZE: '552400'
       RUN_SHA256: a0ddd67d5e72dc657a6445d06af3d17f8ba6a15e61b19224d4c63f897ac0e91b
       RUN_SIZE: '333840'
