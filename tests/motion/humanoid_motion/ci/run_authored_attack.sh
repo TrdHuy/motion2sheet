@@ -124,6 +124,7 @@ motion2sheet render-humanoid-animation \
 ANIMATION_SHA_AFTER="$(sha256sum "$ROOT/animation.json" | awk '{print $1}')"
 test "$ANIMATION_SHA_BEFORE" = "$ANIMATION_SHA_AFTER"
 printf '%s  before-render\n%s  after-render\n' "$ANIMATION_SHA_BEFORE" "$ANIMATION_SHA_AFTER" > "$ROOT/diagnostics/render-animation-sha256.txt"
+rm -f "$ROOT/render/runtime.blend"
 
 python tests/motion/humanoid_motion/ci/verify_authored_attack.py \
   --animation "$ROOT/animation.json" \
@@ -142,5 +143,6 @@ test -s "$ROOT/render/preview.gif"
 test -s "$ROOT/render/render.json"
 test -d "$ROOT/render/diagnostics"
 test -s "$ROOT/acceptance.json"
+test ! -e "$ROOT/render/runtime.blend"
 
 echo "Direct-authored Humanoid attack PASS: $ROOT"
