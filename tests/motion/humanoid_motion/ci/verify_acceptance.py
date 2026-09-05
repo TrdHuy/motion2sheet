@@ -9,9 +9,21 @@ from typing import Any
 
 CHARACTERS = ("character-a", "maria", "warrok")
 CLIPS = ("idle", "run", "run-inplace")
+SMOKE_CELLS = {
+    ("character-a", "idle"),
+    ("character-a", "run"),
+    ("character-a", "run-inplace"),
+    ("maria", "run"),
+    ("warrok", "run"),
+}
+FULL_CELLS = {(character, clip) for character in CHARACTERS for clip in CLIPS}
 ROTATION_TOLERANCE_DEGREES = 0.005
 TRANSLATION_TOLERANCE = 1e-5
 ROOT_TOLERANCE = 1e-8
+MAX_SAMPLES_PER_CELL = 8
+EXPECTED_OUTPUT_FPS = 8.0
+EXPECTED_CANVAS = [160, 160]
+EXPECTED_RENDER_SAMPLES = 1
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -73,15 +85,43 @@ def _run_equivalence(run: dict[str, Any], inplace: dict[str, Any]) -> dict[str, 
     }
 
 
+def _validate_sparse_samples(character: str, clip: str, animation: dict[str, Any], report: dict[str, Any], request: dict[str, Any], failures: list[str]) -> None:
+    selected = report["renderedSamples"]
+    frame_count = animation["frameCount"]
+    expected_count = min(frame_count, MAX_SAMPLES_PER_CELL)
+    if len(selected) != expected_count:
+        failures.append(f"{character}/{clip}: sparse render count {len(selected)} != {expected_count}")
+    if selected != sorted(set(selected)):
+        failures.append(f"{character}/{clip}: rendered samples are not unique ascending")
+    if selected and selected[0] != 0:
+        failures.append(f"{character}/{clip}: sparse render does not include first sample")
+    if selected and selected[-1] != frame_count - 1:
+        failures.append(f"{character}/{clip}: sparse render does not include last sample")
+    if request.get("selectedSamples") != selected:
+        failures.append(f"{character}/{clip}: render request/report sample mismatch")
+    if report.get("outputFps") != EXPECTED_OUTPUT_FPS:
+        failures.append(f"{character}/{clip}: outputFps must be {EXPECTED_OUTPUT_FPS:g}")
+    if report.get("fps") != animation["fps"]:
+        failures.append(f"{character}/{clip}: canonical animation FPS changed")
+    if report.get("renderSamples") != EXPECTED_RENDER_SAMPLES or request.get("renderSamples") != EXPECTED_RENDER_SAMPLES:
+        failures.append(f"{character}/{clip}: CI render samples must be {EXPECTED_RENDER_SAMPLES}")
+    if report.get("layout", {}).get("cellSize") != EXPECTED_CANVAS or request.get("canvas") != EXPECTED_CANVAS:
+        failures.append(f"{character}/{clip}: CI canvas must be 160x160")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default="build/motion/humanoid-motion")
     parser.add_argument("--output", default="build/motion/humanoid-motion/acceptance.json")
+    parser.add_argument("--mode", choices=("smoke", "full"), default="full")
     args = parser.parse_args()
     root = Path(args.root).resolve()
+    expected_cells = SMOKE_CELLS if args.mode == "smoke" else FULL_CELLS
     failures: list[str] = []
     results: dict[str, Any] = {}
     character_ids: dict[str, str] = {}
+    rendered_visual_samples = 0
+    visual_matrix = {character: {clip: (character, clip) in expected_cells for clip in CLIPS} for character in CHARACTERS}
 
     for clip in CLIPS:
         animation_path = (root / "animations" / clip / "animation.json").resolve()
@@ -96,6 +136,8 @@ def main() -> None:
 
         character_rows = {}
         for character in CHARACTERS:
+            if (character, clip) not in expected_cells:
+                continue
             render_dir = root / "renders" / character / clip
             report = _read(render_dir / "render.json")
             request = _read(render_dir / "diagnostics" / "render_request.json")
@@ -107,12 +149,14 @@ def main() -> None:
             hashes = (report["animationSha256Before"], report["animationSha256After"], request["animationSha256"])
             if any(value != animation_sha for value in hashes):
                 failures.append(f"{character}/{clip}: animation SHA mismatch")
+            if report.get("animationMutated") is not False:
+                failures.append(f"{character}/{clip}: animation mutation flag is not false")
             if Path(request["animationPath"]).resolve() != animation_path:
                 failures.append(f"{character}/{clip}: did not read the shared Humanoid Motion path")
             if report["cameraFollowsRoot"] or request["camera"].get("followRoot"):
                 failures.append(f"{character}/{clip}: camera followed Hips and could mask locomotion")
-            if report["renderedSamples"] != list(range(animation["frameCount"])):
-                failures.append(f"{character}/{clip}: did not render every Humanoid Motion frame")
+            _validate_sparse_samples(character, clip, animation, report, request, failures)
+            rendered_visual_samples += len(report["renderedSamples"])
             if not playback["pass"] or not playback["leftRightIdentity"] or not playback["nanInfCheck"]:
                 failures.append(f"{character}/{clip}: playback gate failed")
             if not model["pass"] or model["vertexCount"] <= 0 or not skin["pass"]:
@@ -128,24 +172,45 @@ def main() -> None:
                     failures.append(f"{character}/{clip}: missing {relative}")
             character_ids[character] = report["characterId"]
             character_rows[character] = {
-                "characterId": report["characterId"], "mappingId": report["mappingId"], "animationPath": request["animationPath"],
-                "animationSha256Before": hashes[0], "animationSha256After": hashes[1], "mappedJointCount": mapping["mappedJointCount"],
-                "leftRightIdentity": mapping["leftRightVerification"]["pass"], "maxSemanticRotationErrorDegrees": playback["maxSemanticRotationErrorDegrees"],
+                "characterId": report["characterId"],
+                "mappingId": report["mappingId"],
+                "animationPath": request["animationPath"],
+                "animationSha256Before": hashes[0],
+                "animationSha256After": hashes[1],
+                "canonicalFps": report["fps"],
+                "outputFps": report["outputFps"],
+                "renderedSamples": report["renderedSamples"],
+                "renderSamples": report["renderSamples"],
+                "mappedJointCount": mapping["mappedJointCount"],
+                "leftRightIdentity": mapping["leftRightVerification"]["pass"],
+                "maxSemanticRotationErrorDegrees": playback["maxSemanticRotationErrorDegrees"],
                 "targetMeanLegLengthSceneUnits": retarget["targetMeanLegLengthSceneUnits"],
                 "actualSkinnedMesh": {"meshCount": model["meshCount"], "vertexCount": model["vertexCount"]},
-                "poseSheet": str((render_dir / "pose_sheet.png").resolve()), "previewGif": str((render_dir / "preview.gif").resolve()), "diagnostics": str((render_dir / "diagnostics").resolve()),
+                "poseSheet": str((render_dir / "pose_sheet.png").resolve()),
+                "previewGif": str((render_dir / "preview.gif").resolve()),
+                "diagnostics": str((render_dir / "diagnostics").resolve()),
             }
 
         same_sha = len({animation_sha, *(row["animationSha256Before"] for row in character_rows.values()), *(row["animationSha256After"] for row in character_rows.values())}) == 1
         if not same_sha:
             failures.append(f"{clip}: same exact animation authority proof failed")
         results[clip] = {
-            "animation": {"path": str(animation_path), "sha256": animation_sha, "schema": animation["schema"], "fps": animation["fps"], "frameCount": animation["frameCount"]},
-            "rootMotion": export["rootMotion"], "fidelity": fidelity, "characters": character_rows, "sameExactAnimationAuthority": same_sha,
+            "animation": {
+                "path": str(animation_path),
+                "sha256": animation_sha,
+                "schema": animation["schema"],
+                "durationSeconds": animation["durationSeconds"],
+                "fps": animation["fps"],
+                "frameCount": animation["frameCount"],
+            },
+            "rootMotion": export["rootMotion"],
+            "fidelity": fidelity,
+            "characters": character_rows,
+            "sameExactAnimationAuthority": same_sha,
         }
 
-    if len(set(character_ids.values())) != len(CHARACTERS):
-        failures.append(f"independent targets do not have distinct character IDs: {character_ids}")
+    if set(character_ids) != set(CHARACTERS) or len(set(character_ids.values())) != len(CHARACTERS):
+        failures.append(f"independent targets do not have three distinct character IDs: {character_ids}")
     if not results["run"]["fidelity"]["locomotionStripping"]["sourceHadPlanarLocomotion"]:
         failures.append("run: source locomotion was not detected")
     if results["run"]["fidelity"]["locomotionStripping"]["actualHipsVerticalRange"] <= 1e-4:
@@ -155,13 +220,27 @@ def main() -> None:
     equivalence = _run_equivalence(_read(root / "animations" / "run" / "animation.json"), _read(root / "animations" / "run-inplace" / "animation.json"))
     failures.extend(f"canonical locomotion equivalence: {failure}" for failure in equivalence["failures"])
 
+    expected_visual_samples_upper_bound = len(expected_cells) * MAX_SAMPLES_PER_CELL
+    if rendered_visual_samples > expected_visual_samples_upper_bound:
+        failures.append(
+            f"visual raster workload {rendered_visual_samples} exceeds sparse upper bound {expected_visual_samples_upper_bound}"
+        )
+
     report = {
         "schema": "motion2sheet.humanoid-motion.local-acceptance",
         "version": 1,
         "pass": not failures,
-        "phase": "in-place-three-independent-real-targets",
+        "phase": "in-place-three-independent-real-targets-sparse-visual-proof",
+        "mode": args.mode,
         "independentCharacters": list(CHARACTERS),
         "derivedCharacterBCountedAsIndependent": False,
+        "expectedVisualCellCount": len(expected_cells),
+        "renderedVisualSampleCount": rendered_visual_samples,
+        "maxSamplesPerCell": MAX_SAMPLES_PER_CELL,
+        "outputFps": EXPECTED_OUTPUT_FPS,
+        "canvas": EXPECTED_CANVAS,
+        "renderSamples": EXPECTED_RENDER_SAMPLES,
+        "visualMatrix": visual_matrix,
         "failures": failures,
         "proof": results,
         "runVsRunInplaceCanonicalEquivalence": equivalence,
@@ -175,7 +254,7 @@ def main() -> None:
     output.write_text(json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
     if failures:
         raise SystemExit("Humanoid Motion local acceptance FAIL: " + "; ".join(failures))
-    print(f"Humanoid Motion local acceptance PASS -> {output}")
+    print(f"Humanoid Motion {args.mode} acceptance PASS -> {output}")
 
 
 if __name__ == "__main__":

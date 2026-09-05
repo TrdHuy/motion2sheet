@@ -1,23 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 cd "$REPO_ROOT"
 
 ROOT="${1:-build/motion/humanoid-motion}"
+MODE="${2:-full}"
 FIXTURES="tests/motion/humanoid_motion/fixtures/release_assets.json"
 MAPPING="profiles/humanoid_motion/mixamo_humanoid_v1.json"
 CAMERA="profiles/cameras/front_humanoid_motion.json5"
-CANVAS="224x224"
+CANVAS="160x160"
+SAMPLE_COUNT="8"
+OUTPUT_FPS="8"
+RENDER_SAMPLES="1"
 TMP_PARENT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 TMP_ROOT="$TMP_PARENT/motion2sheet-humanoid-motion-e2e-$$"
 mkdir -p "$TMP_ROOT"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
-export ROOT FIXTURES MAPPING
+case "$MODE" in
+  smoke|full) ;;
+  *) echo "Humanoid Motion mode must be smoke or full: $MODE" >&2; exit 2 ;;
+esac
+
+export ROOT FIXTURES MAPPING MODE
 rm -rf "$ROOT"
 mkdir -p "$ROOT/diagnostics"
 cp "$FIXTURES" "$ROOT/diagnostics/release_assets.json"
+printf '%s\n' "$MODE" > "$ROOT/diagnostics/mode.txt"
 
 # Humanoid Motion authority and the independent oracle must stay isolated from
 # source-rig/world-position authority and from the playback implementation.
@@ -118,6 +128,7 @@ for clip in idle run run-inplace; do
 done
 sha256sum "$ROOT"/animations/*/animation.json | tee "$ROOT/diagnostics/humanoid-motion-authority-sha256.txt"
 
+# Full semantic/data coverage always runs for all three canonical clips.
 for clip in idle run run-inplace; do
   motion2sheet verify-humanoid-animation-fidelity \
     --source-rig "$ROOT/motion_json/$clip/rig.json" \
@@ -145,31 +156,55 @@ for path in "$CHARACTER_A_FBX" "$MARIA_FBX" "$WARROK_FBX" "$IDLE_FBX" "$RUN_FBX"
   test ! -e "$path"
 done
 
-for character in character-a maria warrok; do
-  for clip in idle run run-inplace; do
-    motion2sheet render-humanoid-animation \
-      --model "$ROOT/characters/$character/model.glb" \
-      --character-rig "$ROOT/characters/$character/rig.json" \
-      --skin "$ROOT/characters/$character/skin.json" \
-      --character-mapping "$MAPPING" \
-      --animation "$ROOT/animations/$clip/animation.json" \
-      --camera-profile "$CAMERA" --frames all --canvas "$CANVAS" \
-      --sheet-columns 10 --render-samples 8 --gif \
-      --output "$ROOT/renders/$character/$clip"
-  done
-done
+render_cell() {
+  local character="$1"
+  local clip="$2"
+  motion2sheet render-humanoid-animation \
+    --model "$ROOT/characters/$character/model.glb" \
+    --character-rig "$ROOT/characters/$character/rig.json" \
+    --skin "$ROOT/characters/$character/skin.json" \
+    --character-mapping "$MAPPING" \
+    --animation "$ROOT/animations/$clip/animation.json" \
+    --camera-profile "$CAMERA" \
+    --sample-count "$SAMPLE_COUNT" \
+    --output-fps "$OUTPUT_FPS" \
+    --canvas "$CANVAS" \
+    --sheet-columns 8 \
+    --render-samples "$RENDER_SAMPLES" \
+    --gif \
+    --output "$ROOT/renders/$character/$clip"
+}
 
-python tests/motion/humanoid_motion/verify_local_acceptance.py --root "$ROOT" --output "$ROOT/acceptance.json"
+# Smoke: Character A proves all semantics; Maria/Warrok prove independent-target
+# portability on Run. Full: all 3 characters x all 3 clips. Raster stays sparse.
+for clip in idle run run-inplace; do
+  render_cell character-a "$clip"
+done
+render_cell maria run
+render_cell warrok run
+if [[ "$MODE" == "full" ]]; then
+  for character in maria warrok; do
+    for clip in idle run-inplace; do
+      render_cell "$character" "$clip"
+    done
+  done
+fi
+
+python tests/motion/humanoid_motion/ci/verify_acceptance.py --root "$ROOT" --mode "$MODE" --output "$ROOT/acceptance.json"
 test ! -e "$ROOT/motion_json"
 python - <<'PY'
 import json
 import os
 from pathlib import Path
-report = json.loads((Path(os.environ["ROOT"]) / "acceptance.json").read_text(encoding="utf-8"))
+root = Path(os.environ["ROOT"])
+report = json.loads((root / "acceptance.json").read_text(encoding="utf-8"))
 assert report["pass"] is True and not report["failures"]
+assert report["mode"] == os.environ["MODE"]
 assert report["independentCharacters"] == ["character-a", "maria", "warrok"]
 assert report["proof"]["run"]["fidelity"]["locomotionStripping"]["sourceHadPlanarLocomotion"] is True
 assert report["proof"]["run"]["fidelity"]["rootInvariant"]["pass"] is True
+assert report["maxSamplesPerCell"] == 8
+assert report["renderedVisualSampleCount"] <= (40 if os.environ["MODE"] == "smoke" else 72)
 PY
 
-echo "Humanoid Motion E2E PASS: $ROOT"
+echo "Humanoid Motion $MODE E2E PASS: $ROOT"
