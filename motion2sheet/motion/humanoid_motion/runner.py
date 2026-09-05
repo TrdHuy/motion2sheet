@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -81,6 +82,29 @@ def parse_samples(value: str, frame_count: int) -> list[int]:
     return selected
 
 
+def select_even_samples(frame_count: int, sample_count: int) -> list[int]:
+    if frame_count <= 0:
+        raise ValueError("frame count must be positive")
+    if sample_count <= 0:
+        raise ValueError("sample count must be positive")
+    if frame_count <= sample_count:
+        return list(range(frame_count))
+    if sample_count == 1:
+        return [0]
+
+    last = frame_count - 1
+    denominator = sample_count - 1
+    selected = [
+        (index * last + denominator // 2) // denominator
+        for index in range(sample_count)
+    ]
+    if selected[0] != 0 or selected[-1] != last:
+        raise RuntimeError("even sample selection must include first and last samples")
+    if selected != sorted(set(selected)):
+        raise RuntimeError("even sample selection must be unique and ascending")
+    return selected
+
+
 def export_humanoid_animation(*, source_rig_path: Path, source_animation_path: Path, mapping_path: Path, animation_id: str, loop: bool, output: Path, blender: str = "blender") -> dict[str, Any]:
     source_rig_path = source_rig_path.resolve(); source_animation_path = source_animation_path.resolve(); mapping_path = mapping_path.resolve()
     for path in (source_rig_path, source_animation_path, mapping_path):
@@ -130,16 +154,23 @@ def verify_humanoid_animation_fidelity(*, source_rig_path: Path, source_animatio
     return report
 
 
-def render_humanoid_animation(*, model_path: Path, character_rig_path: Path, skin_path: Path, mapping_path: Path, animation_path: Path, camera_profile_path: Path, output: Path, sheet_columns: int = 8, canvas: tuple[int, int] = (320, 320), background: str = "transparent", gif: bool = False, frames: str = "all", render_samples: int = 16, blender: str = "blender") -> dict[str, Any]:
+def render_humanoid_animation(*, model_path: Path, character_rig_path: Path, skin_path: Path, mapping_path: Path, animation_path: Path, camera_profile_path: Path, output: Path, sheet_columns: int = 8, canvas: tuple[int, int] = (320, 320), background: str = "transparent", gif: bool = False, frames: str | None = None, sample_count: int | None = None, output_fps: float | None = None, render_samples: int = 16, blender: str = "blender") -> dict[str, Any]:
     if sheet_columns <= 0 or canvas[0] <= 0 or canvas[1] <= 0 or render_samples <= 0:
         raise ValueError("sheet columns, canvas dimensions and render samples must be positive")
+    if frames is not None and sample_count is not None:
+        raise ValueError("--frames and --sample-count are mutually exclusive")
+    if sample_count is not None and sample_count <= 0:
+        raise ValueError("sample count must be positive")
+    if output_fps is not None and (not math.isfinite(output_fps) or output_fps <= 0):
+        raise ValueError("output FPS must be positive and finite")
     paths = [path.resolve() for path in [model_path, character_rig_path, skin_path, mapping_path, animation_path, camera_profile_path]]
     model_path, character_rig_path, skin_path, mapping_path, animation_path, camera_profile_path = paths
     for path in paths:
         if not path.is_file():
             raise ValueError(f"render-humanoid-animation input does not exist: {path}")
     rig = validate_rig_document(read_json(character_rig_path)); skin = validate_skin_document(read_json(skin_path), rig); mapping = validate_character_mapping(read_mapping(mapping_path), rig); animation = read_animation(animation_path); camera = load_camera_profile(camera_profile_path)
-    selected = parse_samples(frames, animation["frameCount"])
+    selected = select_even_samples(animation["frameCount"], sample_count) if sample_count is not None else parse_samples(frames or "all", animation["frameCount"])
+    presentation_fps = float(animation["fps"]) if output_fps is None else float(output_fps)
     output = output.resolve(); output.mkdir(parents=True, exist_ok=True)
     frame_dir = output / ".frames"; shutil.rmtree(frame_dir, ignore_errors=True); frame_dir.mkdir(parents=True)
     before_sha = sha256(animation_path)
@@ -154,12 +185,12 @@ def render_humanoid_animation(*, model_path: Path, character_rig_path: Path, ski
     if missing:
         raise RuntimeError(f"Humanoid Motion render missing frames: {missing[:4]}")
     layout = compose_sheet(frame_paths, output / "pose_sheet.png", sheet_columns, canvas)
-    gif_timing = compose_gif(frame_paths, output / "preview.gif", float(animation["fps"])) if gif else None
+    gif_timing = compose_gif(frame_paths, output / "preview.gif", presentation_fps) if gif else None
     diagnostics = {name: json.loads((output / "diagnostics" / f"{name}.json").read_text(encoding="utf-8")) for name in ("model_identity", "skin_reconstruction", "semantic_mapping", "retarget", "playback", "root_motion", "contact")}
     if not diagnostics["skin_reconstruction"]["pass"] or not diagnostics["playback"]["pass"]:
         raise RuntimeError("Humanoid Motion runtime fidelity failed; see diagnostics")
     report = {
-        "schema": "motion2sheet.humanoid-motion.render", "version": 1, "humanoidMotionSchema": animation["schema"], "animationId": animation["id"], "canonicalSkeleton": animation["canonicalSkeleton"], "durationSeconds": animation["durationSeconds"], "fps": animation["fps"], "frameCount": animation["frameCount"], "characterId": rig["id"], "mappingId": mapping["id"],
+        "schema": "motion2sheet.humanoid-motion.render", "version": 1, "humanoidMotionSchema": animation["schema"], "animationId": animation["id"], "canonicalSkeleton": animation["canonicalSkeleton"], "durationSeconds": animation["durationSeconds"], "fps": animation["fps"], "outputFps": presentation_fps, "frameCount": animation["frameCount"], "characterId": rig["id"], "mappingId": mapping["id"],
         "cameraProfile": {"id": camera["id"], "path": str(camera_profile_path)}, "cameraFollowsRoot": bool(camera.get("followRoot")), "animationSha256Before": before_sha, "animationSha256After": after_sha, "animationMutated": False, "sourceFbxRequired": False, "sourceRigRequired": False, "runtimeTransformsAreAnimationAuthority": False, "skinStatistics": skin_statistics(skin, rig), "renderedSamples": selected, "renderSamples": render_samples, "layout": {"cellSize": list(canvas), "sheetColumns": sheet_columns, **layout}, "gifTiming": gif_timing, "semanticMapping": diagnostics["semantic_mapping"], "rootMotion": diagnostics["root_motion"], "retarget": diagnostics["retarget"], "playback": diagnostics["playback"], "contact": diagnostics["contact"], "outputs": {"poseSheet": "pose_sheet.png", "previewGif": "preview.gif" if gif else None, "diagnostics": "diagnostics/"},
     }
     _write_json(output / "render.json", report); shutil.rmtree(frame_dir); return report

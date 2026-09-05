@@ -49,6 +49,8 @@ def _render(args) -> int:
         background=args.background,
         gif=args.gif,
         frames=args.frames,
+        sample_count=args.sample_count,
+        output_fps=args.output_fps,
         render_samples=args.render_samples,
         blender=args.blender,
     )
@@ -116,7 +118,10 @@ def add_humanoid_motion_subcommands(subparsers) -> None:
     render.add_argument("--sheet-columns", type=int, default=8)
     render.add_argument("--canvas", type=_canvas, default=(320, 320))
     render.add_argument("--background", default="transparent")
-    render.add_argument("--frames", default="all")
+    selection = render.add_mutually_exclusive_group()
+    selection.add_argument("--frames", default=None)
+    selection.add_argument("--sample-count", type=int, default=None)
+    render.add_argument("--output-fps", type=float, default=None)
     render.add_argument("--gif", action="store_true")
     render.add_argument("--render-samples", type=int, default=16)
     render.add_argument("--output", required=True)
