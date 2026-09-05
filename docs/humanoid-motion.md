@@ -9,8 +9,9 @@ per-character animation authority.
 
 | Authority | Owns |
 | --- | --- |
+| Character/model/rig/skin | Geometry, material, bind/rest skeleton, bone proportions, skin weights and appearance |
+| Humanoid Motion | Semantic joint rotations, local Hips articulation, vertical Hips bounce, cyclic/local Hips sway, canonical body yaw, timing and loop intent |
 | Game/world | Absolute X/Y position, movement speed, navigation, pathfinding, collision and gameplay displacement |
-| Humanoid Motion | In-place pelvis/body articulation, semantic joint rotations, duration, sample FPS/frame count and loop intent |
 
 The strict schema is `motion2sheet.humanoid-motion.animation` version 1 with
 canonical skeleton `humanoid_v1`. It stores:
@@ -31,7 +32,7 @@ orientation. It does not own world movement.
 independently of Blender's imported/sample FPS:
 
 ```text
-FBX: durationSeconds = (AnimationStack.LocalStop - LocalStart) / KTimeTicksPerSecond
+FBX: durationSeconds = (AnimationStack.LocalStop - AnimationStack.LocalStart) / KTimeTicksPerSecond
 BVH: durationSeconds = (Frames - 1) * Frame Time
 ```
 
@@ -50,17 +51,16 @@ Humanoid Motion export requires duration and asks callers to re-export legacy
 source authority when it is absent.
 
 `export-humanoid-animation` requires that Source Animation field and copies it
-unchanged into Humanoid Motion. It does not recompute duration from its own output.
-Humanoid Motion then requires the invariant:
+unchanged into Humanoid Motion. It does not recompute duration at the Humanoid
+boundary. The representation invariant is:
 
 ```text
-durationSeconds = (frameCount - 1) / fps
+(frameCount - 1) / fps == durationSeconds
 ```
 
-within `1e-6` seconds. This formula is a representation consistency check, not a
-source of duration. Changing only `fps` or `frameCount` fails validation instead
-of silently changing action playback speed. `fps` remains the sample rate;
-`frameCount` remains the endpoint-inclusive sample count.
+within `1e-6` seconds. This formula is a consistency check only; it is **not** the
+source duration authority. Changing imported/sample FPS while native timing stays
+unchanged fails closed instead of silently speeding up or slowing down the action.
 
 ## In-place locomotion canonicalization
 
@@ -76,7 +76,8 @@ Hips.translation_i = inverse(Q_i) * (P_i - u_i * planarTravel)
 
 This strips a source Run's forward travel while retaining cyclic lateral sway,
 vertical pelvis bounce and other local Hips motion. A moving Run and its matching
-Run-in-place source therefore produce equivalent in-place body semantics.
+Run-in-place source therefore produce equivalent in-place body semantics within
+the acceptance tolerance.
 
 Quaternions use `[w,x,y,z]`. The semantic rotation formula is
 `D = inverse(Qroot) * RsourcePose * inverse(RsourceRest)`. Playback applies
@@ -84,7 +85,7 @@ Quaternions use `[w,x,y,z]`. The semantic rotation formula is
 deterministic nearest-hemisphere continuity policy.
 
 Humanoid Motion stores no source joint positions, bone lengths, bind matrices,
-local axes or source/target bone names.
+local axes, source/target bone names, FBX paths or model paths.
 
 ## Independent fidelity oracle
 
@@ -101,13 +102,14 @@ motion2sheet verify-humanoid-animation-fidelity \
 
 The oracle evaluates the Source Rig + Source Animation hierarchy/rest/matrix-basis
 transforms in a separate pure-Python numeric path. It does not call the Humanoid
-Motion exporter, Blender playback, or their math helpers. It compares all frames,
-the exact copied `durationSeconds`, FPS/frame count, Root yaw, all 21 semantic rotations, Hips residual translation,
-left/right identity, Root invariants and quaternion validity/continuity.
+Motion exporter, Blender playback, or their math helpers. It compares all samples,
+the exact copied `durationSeconds`, FPS/frame count, Root yaw, all 21 semantic
+rotations, Hips residual translation, left/right identity, Root invariants and
+quaternion validity/continuity.
 
-Tolerances are `1e-9` for FPS, `1e-6` seconds for the explicit duration invariant,
-`0.005` degrees for rotations, `1e-5` for Hips translation and `1e-8` for Root
-translation.
+Tolerances remain `1e-9` for FPS, `1e-6` seconds for the explicit duration
+invariant, `0.005` degrees for rotations, `1e-5` for Hips translation and `1e-8`
+for Root translation.
 
 ## Character mapping and independent targets
 
@@ -115,7 +117,7 @@ translation.
 to distinct target bones. Validation fails closed for missing bones, invalid
 ancestry, or left/right rest geometry inconsistent with canonical `+X`.
 
-The primary acceptance matrix is:
+The canonical independent acceptance matrix is:
 
 | Target | Source | Purpose |
 | --- | --- | --- |
@@ -125,19 +127,54 @@ The primary acceptance matrix is:
 
 All three rigs use the validated `mixamo_humanoid_v1` semantic naming profile,
 while their model, rest rig, skin and runtime corrections remain target-specific.
-The derived Character B fixture remains available as optional controlled stress
-tooling but is not run or counted as independent-character acceptance.
+Derived Character B is not part of acceptance and must never be counted as an
+independent target.
 
 Maria and Warrok are pinned release assets under tag `e2e_gh_action_asset`.
 Exact URLs, asset IDs, SHA-256 values and byte sizes are recorded in
 `tests/motion/humanoid_motion/fixtures/release_assets.json`; CI downloads those
 fixed URLs and fails closed on any hash or size mismatch.
 
-The reusable proof lives in `tests/motion/humanoid_motion/run_e2e.sh`. Local
-execution and GitHub Actions invoke this same runner. Dependency-aware CI exposes
-it as `motion-e2e / humanoid-motion` when affected; the dedicated
-`Humanoid Motion Portability E2E` workflow remains available for explicit manual
-proof runs.
+## Canonical CI proof
+
+PR13 has one dedicated workflow:
+
+```text
+.github/workflows/humanoid-motion.yml
+```
+
+and one orchestration directory:
+
+```text
+tests/motion/humanoid_motion/ci/
+  run_unit.sh
+  run_timing.sh
+  run_smoke.sh
+  run_full.sh
+  run_e2e.sh
+  verify_acceptance.py
+```
+
+Pull-request changes use `smoke` by default. `workflow_dispatch` supports explicit
+`smoke` and `full` modes. Both modes run full unit/data validation, full
+Source -> Humanoid fidelity, deterministic serialization, Root/L/R checks,
+native timing regressions and Run/Run-in-place equivalence.
+
+Only the raster proof is sparse:
+
+| Mode | Visual cells | Maximum raster samples |
+| --- | ---: | ---: |
+| Smoke | Character A: Idle/Run/Run-inplace; Maria: Run; Warrok: Run | 40 |
+| Full | Character A/Maria/Warrok × Idle/Run/Run-inplace | 72 |
+
+Each cell renders at most eight deterministic, evenly distributed canonical
+samples, including first and last. CI uses `160x160`, one render sample and an
+8 FPS preview GIF. This is presentation policy only; the canonical Humanoid
+Motion `fps`, `frameCount`, `durationSeconds` and serialized SHA stay unchanged.
+
+The standalone `Motion JSON Round-trip POC` workflow remains available only by
+manual dispatch for its independent Source Motion commands. Legacy direct Source
+Motion cross-animation/model-render POC workflows are not PR13 portability gates.
 
 ## Export and playback
 
@@ -151,7 +188,8 @@ motion2sheet export-humanoid-animation \
   --id run --loop --output build/motion/humanoid-motion/animations/run
 ```
 
-Then render that same exact file on each target without adaptation:
+Then render that same exact file on each target without adaptation. A lightweight
+CI-style presentation render is:
 
 ```bash
 motion2sheet render-humanoid-animation \
@@ -161,16 +199,28 @@ motion2sheet render-humanoid-animation \
   --character-mapping profiles/humanoid_motion/mixamo_humanoid_v1.json \
   --animation build/motion/humanoid-motion/animations/run/animation.json \
   --camera-profile profiles/cameras/front_humanoid_motion.json5 \
-  --frames all --canvas 224x224 --sheet-columns 10 --render-samples 8 --gif \
+  --sample-count 8 \
+  --output-fps 8 \
+  --canvas 160x160 \
+  --sheet-columns 8 \
+  --render-samples 1 \
+  --gif \
   --output build/motion/humanoid-motion/renders/maria/run
 ```
 
+`--sample-count N` selects at most N evenly distributed canonical sample indices.
+It is mutually exclusive with explicit `--frames`. `--output-fps` controls only
+presentation/GIF playback speed. When omitted, GIF output uses canonical
+`animation.fps` for backward compatibility.
+
+The render report keeps `fps` as canonical animation FPS and records presentation
+speed separately as `outputFps`. `renderedSamples` records the selected canonical
+sample indices. The renderer verifies the Humanoid Motion SHA before and after
+playback and fails if the authority changes.
+
 The Humanoid Motion camera is fixed (`followRoot: false`) so rendering cannot
 conceal locomotion drift. Each target/clip produces a real-skinned
-`pose_sheet.png`, `preview.gif`, `render.json` and diagnostics directory. Reports
-record the same animation SHA before and after every playback.
-The export and render reports also record `durationSeconds`, and the fidelity
-report records both durations, exact-copy status and duration error.
+`pose_sheet.png`, `preview.gif`, `render.json` and diagnostics directory.
 
 ## Known v1 boundary
 
