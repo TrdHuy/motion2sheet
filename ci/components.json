@@ -1,7 +1,5 @@
 {
   "global_paths": [
-    ".github/**",
-    "ci/**",
     "pyproject.toml",
     "motion2sheet/__init__.py"
   ],
@@ -9,7 +7,17 @@
     ".gitignore",
     "README.md",
     "docs/**",
-    "sample/README.md"
+    "sample/README.md",
+    ".github/workflows/humanoid-motion.yml",
+    ".github/workflows/humanoid-motion-e2e.yml",
+    ".github/workflows/motion-roundtrip.yml",
+    ".github/workflows/real-skin-cross-animation-e2e.yml",
+    ".github/workflows/real-skin-e2e.yml",
+    ".github/workflows/real-skin-preflight.yml",
+    ".github/workflows/source-character-render.yml",
+    "tests/motion/humanoid_motion/ci/**",
+    "tests/motion/humanoid_motion/run_e2e.sh",
+    "tests/motion/humanoid_motion/verify_local_acceptance.py"
   ],
   "components": {
     "motion-common": {"paths": ["motion2sheet/motion/common/**"], "depends_on": []},
@@ -18,10 +26,12 @@
     "motion-render": {"paths": ["motion2sheet/motion/render/**"], "depends_on": ["motion-common"]},
     "motion-output": {"paths": ["motion2sheet/motion/output/**"], "depends_on": ["motion-common"]},
     "motion-extract": {"paths": ["motion2sheet/motion/extract/**"], "depends_on": ["motion-retarget"]},
+    "motion-roundtrip": {"paths": ["motion2sheet/motion/roundtrip/**"], "depends_on": []},
     "motion-skin": {"paths": ["motion2sheet/motion/skin/**"], "depends_on": []},
     "motion-model-render": {"paths": ["motion2sheet/motion/model_render/**", "profiles/cameras/**"], "depends_on": ["motion-skin"]},
-    "motion-humanoid-motion": {"paths": ["motion2sheet/motion/humanoid_motion/**", "profiles/humanoid_motion/**"], "depends_on": ["motion-model-render"]},
-    "motion-cli": {"paths": ["motion2sheet/motion/cli.py"], "depends_on": ["motion-extract", "motion-normalize", "motion-retarget", "motion-render", "motion-output", "motion-model-render", "motion-humanoid-motion"]},
+    "motion-character-render": {"paths": ["motion2sheet/motion/character_render/**", "profiles/characters/**"], "depends_on": []},
+    "motion-humanoid-motion": {"paths": ["motion2sheet/motion/humanoid_motion/**", "profiles/humanoid_motion/**"], "depends_on": ["motion-model-render", "motion-roundtrip"]},
+    "motion-cli": {"paths": ["motion2sheet/motion/cli.py"], "depends_on": []},
     "sprite-workflow": {"paths": ["skills/**", "sample/sprite-generation/**"], "depends_on": []},
     "vfx-output": {"paths": ["motion2sheet/vfx2sheet/common/output/**"], "depends_on": []},
     "vfx-trajectory": {"paths": ["motion2sheet/vfx2sheet/common/trajectory/**", "profiles/vfx2sheet/trajectories/**"], "depends_on": []},
@@ -35,20 +45,22 @@
     "motion-retarget-unit": {"kind": "unit", "path": "tests/motion/retarget/test_retarget.py", "paths": ["tests/motion/retarget/**"], "depends_on": ["motion-retarget"]},
     "motion-render-unit": {"kind": "unit", "path": "tests/motion/render/test_renderer.py", "paths": ["tests/motion/render/**"], "depends_on": ["motion-render"]},
     "motion-output-unit": {"kind": "unit", "path": "tests/motion/output/test_validator.py", "paths": ["tests/motion/output/test_validator.py"], "depends_on": ["motion-output"]},
-    "motion-output-mode-unit": {"kind": "unit", "path": "tests/motion/output/test_output_mode.py", "paths": ["tests/motion/output/test_output_mode.py"], "depends_on": ["motion-cli"]},
+    "motion-output-mode-unit": {"kind": "unit", "path": "tests/motion/output/test_output_mode.py", "paths": ["tests/motion/output/test_output_mode.py"], "depends_on": ["motion-output"]},
+    "motion-cli-unit": {"kind": "unit", "path": "tests/motion/test_cli_registration.py", "paths": ["motion2sheet/motion/cli.py", "tests/motion/test_cli_registration.py"], "depends_on": ["motion-cli"]},
+    "motion-roundtrip-unit": {"kind": "unit", "path": "tests/motion/roundtrip", "paths": ["tests/motion/roundtrip/**"], "depends_on": ["motion-roundtrip"]},
     "motion-skin-unit": {"kind": "unit", "path": "tests/motion/skin", "paths": ["tests/motion/skin/**"], "depends_on": ["motion-skin"]},
     "motion-model-render-unit": {"kind": "unit", "path": "tests/motion/model_render", "paths": ["tests/motion/model_render/**"], "depends_on": ["motion-model-render"]},
-    "motion-humanoid-motion-unit": {"kind": "unit", "path": "tests/motion/humanoid_motion", "paths": ["tests/motion/humanoid_motion/**"], "depends_on": ["motion-humanoid-motion"]},
-    "motion-humanoid-motion-e2e": {"kind": "motion-e2e", "target": "humanoid-motion", "paths": ["motion2sheet/motion/cli.py", "tests/motion/humanoid_motion/run_e2e.sh", "tests/motion/humanoid_motion/verify_local_acceptance.py", "tests/motion/humanoid_motion/fixtures/release_assets.json"], "depends_on": ["motion-humanoid-motion"]},
-    "motion-synthetic-fbx": {"kind": "motion-e2e", "target": "synthetic-fbx", "paths": ["tests/motion/fixtures/**", "tests/motion/e2e/verify_generated_output.py", "tests/motion/e2e/verify_retarget_output.py"], "depends_on": ["motion-cli"]},
-    "motion-synthetic-bvh": {"kind": "motion-e2e", "target": "synthetic-bvh", "paths": ["tests/motion/fixtures/**", "tests/motion/e2e/verify_generated_output.py", "tests/motion/e2e/verify_retarget_output.py"], "depends_on": ["motion-cli"]},
-    "motion-mixamo-real": {"kind": "motion-e2e", "target": "mixamo-real", "paths": ["tests/motion/e2e/verify_mixamo_output.py", "sample/walk_mixamo.fbx"], "depends_on": ["motion-cli"]},
-    "motion-output-mode-e2e": {"kind": "motion-e2e", "target": "output-mode", "paths": ["tests/motion/e2e/verify_output_mode.py"], "depends_on": ["motion-cli"]},
+    "motion-character-render-unit": {"kind": "unit", "path": "tests/motion/character_render", "paths": ["tests/motion/character_render/**"], "depends_on": ["motion-character-render"]},
+    "motion-humanoid-motion-unit": {"kind": "unit", "path": "tests/motion/humanoid_motion", "paths": ["tests/motion/humanoid_motion/test_*.py", "tests/motion/humanoid_motion/fixtures/**"], "depends_on": ["motion-humanoid-motion"]},
+    "motion-synthetic-fbx": {"kind": "motion-e2e", "target": "synthetic-fbx", "paths": ["tests/motion/fixtures/**", "tests/motion/e2e/verify_generated_output.py", "tests/motion/e2e/verify_retarget_output.py"], "depends_on": ["motion-extract", "motion-normalize", "motion-retarget", "motion-render", "motion-output"]},
+    "motion-synthetic-bvh": {"kind": "motion-e2e", "target": "synthetic-bvh", "paths": ["tests/motion/fixtures/**", "tests/motion/e2e/verify_generated_output.py", "tests/motion/e2e/verify_retarget_output.py"], "depends_on": ["motion-extract", "motion-normalize", "motion-retarget", "motion-render", "motion-output"]},
+    "motion-mixamo-real": {"kind": "motion-e2e", "target": "mixamo-real", "paths": ["tests/motion/e2e/verify_mixamo_output.py", "sample/walk_mixamo.fbx"], "depends_on": ["motion-extract", "motion-normalize", "motion-retarget", "motion-render", "motion-output"]},
+    "motion-output-mode-e2e": {"kind": "motion-e2e", "target": "output-mode", "paths": ["tests/motion/e2e/verify_output_mode.py"], "depends_on": ["motion-render", "motion-output"]},
     "sprite-workflow-contract": {"kind": "unit", "path": "tests/sprite_workflow/test_single_frame_contract.py", "paths": ["tests/sprite_workflow/**"], "depends_on": ["sprite-workflow"]},
     "vfx-unit": {"kind": "unit", "path": "tests/vfx2sheet/unit", "paths": ["tests/vfx2sheet/unit/**"], "depends_on": ["vfx-splash"]},
     "vfx-splash-e2e": {"kind": "vfx-e2e", "target": "splash", "paths": ["tests/vfx2sheet/e2e/**", "tests/vfx2sheet/fixtures/splash/**", "tests/vfx2sheet/golden/splash/**"], "depends_on": ["vfx-splash"]},
     "anim-common-unit": {"kind": "unit", "path": "tests/anim2sheet/common", "paths": ["tests/anim2sheet/common/**"], "depends_on": ["anim-common"]},
     "anim-cli-unit": {"kind": "unit", "path": "tests/anim2sheet/cli", "paths": ["tests/anim2sheet/cli/**", "profiles/anim2sheet/animations/*/**"], "depends_on": ["anim-core"]},
-    "ci-affected-unit": {"kind": "unit", "path": "tests/ci/test_detect_affected.py", "paths": ["tests/ci/**"], "depends_on": []}
+    "ci-affected-unit": {"kind": "unit", "path": "tests/ci/test_detect_affected.py", "paths": ["tests/ci/**", "ci/**", ".github/workflows/ci.yml"], "depends_on": []}
   }
 }
