@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   real-mixamo-skin:
-    name: real-mixamo-skin / contract-b-model-skin
+    name: real-mixamo-skin / motion-json-model-skin
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -77,7 +77,7 @@ jobs:
           test -s "$NORMALIZED"
           test -s "$ROOT/diagnostics/motion_source_normalization.json"
           echo "NORMALIZED=$NORMALIZED" >> "$GITHUB_ENV"
-      - name: Export Contract B animation using locked PR 11 command on proven-equivalent motion copy
+      - name: Export Motion JSON using locked PR 11 command on proven-equivalent motion copy
         run: |
           set -euo pipefail
           motion2sheet export-animation-json "$NORMALIZED" --output "$ROOT/animation"
@@ -97,13 +97,13 @@ jobs:
           camera=load_camera_profile(Path(os.environ['CAMERA']))
           output=root/'source-reference'
           output.mkdir(parents=True,exist_ok=True)
-          contract_frames=[int(row['frame']) for row in animation['frames']]
+          motion_frames=[int(row['frame']) for row in animation['frames']]
           frame_offset=int(normalization['frameOffset'])
-          assert contract_frames == list(range(int(normalization['normalized']['frameRange'][0]), int(normalization['normalized']['frameRange'][1]) + 1))
+          assert motion_frames == list(range(int(normalization['normalized']['frameRange'][0]), int(normalization['normalized']['frameRange'][1]) + 1))
           request={
               'sourcePath': os.environ['ASSET'],
               'output': str(output.resolve()),
-              'selectedFrames': contract_frames,
+              'selectedFrames': motion_frames,
               'frameOffset': frame_offset,
               'canvas': [320,320],
               'background': {'transparent': True, 'rgba': [0.0,0.0,0.0,0.0]},
@@ -132,7 +132,7 @@ jobs:
           rm -f "$ASSET" "$NORMALIZED"
           test ! -e "$ASSET"
           test ! -e "$NORMALIZED"
-      - name: Render actual mesh using only Model + Rig + Skin + Contract B + Camera
+      - name: Render actual mesh using only Model + Rig + Skin + Motion JSON + Camera
         run: |
           set -euo pipefail
           motion2sheet render-model-animation \
@@ -172,8 +172,8 @@ jobs:
           assert normalization['fidelity']['pass'] and normalization['lockedPr11RigCapturePass']
           assert normalization['retargeting'] is False and normalization['fuzzyMapping'] is False
           assert source['frameOffset']==normalization['frameOffset']
-          assert source['contractFrames']==render['renderedFrames']
-          assert source['sourceFrames']==[frame-int(normalization['frameOffset']) for frame in source['contractFrames']]
+          assert source['motionFrames']==render['renderedFrames']
+          assert source['sourceFrames']==[frame-int(normalization['frameOffset']) for frame in source['motionFrames']]
           stats=render['skinStatistics']
           assert stats['meshCount']>0 and stats['vertexCount']>0 and stats['weightedVertexCount']>0 and stats['influenceCount']>0 and stats['boneCount']>0
           assert stats['unknownBoneReferences']==0
@@ -212,7 +212,7 @@ jobs:
           cell_width=target_sheet.width//columns; cell_height=target_sheet.height//rows
           assert cell_width*columns==target_sheet.width and cell_height*rows==target_sheet.height
           frame_silhouettes=[]; total_intersection=total_union=total_mismatch=0
-          for index, frame_id in enumerate(source['contractFrames']):
+          for index, frame_id in enumerate(source['motionFrames']):
               row,column=divmod(index,columns)
               box=(column*cell_width,row*cell_height,(column+1)*cell_width,(row+1)*cell_height)
               source_alpha=source_sheet.crop(box).getchannel('A')
@@ -292,7 +292,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: real-mixamo-skin-contract-b-e2e
+          name: real-mixamo-skin-motion-json-e2e
           path: build/real_skin_e2e/
           if-no-files-found: warn
           retention-days: 7
