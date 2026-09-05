@@ -39,6 +39,8 @@ def main() -> None:
 
     rig = capture_rig_document(input_path, armature)
     animation = capture_animation_document(input_path, armature, action, rig)
+    start, end = (int(value) for value in animation["frameRange"])
+    animation["durationSeconds"] = (end - start) / float(animation["fps"])
 
     if input_path.suffix.lower() == ".fbx":
         rig_fbx, animation_fbx, original_curves = extract_fbx_metadata_and_diagnostics(
@@ -70,7 +72,8 @@ def main() -> None:
     write_canonical_json(output / "animation.json", animation)
     print(
         f"motion2sheet: exported source-authority JSON; bones={len(rig['bones'])}, "
-        f"frames={animation['frameCount']}, fps={animation['fps']} -> {output}; "
+        f"frames={animation['frameCount']}, fps={animation['fps']}, "
+        f"durationSeconds={animation['durationSeconds']} -> {output}; "
         f"fbxEncodingAdapters={len(encoding_adapters)}"
     )
 
