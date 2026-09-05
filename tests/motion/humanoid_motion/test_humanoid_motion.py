@@ -32,6 +32,7 @@ def _animation(frame_count=2):
         "version": 1,
         "id": "run",
         "canonicalSkeleton": "humanoid_v1",
+        "durationSeconds": (frame_count - 1) / 30.0,
         "fps": 30.0,
         "frameCount": frame_count,
         "loop": True,
@@ -132,6 +133,14 @@ def test_humanoid_motion_schema_is_strict_and_complete():
     tolerated_root = _animation()
     tolerated_root["root"]["translations"][1] = [ROOT_TRANSLATION_TOLERANCE, 0.0, 0.0]
     assert validate_animation(tolerated_root)["root"]["translations"][1][0] == ROOT_TRANSLATION_TOLERANCE
+    missing_duration = _animation()
+    del missing_duration["durationSeconds"]
+    with pytest.raises(ValueError, match="missing fields.*durationSeconds"):
+        validate_animation(missing_duration)
+    wrong_duration = _animation()
+    wrong_duration["durationSeconds"] += 0.01
+    with pytest.raises(ValueError, match="durationSeconds contradicts"):
+        validate_animation(wrong_duration)
 
 
 def test_quaternion_normalization_and_sign_continuity_fail_closed():
@@ -210,7 +219,7 @@ def _source_animation(rig):
         bones = copy.deepcopy(identity)
         bones["bone_Hips"]["translation"] = [0.0, travel, bounce]
         frames.append({"frame": index, "bones": bones})
-    return {"id": "source-run", "fps": 30.0, "frameCount": 3, "frames": frames}
+    return {"id": "source-run", "durationSeconds": 2.0 / 30.0, "fps": 30.0, "frameCount": 3, "frames": frames}
 
 
 def test_independent_fidelity_oracle_catches_corruption_and_preserves_bounce():
@@ -237,7 +246,7 @@ def test_independent_fidelity_oracle_catches_corruption_and_preserves_bounce():
     wrong_fps["fps"] = 24.0
     failed = compare_source_to_humanoid_motion(rig, source, mapping, wrong_fps)
     assert failed["pass"] is False
-    assert failed["timing"]["pass"] is False
+    assert failed["schemaValidation"]["pass"] is False
 
     wrong_frame_count = _animation(2)
     wrong_frame_count["hips"]["translations"] = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.1]]
