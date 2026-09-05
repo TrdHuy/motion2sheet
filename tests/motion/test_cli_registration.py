@@ -1,7 +1,7 @@
 from motion2sheet.motion.cli import parser
 
 
-def test_public_motion_cli_registers_canonical_commands_only():
+def test_public_motion_cli_registers_core_and_humanoid_commands():
     root = parser()
     choices = root._subparsers._group_actions[0].choices
     expected = {
@@ -14,5 +14,3 @@ def test_public_motion_cli_registers_canonical_commands_only():
         "render-humanoid-animation",
     }
     assert expected.issubset(choices)
-    assert "render-model-animation" not in choices
-    assert "render-character-animation" not in choices

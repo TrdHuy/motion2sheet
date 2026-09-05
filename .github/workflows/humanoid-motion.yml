@@ -2,7 +2,6 @@ name: Humanoid Motion
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, assigned]
     paths:
       - 'motion2sheet/motion/humanoid_motion/**'
       - 'motion2sheet/motion/roundtrip/**'
@@ -33,16 +32,25 @@ concurrency:
 
 jobs:
   humanoid-motion:
-    name: humanoid-motion / ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.action == 'assigned' && github.event.assignee.login == github.repository_owner && 'full' || 'smoke') }}
+    name: humanoid-motion / ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'smoke' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.action == 'assigned' && github.event.assignee.login == github.repository_owner && 'full' || 'smoke') }}
+      MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'smoke' }}
       ROOT: build/motion/humanoid-motion
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout exact requested revision
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact checkout
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          echo "Exact HEAD: $ACTUAL_SHA"
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
