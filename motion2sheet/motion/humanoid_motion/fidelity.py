@@ -5,6 +5,7 @@ import math
 from typing import Any
 
 from .schema import (
+    DURATION_TOLERANCE_SECONDS,
     MAPPED_JOINTS,
     QUATERNION_CONTINUITY_TOLERANCE,
     QUATERNION_NORM_TOLERANCE,
@@ -224,10 +225,28 @@ def compare_source_to_humanoid_motion(source_rig: dict[str, Any], source_animati
     frame_count_pass = animation["frameCount"] == source_animation["frameCount"] == len(frames)
     comparison_count = min(animation["frameCount"], len(frames))
     fps_error = abs(float(animation["fps"]) - float(source_animation["fps"]))
+    source_duration = source_animation.get("durationSeconds")
+    duration_error = (
+        abs(float(animation["durationSeconds"]) - float(source_duration))
+        if source_duration is not None
+        else None
+    )
+    duration_exact_copy = (
+        source_duration is not None
+        and animation["durationSeconds"] == source_duration
+    )
+    duration_within_tolerance = (
+        duration_error is not None
+        and duration_error <= DURATION_TOLERANCE_SECONDS
+    )
     if not frame_count_pass:
         failures.append("frameCount does not match the Source Animation")
     if fps_error > FPS_TOLERANCE:
         failures.append("FPS does not match the Source Animation")
+    if source_duration is None:
+        failures.append("Source Animation is missing durationSeconds")
+    elif not duration_exact_copy:
+        failures.append("durationSeconds was not copied exactly from the Source Animation")
 
     identities = {bone["name"]: _identity_transform() for bone in source_rig["bones"]}
     rest_world = _world_matrices(source_rig, identities)
@@ -317,10 +336,10 @@ def compare_source_to_humanoid_motion(source_rig: dict[str, Any], source_animati
         "schema": "motion2sheet.humanoid-motion.source-fidelity", "version": 1, "pass": not failures,
         "independentPath": "pure-python Motion JSON hierarchy/TRS evaluation; no Humanoid Motion exporter or playback imports",
         "schemaValidation": {"pass": True},
-        "source": {"rigId": source_rig["id"], "animationId": source_animation["id"], "frameCount": source_animation["frameCount"], "fps": source_animation["fps"], "meanLegLengthSceneUnits": leg_length},
-        "humanoidMotion": {"animationId": animation["id"], "frameCount": animation["frameCount"], "fps": animation["fps"]},
-        "tolerances": {"fps": FPS_TOLERANCE, "rotationDegrees": ROTATION_TOLERANCE_DEGREES, "hipsTranslationMeanLegLength": HIPS_TRANSLATION_TOLERANCE, "rootTranslationMeanLegLength": ROOT_TRANSLATION_TOLERANCE},
-        "timing": {"pass": frame_count_pass and fps_error <= FPS_TOLERANCE, "fpsError": fps_error},
+        "source": {"rigId": source_rig["id"], "animationId": source_animation["id"], "durationSeconds": source_duration, "frameCount": source_animation["frameCount"], "fps": source_animation["fps"], "meanLegLengthSceneUnits": leg_length},
+        "humanoidMotion": {"animationId": animation["id"], "durationSeconds": animation["durationSeconds"], "frameCount": animation["frameCount"], "fps": animation["fps"]},
+        "tolerances": {"durationSeconds": DURATION_TOLERANCE_SECONDS, "fps": FPS_TOLERANCE, "rotationDegrees": ROTATION_TOLERANCE_DEGREES, "hipsTranslationMeanLegLength": HIPS_TRANSLATION_TOLERANCE, "rootTranslationMeanLegLength": ROOT_TRANSLATION_TOLERANCE},
+        "timing": {"pass": frame_count_pass and fps_error <= FPS_TOLERANCE and duration_exact_copy, "durationErrorSeconds": duration_error, "durationExactCopy": duration_exact_copy, "durationWithinTolerance": duration_within_tolerance, "fpsError": fps_error},
         "maxErrors": {"rootRotationDegrees": max_root_rotation_error, "semanticRotationDegrees": max_semantic_rotation_error, "hipsTranslationMeanLegLength": max_hips_translation_error, "rootTranslationMeanLegLength": root_max_abs},
         "worstRootRotation": worst_root_rotation, "worstSemantic": worst_semantic_rotation, "worstHipsTranslation": worst_hips_translation,
         "semanticRotationMaximaDegrees": semantic_maxima,

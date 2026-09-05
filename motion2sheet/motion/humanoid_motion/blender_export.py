@@ -107,7 +107,7 @@ def main() -> None:
         "version": 1,
         "id": request["animationId"],
         "canonicalSkeleton": CANONICAL_SKELETON_ID,
-        "durationSeconds": float(source_animation["durationSeconds"]),
+        "durationSeconds": source_animation["durationSeconds"],
         "fps": float(source_animation["fps"]),
         "frameCount": len(frames),
         "loop": bool(request["loop"]),

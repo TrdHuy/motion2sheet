@@ -92,7 +92,7 @@ motion2sheet verify-humanoid-animation-fidelity \
 The oracle evaluates the Source Rig + Source Animation hierarchy/rest/matrix-basis
 transforms in a separate pure-Python numeric path. It does not call the Humanoid
 Motion exporter, Blender playback, or their math helpers. It compares all frames,
-timing, Root yaw, all 21 semantic rotations, Hips residual translation,
+the exact copied `durationSeconds`, FPS/frame count, Root yaw, all 21 semantic rotations, Hips residual translation,
 left/right identity, Root invariants and quaternion validity/continuity.
 
 Tolerances are `1e-9` for FPS, `1e-6` seconds for the explicit duration invariant,
@@ -159,6 +159,8 @@ The Humanoid Motion camera is fixed (`followRoot: false`) so rendering cannot
 conceal locomotion drift. Each target/clip produces a real-skinned
 `pose_sheet.png`, `preview.gif`, `render.json` and diagnostics directory. Reports
 record the same animation SHA before and after every playback.
+The export and render reports also record `durationSeconds`, and the fidelity
+report records both durations, exact-copy status and duration error.
 
 ## Known v1 boundary
 

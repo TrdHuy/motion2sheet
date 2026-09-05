@@ -87,7 +87,12 @@ def export_humanoid_animation(*, source_rig_path: Path, source_animation_path: P
         if not path.is_file():
             raise ValueError(f"export-humanoid-animation input does not exist: {path}")
     rig = validate_rig_document(read_json(source_rig_path))
-    validate_animation_document(read_json(source_animation_path), rig)
+    source_animation = validate_animation_document(read_json(source_animation_path), rig)
+    if "durationSeconds" not in source_animation:
+        raise ValueError(
+            "Source Animation is missing durationSeconds; re-export it with the current "
+            "export-animation-json command"
+        )
     mapping = validate_character_mapping(read_mapping(mapping_path), rig)
     output = output.resolve(); output.mkdir(parents=True, exist_ok=True)
     request = {"sourceRigPath": str(source_rig_path), "sourceAnimationPath": str(source_animation_path), "mappingPath": str(mapping_path), "animationId": animation_id, "loop": loop, "animationOutput": str(output / "animation.json"), "diagnosticsOutput": str(output / "diagnostics" / "export_blender.json")}
@@ -96,7 +101,7 @@ def export_humanoid_animation(*, source_rig_path: Path, source_animation_path: P
     animation = read_animation(output / "animation.json")
     blender_diagnostics = json.loads((output / "diagnostics" / "export_blender.json").read_text(encoding="utf-8"))
     report = {
-        "schema": "motion2sheet.humanoid-motion.export", "version": 1, "humanoidMotionSchema": animation["schema"], "animationId": animation["id"], "canonicalSkeleton": animation["canonicalSkeleton"], "fps": animation["fps"], "frameCount": animation["frameCount"], "loop": animation["loop"], "animationSha256": sha256(output / "animation.json"),
+        "schema": "motion2sheet.humanoid-motion.export", "version": 1, "humanoidMotionSchema": animation["schema"], "animationId": animation["id"], "canonicalSkeleton": animation["canonicalSkeleton"], "durationSeconds": animation["durationSeconds"], "fps": animation["fps"], "frameCount": animation["frameCount"], "loop": animation["loop"], "animationSha256": sha256(output / "animation.json"),
         "sourceAuthorities": {"rigSha256": sha256(source_rig_path), "animationSha256": sha256(source_animation_path), "mappingSha256": sha256(mapping_path)},
         "semanticMapping": mapping_diagnostics(mapping, rig), "rootMotion": humanoid_root_motion(animation),
         "canonicalization": {"locomotionPolicy": blender_diagnostics["locomotionPolicy"], "sourcePlanarEndToEnd": blender_diagnostics["sourcePlanarEndToEnd"], "sourcePlanarDisplacement": blender_diagnostics["sourcePlanarDisplacement"], "strippedPlanarEndToEnd": blender_diagnostics["strippedPlanarEndToEnd"], "sourceHipsVerticalRange": blender_diagnostics["sourceHipsVerticalRange"], "canonicalHipsVerticalRange": blender_diagnostics["canonicalHipsVerticalRange"]},
@@ -154,7 +159,7 @@ def render_humanoid_animation(*, model_path: Path, character_rig_path: Path, ski
     if not diagnostics["skin_reconstruction"]["pass"] or not diagnostics["playback"]["pass"]:
         raise RuntimeError("Humanoid Motion runtime fidelity failed; see diagnostics")
     report = {
-        "schema": "motion2sheet.humanoid-motion.render", "version": 1, "humanoidMotionSchema": animation["schema"], "animationId": animation["id"], "canonicalSkeleton": animation["canonicalSkeleton"], "fps": animation["fps"], "frameCount": animation["frameCount"], "characterId": rig["id"], "mappingId": mapping["id"],
+        "schema": "motion2sheet.humanoid-motion.render", "version": 1, "humanoidMotionSchema": animation["schema"], "animationId": animation["id"], "canonicalSkeleton": animation["canonicalSkeleton"], "durationSeconds": animation["durationSeconds"], "fps": animation["fps"], "frameCount": animation["frameCount"], "characterId": rig["id"], "mappingId": mapping["id"],
         "cameraProfile": {"id": camera["id"], "path": str(camera_profile_path)}, "cameraFollowsRoot": bool(camera.get("followRoot")), "animationSha256Before": before_sha, "animationSha256After": after_sha, "animationMutated": False, "sourceFbxRequired": False, "sourceRigRequired": False, "runtimeTransformsAreAnimationAuthority": False, "skinStatistics": skin_statistics(skin, rig), "renderedSamples": selected, "renderSamples": render_samples, "layout": {"cellSize": list(canvas), "sheetColumns": sheet_columns, **layout}, "gifTiming": gif_timing, "semanticMapping": diagnostics["semantic_mapping"], "rootMotion": diagnostics["root_motion"], "retarget": diagnostics["retarget"], "playback": diagnostics["playback"], "contact": diagnostics["contact"], "outputs": {"poseSheet": "pose_sheet.png", "previewGif": "preview.gif" if gif else None, "diagnostics": "diagnostics/"},
     }
     _write_json(output / "render.json", report); shutil.rmtree(frame_dir); return report

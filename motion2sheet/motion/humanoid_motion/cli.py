@@ -29,7 +29,8 @@ def _export(args) -> int:
     )
     print(
         "motion2sheet: Humanoid Motion export PASS; "
-        f"id={report['animationId']} frames={report['frameCount']} sha256={report['animationSha256']}"
+        f"id={report['animationId']} durationSeconds={report['durationSeconds']} "
+        f"frames={report['frameCount']} sha256={report['animationSha256']}"
     )
     return 0
 
@@ -53,7 +54,8 @@ def _render(args) -> int:
     )
     print(
         "motion2sheet: Humanoid Motion render PASS; "
-        f"character={report['characterId']} animation={report['animationId']} frames={len(report['renderedSamples'])}"
+        f"character={report['characterId']} animation={report['animationId']} "
+        f"durationSeconds={report['durationSeconds']} frames={len(report['renderedSamples'])}"
     )
     return 0
 
@@ -69,6 +71,7 @@ def _verify_fidelity(args) -> int:
     errors = report["maxErrors"]
     print(
         "motion2sheet: Source -> Humanoid Motion fidelity PASS; "
+        f"durationErrorSeconds={report['timing']['durationErrorSeconds']:.12g} "
         f"rotationDeg={errors['semanticRotationDegrees']:.12g} "
         f"hips={errors['hipsTranslationMeanLegLength']:.12g}"
     )

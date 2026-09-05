@@ -229,6 +229,9 @@ def test_independent_fidelity_oracle_catches_corruption_and_preserves_bounce():
     animation["hips"]["translations"] = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.1], [0.0, 0.0, 0.0]]
     report = compare_source_to_humanoid_motion(rig, source, mapping, animation)
     assert report["pass"] is True
+    assert report["timing"]["durationErrorSeconds"] == 0.0
+    assert report["timing"]["durationExactCopy"] is True
+    assert report["timing"]["durationWithinTolerance"] is True
     assert report["locomotionStripping"]["sourcePlanarDisplacement"] == pytest.approx(2.0)
     assert report["locomotionStripping"]["actualHipsVerticalRange"] == pytest.approx(0.1)
 
@@ -265,6 +268,22 @@ def test_independent_fidelity_oracle_catches_corruption_and_preserves_bounce():
     failed = compare_source_to_humanoid_motion(rig, source, mapping, invalid_quaternion)
     assert failed["pass"] is False
     assert failed["schemaValidation"]["pass"] is False
+
+    changed_source_duration = copy.deepcopy(source)
+    changed_source_duration["durationSeconds"] -= 5e-7
+    failed = compare_source_to_humanoid_motion(rig, changed_source_duration, mapping, animation)
+    assert failed["pass"] is False
+    assert failed["timing"]["durationErrorSeconds"] == pytest.approx(5e-7)
+    assert failed["timing"]["durationExactCopy"] is False
+    assert failed["timing"]["durationWithinTolerance"] is True
+
+    missing_source_duration = copy.deepcopy(source)
+    del missing_source_duration["durationSeconds"]
+    failed = compare_source_to_humanoid_motion(rig, missing_source_duration, mapping, animation)
+    assert failed["pass"] is False
+    assert failed["timing"]["durationErrorSeconds"] is None
+    assert failed["timing"]["durationExactCopy"] is False
+    assert failed["timing"]["durationWithinTolerance"] is False
 
 
 def test_fidelity_oracle_is_architecturally_independent_from_export_and_playback():
