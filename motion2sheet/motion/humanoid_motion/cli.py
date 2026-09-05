@@ -78,7 +78,7 @@ def _verify_fidelity(args) -> int:
 def add_humanoid_motion_subcommands(subparsers) -> None:
     export = subparsers.add_parser(
         "export-humanoid-animation",
-        help="Convert Contract B rest+motion authorities into reusable semantic Humanoid Motion",
+        help="Convert Motion JSON Source Rig + Source Animation authorities into reusable semantic Humanoid Motion",
     )
     export.add_argument("--source-rig", required=True)
     export.add_argument("--source-animation", required=True)
@@ -91,7 +91,7 @@ def add_humanoid_motion_subcommands(subparsers) -> None:
 
     fidelity = subparsers.add_parser(
         "verify-humanoid-animation-fidelity",
-        help="Independently compare Contract B source semantics with a Humanoid Motion authority",
+        help="Independently compare Motion JSON source semantics with a Humanoid Motion authority",
     )
     fidelity.add_argument("--source-rig", required=True)
     fidelity.add_argument("--source-animation", required=True)
