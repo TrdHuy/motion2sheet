@@ -13,6 +13,7 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 QUATERNION_NORM_TOLERANCE = 1e-8
 QUATERNION_CONTINUITY_TOLERANCE = 1e-12
 ROOT_TRANSLATION_TOLERANCE = 1e-8
+DURATION_TOLERANCE_SECONDS = 1e-6
 
 # Root is a virtual canonical-orientation parent. Humanoid Motion v1 is in-place:
 # Root translation is reserved and must remain zero within the strict tolerance.
@@ -124,7 +125,7 @@ def validate_animation(value: Any) -> dict[str, Any]:
         value,
         "Humanoid Motion animation",
         {
-            "schema", "version", "id", "canonicalSkeleton", "fps", "frameCount", "loop",
+            "schema", "version", "id", "canonicalSkeleton", "durationSeconds", "fps", "frameCount", "loop",
             "coordinateSystem", "quaternionConvention", "root", "hips", "joints",
         },
     )
@@ -140,6 +141,15 @@ def validate_animation(value: Any) -> dict[str, Any]:
     if isinstance(document["frameCount"], bool) or not isinstance(document["frameCount"], int) or document["frameCount"] <= 0:
         raise ValueError("frameCount must be a positive integer")
     frame_count = document["frameCount"]
+    duration_seconds = _finite(document["durationSeconds"], "durationSeconds")
+    if duration_seconds < 0.0:
+        raise ValueError("durationSeconds must be non-negative")
+    expected_duration = (frame_count - 1) / fps
+    if abs(duration_seconds - expected_duration) > DURATION_TOLERANCE_SECONDS:
+        raise ValueError(
+            "durationSeconds contradicts frameCount/fps for endpoint-inclusive sampling: "
+            f"durationSeconds={duration_seconds:.12g} expected={expected_duration:.12g}"
+        )
     if not isinstance(document["loop"], bool):
         raise ValueError("loop must be boolean")
     coordinate = _object(document["coordinateSystem"], "coordinateSystem", set(EXPECTED_COORDINATE_SYSTEM))
