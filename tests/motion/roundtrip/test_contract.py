@@ -98,6 +98,7 @@ def animation():
         "fps": 30.0,
         "fpsNumerator": 30,
         "fpsBase": 1.0,
+        "durationSeconds": 1.0 / 30.0,
         "frameRange": [1, 2],
         "frameCount": 2,
         "sampling": {
@@ -195,6 +196,22 @@ def test_contract_is_deterministic_and_human_readable():
 def test_rig_and_animation_validate():
     validated_rig = validate_rig_document(rig())
     validate_animation_document(animation(), validated_rig)
+
+
+def test_animation_duration_is_timing_anchor():
+    validated_rig = validate_rig_document(rig())
+    data = animation()
+    data["fps"] = 60.0
+    data["fpsNumerator"] = 60
+    with pytest.raises(ValueError, match="durationSeconds contradicts"):
+        validate_animation_document(data, validated_rig)
+
+
+def test_legacy_source_animation_without_duration_still_validates():
+    validated_rig = validate_rig_document(rig())
+    data = animation()
+    del data["durationSeconds"]
+    validate_animation_document(data, validated_rig)
 
 
 def test_rig_requires_explicit_edit_geometry():
