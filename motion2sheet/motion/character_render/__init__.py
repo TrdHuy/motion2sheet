@@ -1,1 +1,1 @@
-"""Direct Contract B playback on Mixamo-compatible character rigs."""
+"""Direct Motion JSON playback on Mixamo-compatible character rigs."""
