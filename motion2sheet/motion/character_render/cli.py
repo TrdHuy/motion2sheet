@@ -15,5 +15,5 @@ def _run(args) -> int:
     return 0
 
 def add_character_render_subcommands(subparsers) -> None:
-    p=subparsers.add_parser("render-character-animation",help="Render Contract B source animation on a strictly compatible character rig")
+    p=subparsers.add_parser("render-character-animation",help="Render Source Rig + Source Animation JSON on a strictly compatible character rig")
     p.add_argument("--rig",required=True); p.add_argument("--animation",required=True); p.add_argument("--character-profile",required=True); p.add_argument("--camera-profile",required=True); p.add_argument("--sheet-columns",type=int,default=8); p.add_argument("--canvas",type=_canvas,default=(320,320)); p.add_argument("--background",default="transparent"); p.add_argument("--gif",action="store_true"); p.add_argument("--frames",default="all"); p.add_argument("--blender",default="blender"); p.add_argument("--output",required=True); p.set_defaults(func=_run)
