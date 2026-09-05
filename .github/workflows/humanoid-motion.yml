@@ -2,6 +2,7 @@ name: Humanoid Motion
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, assigned]
     paths:
       - 'motion2sheet/motion/humanoid_motion/**'
       - 'motion2sheet/motion/roundtrip/**'
@@ -32,11 +33,11 @@ concurrency:
 
 jobs:
   humanoid-motion:
-    name: humanoid-motion / ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'smoke' }}
+    name: humanoid-motion / ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.action == 'assigned' && github.event.assignee.login == github.repository_owner && 'full' || 'smoke') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'smoke' }}
+      MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.action == 'assigned' && github.event.assignee.login == github.repository_owner && 'full' || 'smoke') }}
       ROOT: build/motion/humanoid-motion
     steps:
       - name: Checkout exact requested revision
