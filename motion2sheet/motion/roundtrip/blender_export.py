@@ -49,6 +49,7 @@ def main() -> None:
             input_path,
             [bone["name"] for bone in rig["bones"]],
             animation["frameCount"],
+            action_name=action.name,
         )
         for bone_name, adapter in encoding_adapters.items():
             if bone_name in rig_fbx["bones"]:

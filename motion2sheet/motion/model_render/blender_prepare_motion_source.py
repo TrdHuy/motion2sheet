@@ -247,6 +247,7 @@ def main() -> None:
         source,
         sorted(parents),
         source_frame_count,
+        action_name=source_action.name,
     )
     source_native_timing = validate_fbx_native_timing(
         source_animation_fbx,
@@ -333,6 +334,7 @@ def main() -> None:
         output,
         normalized_bones,
         normalized_frame_count,
+        action_name=normalized_action.name,
     )
     normalized_native_timing = validate_fbx_native_timing(
         animation_fbx,
