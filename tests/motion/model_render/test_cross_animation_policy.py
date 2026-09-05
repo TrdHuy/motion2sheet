@@ -7,9 +7,9 @@ def test_cross_animation_fails_closed_before_any_fixed_character_render():
         / ".github/workflows/real-skin-cross-animation-e2e.yml"
     ).read_text(encoding="utf-8")
 
-    preflight = "Fail closed unless every Contract B rig matches fixed character Level-1"
+    preflight = "Fail closed unless every Source Rig matches fixed character Level-1"
     delete = "Delete every FBX before canonical JSON-only renders"
-    render = "Render SAME character with Walking Contract B"
+    render = "Render SAME character with Walking Source Animation"
 
     assert preflight in workflow
     assert workflow.index(preflight) < workflow.index(delete) < workflow.index(render)
