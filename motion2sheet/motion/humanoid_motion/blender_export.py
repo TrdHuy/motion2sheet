@@ -45,6 +45,10 @@ def main() -> None:
     request = json.loads(Path(args.request).read_text(encoding="utf-8"))
     source_rig = validate_rig_document(read_json(Path(request["sourceRigPath"])))
     source_animation = validate_animation_document(read_json(Path(request["sourceAnimationPath"])), source_rig)
+    if "durationSeconds" not in source_animation:
+        raise RuntimeError(
+            "Source Animation is missing durationSeconds; re-export it with the current export-animation-json command"
+        )
     mapping = validate_character_mapping(read_mapping(Path(request["mappingPath"])), source_rig)
     armature, _action = build_json_scene(source_rig, source_animation)
     joints = mapping["joints"]
@@ -103,6 +107,7 @@ def main() -> None:
         "version": 1,
         "id": request["animationId"],
         "canonicalSkeleton": CANONICAL_SKELETON_ID,
+        "durationSeconds": float(source_animation["durationSeconds"]),
         "fps": float(source_animation["fps"]),
         "frameCount": len(frames),
         "loop": bool(request["loop"]),
@@ -133,6 +138,7 @@ def main() -> None:
         "sourceFrameRange": frames,
         "frameCount": len(frames),
         "fps": document["fps"],
+        "durationSeconds": document["durationSeconds"],
         "sourceMeanLegLengthSceneUnits": leg_length,
         "rootPolicy": "virtual Root translation fixed at zero; relative Hips yaw retained only as canonical body orientation",
         "locomotionPolicy": "linear-endpoint-planar-detrend-v1",
