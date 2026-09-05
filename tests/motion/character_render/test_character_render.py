@@ -41,7 +41,7 @@ def test_frames_preserve_source_order_and_validate_selection():
     animation={"frames":[{"frame":1},{"frame":2},{"frame":3}]}
     assert parse_frames("all",animation)==[1,2,3]
     assert parse_frames("1,3",animation)==[1,3]
-    with pytest.raises(ValueError,match="outside Contract B"): parse_frames("4",animation)
+    with pytest.raises(ValueError,match="outside Source Animation"): parse_frames("4",animation)
 
 def test_diagnostics_frame_bounds_are_scalar_first_and_last():
     first,last=frame_bounds({1:"frame1",32:"frame32"})
