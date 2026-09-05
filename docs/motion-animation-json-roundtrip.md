@@ -44,6 +44,22 @@ Before serialization each captured matrix is decomposed to TRS and immediately r
 
 Canonical JSON uses stable key ordering, normalized quaternion sign, finite numbers, deterministic source filename/SHA256 provenance and no timestamps, UUIDs, absolute machine paths or opaque binary data.
 
+## Native timing authority
+
+`durationSeconds` is the semantic timing authority. It is extracted before JSON
+serialization from the source format rather than derived from Blender scene FPS:
+
+- FBX uses the effective AnimationStack `LocalStart`/`LocalStop` KTime span. The
+  KTime ticks-per-second value is resolved from FBX version and `TCDefinition` and
+  stored as `sourceFormat.fbx.ktimeTicksPerSecond`.
+- BVH uses the `MOTION` section's `Frames` and `Frame Time`, retained under
+  `sourceFormat.bvh`.
+
+For endpoint-inclusive sampling, `(frameCount - 1) / fps` is checked against the
+native duration within `1e-6` seconds; it does not define duration. FBX Local and
+Reference spans, curve endpoints, all native sample times, declared frame rate,
+and imported representation must agree. Any contradiction fails export.
+
 ## Fail-closed canonical schema
 
 Canonical `rig.json` and `animation.json` are closed contracts rather than extensible property bags. Every fixed-shape object has an exact allowed-field set. Unknown fields fail validation rather than being ignored, and missing required fields also fail validation.

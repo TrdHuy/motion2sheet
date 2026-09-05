@@ -6,6 +6,14 @@ import re
 from pathlib import Path
 from typing import Any
 
+from motion2sheet.motion.roundtrip.native_timing import (
+    DURATION_TOLERANCE_SECONDS,
+    FBX_KTIME_V7,
+    FBX_KTIME_V8,
+    validate_bvh_native_timing,
+    validate_fbx_native_timing,
+)
+
 RIG_SCHEMA = "motion2sheet.source-rig"
 ANIMATION_SCHEMA = "motion2sheet.source-animation"
 VERSION = 1
@@ -395,7 +403,7 @@ def _validate_fbx_animation_metadata(data: Any, expected_frame_count: int) -> No
         raise ValueError(
             "animation.sourceFormat.fbx.curves is forbidden: animation.frames is the sole motion authority"
         )
-    _expect_object(data, "animation.sourceFormat.fbx", expected)
+    _expect_object(data, "animation.sourceFormat.fbx", expected, {"ktimeTicksPerSecond"})
     _non_empty_string(data["stack"], "animation.sourceFormat.fbx.stack")
     _non_empty_string(data["layer"], "animation.sourceFormat.fbx.layer")
     if data["sampling"] != "all-integer-source-frames":
@@ -415,6 +423,23 @@ def _validate_fbx_animation_metadata(data: Any, expected_frame_count: int) -> No
     ]
     if any(right <= left for left, right in zip(sample_key_times, sample_key_times[1:])):
         raise ValueError("animation.sourceFormat.fbx.sampleKeyTimes must be strictly increasing")
+    if "ktimeTicksPerSecond" in data:
+        ticks_per_second = _integer(
+            data["ktimeTicksPerSecond"],
+            "animation.sourceFormat.fbx.ktimeTicksPerSecond",
+        )
+        if ticks_per_second not in {FBX_KTIME_V7, FBX_KTIME_V8}:
+            raise ValueError("animation.sourceFormat.fbx.ktimeTicksPerSecond is unsupported")
+
+
+def _validate_bvh_animation_metadata(data: Any, expected_frame_count: int) -> None:
+    _expect_object(data, "animation.sourceFormat.bvh", {"declaredFrameCount", "frameTimeSeconds"})
+    declared = _integer(data["declaredFrameCount"], "animation.sourceFormat.bvh.declaredFrameCount")
+    if declared != expected_frame_count:
+        raise ValueError("animation.sourceFormat.bvh.declaredFrameCount contradicts frameCount")
+    frame_time = _finite(data["frameTimeSeconds"], "animation.sourceFormat.bvh.frameTimeSeconds")
+    if frame_time <= 0.0:
+        raise ValueError("animation.sourceFormat.bvh.frameTimeSeconds must be positive")
 
 
 def validate_rig_document(data: Any) -> dict:
@@ -525,7 +550,7 @@ def validate_animation_document(data: Any, rig: dict) -> dict:
         "transformSpace",
         "frames",
     }
-    _expect_object(data, "animation", top_required, {"sourceFormat"})
+    _expect_object(data, "animation", top_required, {"sourceFormat", "durationSeconds"})
     version = _integer(data["version"], "animation.version")
     if data["schema"] != ANIMATION_SCHEMA or version != VERSION:
         raise ValueError(f"unsupported animation schema/version: {data['schema']!r}/{data['version']!r}")
@@ -539,6 +564,8 @@ def validate_animation_document(data: Any, rig: dict) -> dict:
     source_format = _validate_source(data["source"], "animation.source", animation=True)
     if data["source"]["sha256"] != rig["source"]["sha256"]:
         raise ValueError("animation.source.sha256 must match rig.source.sha256")
+    if source_format != rig["source"]["format"]:
+        raise ValueError("animation.source.format must match rig.source.format")
 
     fps = _finite(data["fps"], "animation.fps")
     fps_numerator = _integer(data["fpsNumerator"], "animation.fpsNumerator")
@@ -555,6 +582,17 @@ def validate_animation_document(data: Any, rig: dict) -> dict:
     end = _integer(frame_range[1], "animation.frameRange[1]")
     if end < start:
         raise ValueError("animation.frameRange end must be >= start")
+
+    if "durationSeconds" in data:
+        duration_seconds = _finite(data["durationSeconds"], "animation.durationSeconds")
+        if duration_seconds < 0.0:
+            raise ValueError("animation.durationSeconds must be non-negative")
+        expected_duration = (end - start) / fps
+        if abs(duration_seconds - expected_duration) > DURATION_TOLERANCE_SECONDS:
+            raise ValueError(
+                "animation.durationSeconds contradicts frameRange/fps: "
+                f"durationSeconds={duration_seconds:.12g} expected={expected_duration:.12g}"
+            )
 
     sampling = data["sampling"]
     _expect_object(
@@ -614,9 +652,41 @@ def validate_animation_document(data: Any, rig: dict) -> dict:
     if source_format == "FBX":
         source_format_data = data.get("sourceFormat")
         _expect_object(source_format_data, "animation.sourceFormat", {"fbx"})
-        _validate_fbx_animation_metadata(source_format_data["fbx"], len(expected_frames))
+        animation_fbx = source_format_data["fbx"]
+        _validate_fbx_animation_metadata(animation_fbx, len(expected_frames))
+        if "ktimeTicksPerSecond" in animation_fbx:
+            native_timing = validate_fbx_native_timing(
+                animation_fbx,
+                global_settings=rig["sourceFormat"]["fbx"]["globalSettings"],
+                frame_count=frame_count,
+                fps=fps,
+            )
+            if "durationSeconds" in data:
+                native_error = abs(float(data["durationSeconds"]) - native_timing["durationSeconds"])
+                if native_error > DURATION_TOLERANCE_SECONDS:
+                    raise ValueError(
+                        "animation.durationSeconds contradicts source-native FBX KTime: "
+                        f"durationSeconds={float(data['durationSeconds']):.12g} "
+                        f"nativeDurationSeconds={native_timing['durationSeconds']:.12g}"
+                    )
     elif "sourceFormat" in data:
-        raise ValueError("non-FBX animation must not contain sourceFormat")
+        source_format_data = data["sourceFormat"]
+        _expect_object(source_format_data, "animation.sourceFormat", {"bvh"})
+        animation_bvh = source_format_data["bvh"]
+        _validate_bvh_animation_metadata(animation_bvh, len(expected_frames))
+        native_timing = validate_bvh_native_timing(
+            animation_bvh,
+            frame_count=frame_count,
+            fps=fps,
+        )
+        if "durationSeconds" in data:
+            native_error = abs(float(data["durationSeconds"]) - native_timing["durationSeconds"])
+            if native_error > DURATION_TOLERANCE_SECONDS:
+                raise ValueError(
+                    "animation.durationSeconds contradicts source-native BVH Frame Time: "
+                    f"durationSeconds={float(data['durationSeconds']):.12g} "
+                    f"nativeDurationSeconds={native_timing['durationSeconds']:.12g}"
+                )
     return data
 
 

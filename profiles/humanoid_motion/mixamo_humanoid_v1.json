@@ -1,0 +1,29 @@
+{
+  "schema": "motion2sheet.humanoid-motion.character-map",
+  "version": 1,
+  "id": "mixamo_humanoid_v1",
+  "canonicalSkeleton": "humanoid_v1",
+  "joints": {
+    "Hips": "mixamorig:Hips",
+    "Spine": "mixamorig:Spine",
+    "Chest": "mixamorig:Spine2",
+    "Neck": "mixamorig:Neck",
+    "Head": "mixamorig:Head",
+    "LeftShoulder": "mixamorig:LeftShoulder",
+    "LeftUpperArm": "mixamorig:LeftArm",
+    "LeftLowerArm": "mixamorig:LeftForeArm",
+    "LeftHand": "mixamorig:LeftHand",
+    "RightShoulder": "mixamorig:RightShoulder",
+    "RightUpperArm": "mixamorig:RightArm",
+    "RightLowerArm": "mixamorig:RightForeArm",
+    "RightHand": "mixamorig:RightHand",
+    "LeftUpperLeg": "mixamorig:LeftUpLeg",
+    "LeftLowerLeg": "mixamorig:LeftLeg",
+    "LeftFoot": "mixamorig:LeftFoot",
+    "LeftToe": "mixamorig:LeftToeBase",
+    "RightUpperLeg": "mixamorig:RightUpLeg",
+    "RightLowerLeg": "mixamorig:RightLeg",
+    "RightFoot": "mixamorig:RightFoot",
+    "RightToe": "mixamorig:RightToeBase"
+  }
+}

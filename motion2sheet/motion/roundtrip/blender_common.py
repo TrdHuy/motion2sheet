@@ -300,7 +300,14 @@ def capture_animation_document(input_path: Path, armature: bpy.types.Object, act
 
 def import_source(input_path: Path) -> tuple[bpy.types.Object, bpy.types.Action]:
     clean_scene()
-    import_motion(input_path)
+    if input_path.suffix.lower() == ".bvh":
+        # Source Animation timing must use the BVH-declared Frame Time rather than
+        # the caller's pre-existing scene FPS. Keep this timing-aware import local
+        # to the round-trip authority boundary so generic motion extraction keeps
+        # its historical behavior.
+        bpy.ops.import_anim.bvh(filepath=str(input_path), target="ARMATURE", update_scene_fps=True)
+    else:
+        import_motion(input_path)
     armature = find_armature()
     action = activate_animation(armature)
     bpy.context.view_layer.update()

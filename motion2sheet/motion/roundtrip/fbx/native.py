@@ -30,6 +30,26 @@ AXIS_BY_CONNECTION = {b"d|X": "x", b"d|Y": "y", b"d|Z": "z"}
 STACK_TIMING_FIELDS = ("LocalStart", "LocalStop", "ReferenceStart", "ReferenceStop")
 
 
+def _fbx_timebase(root, version: int) -> dict[str, int | None]:
+    from motion2sheet.motion.roundtrip.native_timing import resolve_fbx_ticks_per_second
+
+    header = _find_first(root, b"FBXHeaderExtension")
+    header_version_elem = _find_first(header, b"FBXHeaderVersion") if header is not None else None
+    header_version = int(header_version_elem.props[0]) if header_version_elem is not None and header_version_elem.props else 0
+    other_flags = _find_first(header, b"OtherFlags") if header is not None else None
+    definition_elem = _find_first(other_flags, b"TCDefinition") if other_flags is not None else None
+    definition = int(definition_elem.props[0]) if definition_elem is not None and definition_elem.props else None
+    return {
+        "fbxHeaderVersion": header_version,
+        "timecodeDefinition": definition,
+        "ticksPerSecond": resolve_fbx_ticks_per_second(
+            int(version),
+            header_version=header_version,
+            timecode_definition=definition,
+        ),
+    }
+
+
 def _find_first(elem, elem_id: bytes):
     for child in elem.elems:
         if child.id == elem_id:
@@ -266,6 +286,47 @@ def _patch_stack_timing(root, stack_timing: dict[str, int]) -> None:
         if prop is None or len(prop.props) < 5:
             raise RuntimeError(f"Generated FBX AnimationStack lacks {field}")
         prop.props[-1] = int(stack_timing[field])
+
+
+def _set_int32_child(parent, child_id: bytes, value: int):
+    child = _find_first(parent, child_id)
+    if child is None:
+        child = parse_fbx.FBXElem(
+            child_id,
+            [int(value)],
+            bytearray([data_types.INT32]),
+            [],
+        )
+        parent.elems.append(child)
+    else:
+        if len(child.props) != 1:
+            raise RuntimeError(f"FBX {child_id.decode()} has unexpected encoding")
+        child.props[0] = int(value)
+    return child
+
+
+def _patch_timebase(root, fbx_version: int, ticks_per_second: int) -> None:
+    from motion2sheet.motion.roundtrip.native_timing import FBX_KTIME_V7, FBX_KTIME_V8
+
+    if ticks_per_second == FBX_KTIME_V8 and fbx_version < 7700:
+        raise RuntimeError("FBX v8 KTime cannot be encoded into an FBX version older than 7700")
+    if ticks_per_second not in {FBX_KTIME_V7, FBX_KTIME_V8}:
+        raise RuntimeError(f"Unsupported FBX KTime ticks-per-second value: {ticks_per_second}")
+    if fbx_version < 7700 and ticks_per_second == FBX_KTIME_V7:
+        return
+
+    header = _find_first(root, b"FBXHeaderExtension")
+    if header is None:
+        raise RuntimeError("Generated FBX lacks FBXHeaderExtension")
+    header_version_elem = _find_first(header, b"FBXHeaderVersion")
+    header_version = int(header_version_elem.props[0]) if header_version_elem is not None and header_version_elem.props else 0
+    _set_int32_child(header, b"FBXHeaderVersion", max(header_version, 1004))
+    other_flags = _find_first(header, b"OtherFlags")
+    if other_flags is None:
+        other_flags = parse_fbx.FBXElem(b"OtherFlags", [], bytearray(), [])
+        header.elems.append(other_flags)
+    definition = 127 if ticks_per_second == FBX_KTIME_V7 else 0
+    _set_int32_child(other_flags, b"TCDefinition", definition)
 
 
 def _target_curve_map(root) -> dict[tuple[str, str, str], Any]:

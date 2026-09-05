@@ -14,6 +14,11 @@ from motion2sheet.motion.roundtrip.fbx import (
     extract_fbx_metadata_and_diagnostics,
 )
 from motion2sheet.motion.roundtrip.schema import validate_animation_document, validate_rig_document, write_canonical_json
+from motion2sheet.motion.roundtrip.native_timing import (
+    extract_bvh_native_timing,
+    validate_bvh_native_timing,
+    validate_fbx_native_timing,
+)
 
 
 def _argv() -> list[str]:
@@ -39,12 +44,12 @@ def main() -> None:
 
     rig = capture_rig_document(input_path, armature)
     animation = capture_animation_document(input_path, armature, action, rig)
-
     if input_path.suffix.lower() == ".fbx":
         rig_fbx, animation_fbx, original_curves = extract_fbx_metadata_and_diagnostics(
             input_path,
             [bone["name"] for bone in rig["bones"]],
             animation["frameCount"],
+            action_name=action.name,
         )
         for bone_name, adapter in encoding_adapters.items():
             if bone_name in rig_fbx["bones"]:
@@ -52,6 +57,13 @@ def main() -> None:
 
         rig["sourceFormat"] = {"fbx": rig_fbx}
         animation["sourceFormat"] = {"fbx": animation_fbx}
+        timing = validate_fbx_native_timing(
+            animation_fbx,
+            global_settings=rig_fbx["globalSettings"],
+            frame_count=animation["frameCount"],
+            fps=animation["fps"],
+        )
+        animation["durationSeconds"] = timing["durationSeconds"]
         write_canonical_json(
             output / "diagnostics" / "original_fbx_curves.json",
             {
@@ -63,6 +75,15 @@ def main() -> None:
                 "curves": original_curves,
             },
         )
+    else:
+        animation_bvh = extract_bvh_native_timing(input_path)
+        animation["sourceFormat"] = {"bvh": animation_bvh}
+        timing = validate_bvh_native_timing(
+            animation_bvh,
+            frame_count=animation["frameCount"],
+            fps=animation["fps"],
+        )
+        animation["durationSeconds"] = timing["durationSeconds"]
 
     rig = validate_rig_document(rig)
     animation = validate_animation_document(animation, rig)
@@ -70,7 +91,8 @@ def main() -> None:
     write_canonical_json(output / "animation.json", animation)
     print(
         f"motion2sheet: exported source-authority JSON; bones={len(rig['bones'])}, "
-        f"frames={animation['frameCount']}, fps={animation['fps']} -> {output}; "
+        f"frames={animation['frameCount']}, fps={animation['fps']}, "
+        f"durationSeconds={animation['durationSeconds']} -> {output}; "
         f"fbxEncodingAdapters={len(encoding_adapters)}"
     )
 

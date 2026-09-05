@@ -353,6 +353,11 @@ def encode_generated_fbx(
     for bone_name, payload in rig_fbx["bones"].items():
         native._patch_model_transform(models[bone_name], payload["transformStack"])
     _patch_global_settings(root, rig_fbx["globalSettings"])
+    native._patch_timebase(
+        root,
+        int(rig_fbx["fbxVersion"]),
+        int(animation_fbx.get("ktimeTicksPerSecond", 46_186_158_000)),
+    )
     native._patch_stack_timing(root, animation_fbx["stackTiming"])
     _patch_stack_layer_names(root, animation_fbx["stack"], animation_fbx["layer"])
 

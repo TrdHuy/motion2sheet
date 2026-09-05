@@ -12,6 +12,8 @@ def extract_fbx_metadata_and_diagnostics(
     path: Path,
     bone_names: list[str],
     expected_frame_count: int,
+    *,
+    action_name: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
     """Extract static FBX encoding metadata plus a diagnostic-only copy of source curves.
 
@@ -20,6 +22,7 @@ def extract_fbx_metadata_and_diagnostics(
     """
 
     root, version = parse_fbx.parse(str(path), use_namedtuple=True)
+    timebase = native._fbx_timebase(root, int(version))
     table = native._node_table(root)
     forward, _reverse = native._connection_maps(root)
     requested = set(bone_names)
@@ -38,23 +41,45 @@ def extract_fbx_metadata_and_diagnostics(
 
     stacks = [elem for elem in table.values() if elem.id == b"AnimationStack" and elem.props[2] == b""]
     layers = [elem for elem in table.values() if elem.id == b"AnimationLayer" and elem.props[2] == b""]
-    if len(stacks) != 1 or len(layers) != 1:
-        raise RuntimeError(
-            "POC v1 requires exactly one FBX AnimationStack and one AnimationLayer; "
-            f"found stacks={len(stacks)} layers={len(layers)}"
-        )
+    pairs = []
+    for layer in layers:
+        connected_stacks = [
+            stack
+            for stack in stacks
+            if any(
+                link.props[0] == b"OO"
+                and int(link.props[2]) == int(stack.props[0])
+                for link in forward.get(int(layer.props[0]), ())
+            )
+        ]
+        if len(connected_stacks) != 1:
+            raise RuntimeError(
+                f"FBX AnimationLayer {native._name(layer)!r} must connect to exactly one AnimationStack"
+            )
+        pairs.append((connected_stacks[0], layer))
 
-    layer_id = int(layers[0].props[0])
-    stack_id = int(stacks[0].props[0])
-    if not any(
-        link.props[0] == b"OO" and int(link.props[2]) == stack_id
-        for link in forward.get(layer_id, ())
-    ):
-        raise RuntimeError("FBX AnimationLayer is not connected to the single AnimationStack")
+    if len(pairs) != 1 and action_name is not None:
+        pairs = [
+            (stack, layer)
+            for stack, layer in pairs
+            if action_name.endswith(f"|{native._name(stack)}|{native._name(layer)}")
+        ]
+    if len(pairs) != 1:
+        raise RuntimeError(
+            "POC v1 requires one unambiguous FBX AnimationStack/AnimationLayer pair for the imported action; "
+            f"action={action_name!r} candidates={len(pairs)} stacks={len(stacks)} layers={len(layers)}"
+        )
+    selected_stack, selected_layer = pairs[0]
+    layer_id = int(selected_layer.props[0])
 
     curve_node_targets: dict[int, tuple[str, str]] = {}
     for elem_id, elem in table.items():
         if elem.id != b"AnimationCurveNode" or elem.props[2] != b"":
+            continue
+        if not any(
+            link.props[0] == b"OO" and int(link.props[2]) == layer_id
+            for link in forward.get(elem_id, ())
+        ):
             continue
         model_links = [
             link
@@ -191,7 +216,7 @@ def extract_fbx_metadata_and_diagnostics(
         },
     }
 
-    stack_properties = native._properties70(stacks[0])
+    stack_properties = native._properties70(selected_stack)
     effective_local_start = int(stack_properties.get("LocalStart", sample_key_times[0]))
     effective_local_stop = int(stack_properties.get("LocalStop", sample_key_times[-1]))
     stack_timing = {
@@ -201,11 +226,12 @@ def extract_fbx_metadata_and_diagnostics(
         "ReferenceStop": int(stack_properties.get("ReferenceStop", effective_local_stop)),
     }
     animation_metadata = {
-        "stack": native._name(stacks[0]),
-        "layer": native._name(layers[0]),
+        "stack": native._name(selected_stack),
+        "layer": native._name(selected_layer),
         "stackTiming": stack_timing,
         "sampling": "all-integer-source-frames",
         "sampleKeyTimes": sample_key_times,
+        "ktimeTicksPerSecond": timebase["ticksPerSecond"],
     }
     return (
         rig_metadata,
