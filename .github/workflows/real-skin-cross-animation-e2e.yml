@@ -16,14 +16,14 @@ permissions:
 
 jobs:
   cross-animation:
-    name: real-mixamo-cross-animation / one-character-many-contract-b
+    name: real-mixamo-cross-animation / one-character-many-motion-json
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       RELEASE_BASE: https://github.com/TrdHuy/motion2sheet/releases/download/e2e_gh_action_asset
       WALK_SHA256: 1e05bcef7c030dce1be09a38a6e3d2f38d1f9bc71396584876ab1a3141005c02
       WALK_SIZE: '41940608'
-      IDLE_SHA256: 3738c0c5a1a4c33e36c30f59ea3393a4ee612eef89542157ff59963ad49a7b72
+      IDLE_SHA256: 3738c0c5a4c33e36c30f59ea3393a4ee612eef89542157ff59963ad49a7b72
       IDLE_SIZE: '552400'
       RUN_SHA256: a0ddd67d5e72dc657a6445d06af3d17f8ba6a15e61b19224d4c63f897ac0e91b
       RUN_SIZE: '333840'
@@ -130,7 +130,7 @@ jobs:
             echo "RUN_NORMALIZED=$RUN_NORMALIZED"
             echo "RUN_INPLACE_NORMALIZED=$RUN_INPLACE_NORMALIZED"
           } >> "$GITHUB_ENV"
-      - name: Export all motion through locked PR11 Contract B command
+      - name: Export all motion through locked PR11 Motion JSON command
         run: |
           set -euo pipefail
           motion2sheet export-animation-json "$WALK_NORMALIZED" --output "$ROOT/walking"
@@ -141,7 +141,7 @@ jobs:
             test -s "$ROOT/$clip/rig.json"
             test -s "$ROOT/$clip/animation.json"
           done
-      - name: Verify source-to-Contract-B normalization gates
+      - name: Verify source-to-Motion-JSON normalization gates
         run: |
           python - <<'PY'
           import json, os
@@ -189,7 +189,7 @@ jobs:
           (root/'diagnostics'/'normalization_summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
           print(json.dumps(summary,indent=2,sort_keys=True))
           PY
-      - name: Fail closed unless every Contract B rig matches fixed character Level-1
+      - name: Fail closed unless every Source Rig matches fixed character Level-1
         run: |
           python - <<'PY'
           import json, os
@@ -243,15 +243,15 @@ jobs:
           rm -f "$CHARACTER_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$WALK_NORMALIZED" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"
           for path in "$CHARACTER_FBX" "$IDLE_FBX" "$RUN_FBX" "$RUN_INPLACE_FBX" "$WALK_NORMALIZED" "$IDLE_NORMALIZED" "$RUN_NORMALIZED" "$RUN_INPLACE_NORMALIZED"; do test ! -e "$path"; done
           echo '{"allOriginalAndNormalizedFbxDeletedBeforeRender":true}' > "$ROOT/diagnostics/fbx_deletion.json"
-      - name: Render SAME character with Walking Contract B
+      - name: Render SAME character with Walking Source Animation
         run: |
           set -euo pipefail
           motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/walking/rig.json" --animation "$ROOT/walking/animation.json" --camera-profile "$CAMERA" --sheet-columns 8 --canvas "$CROSS_CANVAS" --background transparent --gif --output "$ROOT/render-walking"
-      - name: Render SAME character with independent Idle Contract B
+      - name: Render SAME character with independent Idle Source Animation
         run: |
           set -euo pipefail
           motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/idle/rig.json" --animation "$ROOT/idle/animation.json" --camera-profile "$CAMERA" --sheet-columns 8 --canvas "$CROSS_CANVAS" --background transparent --gif --output "$ROOT/render-idle"
-      - name: Render SAME character with independent Run Contract B
+      - name: Render SAME character with independent Run Source Animation
         run: |
           set -euo pipefail
           motion2sheet render-model-animation --model "$ROOT/character/model.glb" --character-rig "$ROOT/character/rig.json" --skin "$ROOT/character/skin.json" --animation-rig "$ROOT/run/rig.json" --animation "$ROOT/run/animation.json" --camera-profile "$CAMERA" --sheet-columns 8 --canvas "$CROSS_CANVAS" --background transparent --gif --output "$ROOT/render-run"
@@ -261,7 +261,7 @@ jobs:
           import hashlib, json, math, os
           from pathlib import Path
           from PIL import Image
-          from motion2sheet.motion.model_render.root_motion import contract_root_motion, root_motion_difference
+          from motion2sheet.motion.model_render.root_motion import source_animation_root_motion, root_motion_difference
           from motion2sheet.motion.roundtrip.schema import read_json
           from motion2sheet.motion.skin import validate_level1_rig_compatibility
           root=Path(os.environ['ROOT']); character=root/'character'
@@ -331,8 +331,8 @@ jobs:
           assert inplace_level1['maxRestBasisErrorDegrees'] <= inplace_level1['restBasisToleranceDegrees']
           assert inplace_level1['retargeting'] is False and inplace_level1['fuzzyMapping'] is False
 
-          run_root=contract_root_motion(read_json(root/'run'/'rig.json'),read_json(root/'run'/'animation.json'))
-          inplace_root=contract_root_motion(inplace_rig,read_json(root/'run-inplace'/'animation.json'))
+          run_root=source_animation_root_motion(read_json(root/'run'/'rig.json'),read_json(root/'run'/'animation.json'))
+          inplace_root=source_animation_root_motion(inplace_rig,read_json(root/'run-inplace'/'animation.json'))
           difference=root_motion_difference(run_root,inplace_root)
           assert difference['pass'], {'run':run_root,'runInPlace':inplace_root,'difference':difference}
           observed_larger='run-not-inplace' if run_root['rootDisplacement']>inplace_root['rootDisplacement'] else 'run-inplace' if inplace_root['rootDisplacement']>run_root['rootDisplacement'] else 'equal'
