@@ -4,31 +4,31 @@ import math
 from typing import Any
 
 
-def contract_root_motion(rig: dict[str, Any], animation: dict[str, Any]) -> dict[str, Any]:
-    """Measure root translation semantics directly from Contract B.
+def source_animation_root_motion(rig: dict[str, Any], animation: dict[str, Any]) -> dict[str, Any]:
+    """Measure root translation semantics directly from Source Rig + Source Animation JSON.
 
     No filename/action naming convention is consulted. The unique hierarchy root and
-    the first/last Contract B samples are the only authorities used by this diagnostic.
+    the first/last Source Animation samples are the only authorities used by this diagnostic.
     """
 
     roots = [bone["name"] for bone in rig["bones"] if bone.get("parent") is None]
     if len(roots) != 1:
-        raise ValueError(f"Contract B rig must have exactly one root bone; found {roots}")
+        raise ValueError(f"Source Rig must have exactly one root bone; found {roots}")
     frames = animation.get("frames") or []
     if not frames:
-        raise ValueError("Contract B animation has no frames")
+        raise ValueError("Source Animation has no frames")
     root = roots[0]
 
     def translation(frame: dict[str, Any]) -> list[float]:
         bones = frame.get("bones") or {}
         if root not in bones:
-            raise ValueError(f"Contract B frame {frame.get('frame')} is missing root bone {root!r}")
+            raise ValueError(f"Source Animation frame {frame.get('frame')} is missing root bone {root!r}")
         values = bones[root].get("translation")
         if not isinstance(values, list) or len(values) != 3:
-            raise ValueError(f"Contract B root translation must contain three components for {root!r}")
+            raise ValueError(f"Source Animation root translation must contain three components for {root!r}")
         result = [float(value) for value in values]
         if not all(math.isfinite(value) for value in result):
-            raise ValueError(f"Contract B root translation contains non-finite values for {root!r}")
+            raise ValueError(f"Source Animation root translation contains non-finite values for {root!r}")
         return result
 
     start = translation(frames[0])
@@ -50,7 +50,7 @@ def contract_root_motion(rig: dict[str, Any], animation: dict[str, Any]) -> dict
 
 
 def root_motion_difference(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
-    """Fail-closed data-driven proof that two Contract B clips keep distinct root motion."""
+    """Fail-closed data-driven proof that two Source Animation clips keep distinct root motion."""
 
     first_displacement = float(first["rootDisplacement"])
     second_displacement = float(second["rootDisplacement"])
