@@ -277,7 +277,7 @@ def _validate_bone_properties(data: Any, label: str) -> None:
     for field in ("useConnect", "useDeform", "useInheritRotation", "useLocalLocation"):
         _boolean(data[field], f"{label}.{field}")
     if "useRelativeParent" in data:
-        _boolean(data["useRelativeParent"], f"{label}.{useRelativeParent}")
+        _boolean(data["useRelativeParent"], f"{label}.useRelativeParent")
     _non_empty_string(data["inheritScale"], f"{label}.inheritScale")
     for field in ("headRadius", "tailRadius", "envelopeDistance", "envelopeWeight"):
         _finite(data[field], f"{label}.{field}")
