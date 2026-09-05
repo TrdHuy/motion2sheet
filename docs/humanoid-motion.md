@@ -10,11 +10,13 @@ per-character animation authority.
 | Authority | Owns |
 | --- | --- |
 | Game/world | Absolute X/Y position, movement speed, navigation, pathfinding, collision and gameplay displacement |
-| Humanoid Motion | In-place pelvis/body articulation, semantic joint rotations, FPS, frame count and loop intent |
+| Humanoid Motion | In-place pelvis/body articulation, semantic joint rotations, duration, sample FPS/frame count and loop intent |
 
 The strict schema is `motion2sheet.humanoid-motion.animation` version 1 with
 canonical skeleton `humanoid_v1`. It stores:
 
+- `durationSeconds` as the explicit action timing authority;
+- `fps` and `frameCount` as the endpoint-inclusive sampling representation;
 - virtual `Root` translation and yaw tracks;
 - `Hips` local/residual translation and rotation;
 - rotation tracks for every other required humanoid semantic.
@@ -22,6 +24,33 @@ canonical skeleton `humanoid_v1`. It stores:
 `Root.translation` is reserved and must remain within `1e-8` mean-leg-length
 units of `[0,0,0]` on every frame. Root yaw is retained only as canonical body
 orientation. It does not own world movement.
+
+## Timing authority
+
+`export-animation-json` captures `durationSeconds` into the Source Animation
+`animation.json` from the imported source action span. With the current
+`all-integer-source-frames-inclusive` policy:
+
+```text
+durationSeconds = (frameRange.end - frameRange.start) / fps
+```
+
+The Source Animation validator accepts older v1 files without this additive field
+for round-trip compatibility, but when the field is present it must agree with the
+source frame range and FPS within `1e-6` seconds.
+
+`export-humanoid-animation` requires that Source Animation field and copies it
+unchanged into Humanoid Motion. It does not recompute duration from its own output.
+Humanoid Motion then requires the invariant:
+
+```text
+durationSeconds = (frameCount - 1) / fps
+```
+
+within `1e-6` seconds. This makes duration the independent timing anchor: changing
+only `fps`, or only `frameCount`, fails validation instead of silently changing
+action playback speed. `fps` remains the sample rate; it is not the semantic
+source of truth for how long the action lasts.
 
 ## In-place locomotion canonicalization
 
@@ -66,8 +95,9 @@ Motion exporter, Blender playback, or their math helpers. It compares all frames
 timing, Root yaw, all 21 semantic rotations, Hips residual translation,
 left/right identity, Root invariants and quaternion validity/continuity.
 
-Tolerances are `1e-9` for FPS, `0.005` degrees for rotations, `1e-5` for Hips
-translation and `1e-8` for Root translation.
+Tolerances are `1e-9` for FPS, `1e-6` seconds for the explicit duration invariant,
+`0.005` degrees for rotations, `1e-5` for Hips translation and `1e-8` for Root
+translation.
 
 ## Character mapping and independent targets
 
