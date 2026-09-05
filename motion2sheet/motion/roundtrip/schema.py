@@ -12,6 +12,7 @@ VERSION = 1
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 STACK_TIMING_FIELDS = ("LocalStart", "LocalStop", "ReferenceStart", "ReferenceStop")
+DURATION_TOLERANCE_SECONDS = 1e-6
 
 # editGeometry is captured through Blender EditBone float32 state, while Bone.matrix_local
 # is independently materialized by Blender. The two representations can differ by a few
@@ -276,7 +277,7 @@ def _validate_bone_properties(data: Any, label: str) -> None:
     for field in ("useConnect", "useDeform", "useInheritRotation", "useLocalLocation"):
         _boolean(data[field], f"{label}.{field}")
     if "useRelativeParent" in data:
-        _boolean(data["useRelativeParent"], f"{label}.useRelativeParent")
+        _boolean(data["useRelativeParent"], f"{label}.{useRelativeParent}")
     _non_empty_string(data["inheritScale"], f"{label}.inheritScale")
     for field in ("headRadius", "tailRadius", "envelopeDistance", "envelopeWeight"):
         _finite(data[field], f"{label}.{field}")
@@ -525,7 +526,7 @@ def validate_animation_document(data: Any, rig: dict) -> dict:
         "transformSpace",
         "frames",
     }
-    _expect_object(data, "animation", top_required, {"sourceFormat"})
+    _expect_object(data, "animation", top_required, {"sourceFormat", "durationSeconds"})
     version = _integer(data["version"], "animation.version")
     if data["schema"] != ANIMATION_SCHEMA or version != VERSION:
         raise ValueError(f"unsupported animation schema/version: {data['schema']!r}/{data['version']!r}")
@@ -555,6 +556,17 @@ def validate_animation_document(data: Any, rig: dict) -> dict:
     end = _integer(frame_range[1], "animation.frameRange[1]")
     if end < start:
         raise ValueError("animation.frameRange end must be >= start")
+
+    if "durationSeconds" in data:
+        duration_seconds = _finite(data["durationSeconds"], "animation.durationSeconds")
+        if duration_seconds < 0.0:
+            raise ValueError("animation.durationSeconds must be non-negative")
+        expected_duration = (end - start) / fps
+        if abs(duration_seconds - expected_duration) > DURATION_TOLERANCE_SECONDS:
+            raise ValueError(
+                "animation.durationSeconds contradicts frameRange/fps: "
+                f"durationSeconds={duration_seconds:.12g} expected={expected_duration:.12g}"
+            )
 
     sampling = data["sampling"]
     _expect_object(
