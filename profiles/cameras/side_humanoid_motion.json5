@@ -1,0 +1,12 @@
+{
+  "schema": "motion2sheet.camera",
+  "version": 1,
+  "id": "side_humanoid_motion",
+  "projection": "ORTHO",
+  "location": [-6.0, -0.10, 1.10],
+  "target": [0.0, -0.10, 1.10],
+  "upAxis": [0.0, 0.0, 1.0],
+  "orthoScale": 3.2,
+  "followRoot": false,
+  "margin": 1.0
+}
