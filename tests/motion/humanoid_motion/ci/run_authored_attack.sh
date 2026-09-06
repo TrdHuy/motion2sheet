@@ -7,9 +7,8 @@ cd "$REPO_ROOT"
 ROOT="${1:-build/motion/humanoid-motion/direct-authored-attack}"
 FIXTURES="tests/motion/humanoid_motion/fixtures/release_assets.json"
 MAPPING="profiles/humanoid_motion/mixamo_humanoid_v1.json"
-CAMERA="profiles/cameras/front_humanoid_motion.json5"
-GENERATOR="samples/humanoid_motion/animations/right-overhand-smash/generate.py"
-COMMITTED="samples/humanoid_motion/animations/right-overhand-smash/animation.json"
+GENERATOR="samples/humanoid_motion/animations/heavy-right-cross/generate.py"
+COMMITTED="samples/humanoid_motion/animations/heavy-right-cross/animation.json"
 TMP_PARENT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 TMP_ROOT="$TMP_PARENT/motion2sheet-authored-attack-$$"
 mkdir -p "$TMP_ROOT"
@@ -17,6 +16,22 @@ trap 'rm -rf "$TMP_ROOT"' EXIT
 
 rm -rf "$ROOT"
 mkdir -p "$ROOT/diagnostics"
+
+REVIEW_CAMERA="$ROOT/diagnostics/review-camera.json5"
+cat > "$REVIEW_CAMERA" <<'JSON'
+{
+  "schema": "motion2sheet.camera",
+  "version": 1,
+  "id": "three_quarter_right_heavy_cross",
+  "projection": "ORTHO",
+  "location": [-3.8, -5.5, 1.30],
+  "target": [0.0, -0.12, 1.08],
+  "upAxis": [0.0, 0.0, 1.0],
+  "orthoScale": 3.15,
+  "followRoot": false,
+  "margin": 1.0
+}
+JSON
 
 GEN_A="$TMP_ROOT/generation-a.json"
 GEN_B="$TMP_ROOT/generation-b.json"
@@ -113,11 +128,11 @@ motion2sheet render-humanoid-animation \
   --skin "$CHARACTER_DIR/skin.json" \
   --character-mapping "$MAPPING" \
   --animation "$ROOT/animation.json" \
-  --camera-profile "$CAMERA" \
-  --sample-count 8 \
+  --camera-profile "$REVIEW_CAMERA" \
+  --sample-count 10 \
   --output-fps 8 \
-  --canvas 192x192 \
-  --sheet-columns 8 \
+  --canvas 224x224 \
+  --sheet-columns 5 \
   --render-samples 1 \
   --gif \
   --output "$ROOT/render"
@@ -143,6 +158,7 @@ test -s "$ROOT/render/preview.gif"
 test -s "$ROOT/render/render.json"
 test -d "$ROOT/render/diagnostics"
 test -s "$ROOT/acceptance.json"
+test -s "$ROOT/diagnostics/review-camera.json5"
 test ! -e "$ROOT/render/runtime.blend"
 
-echo "Direct-authored Humanoid attack PASS: $ROOT"
+echo "Direct-authored Heavy Right Cross PASS: $ROOT"
