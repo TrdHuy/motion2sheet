@@ -5,6 +5,11 @@ from typing import Any
 
 from io_scene_fbx import parse_fbx
 
+from motion2sheet.motion.roundtrip.fbx_curve_diagnostics import (
+    complete_missing_transform_curve_diagnostics,
+)
+from motion2sheet.motion.roundtrip.native_timing import build_sample_key_times
+
 from . import native
 
 
@@ -71,6 +76,24 @@ def extract_fbx_metadata_and_diagnostics(
         )
     selected_stack, selected_layer = pairs[0]
     layer_id = int(selected_layer.props[0])
+    stack_properties = native._properties70(selected_stack)
+    effective_local_start = int(
+        stack_properties.get("LocalStart", stack_properties.get("ReferenceStart", 0))
+    )
+    effective_local_stop = int(
+        stack_properties.get("LocalStop", stack_properties.get("ReferenceStop", effective_local_start))
+    )
+    stack_timing = {
+        "LocalStart": effective_local_start,
+        "LocalStop": effective_local_stop,
+        "ReferenceStart": int(stack_properties.get("ReferenceStart", effective_local_start)),
+        "ReferenceStop": int(stack_properties.get("ReferenceStop", effective_local_stop)),
+    }
+    sample_key_times = build_sample_key_times(
+        effective_local_start,
+        effective_local_stop,
+        expected_frame_count,
+    )
 
     curve_node_targets: dict[int, tuple[str, str]] = {}
     for elem_id, elem in table.items():
@@ -137,75 +160,15 @@ def extract_fbx_metadata_and_diagnostics(
     if not source_curves:
         raise RuntimeError("No FBX transform animation curves were resolved for rig bones")
 
-    timelines = {
-        tuple(curve["keyTimes"])
-        for curve in source_curves
-        if len(curve["keyTimes"]) > 1
-    }
-    if len(timelines) != 1:
-        raise RuntimeError(
-            "POC v1 requires all multi-key FBX transform curves to share one integer-frame timeline; "
-            f"found {len(timelines)} timelines"
-        )
-    sample_key_times = list(next(iter(timelines)))
-    if len(sample_key_times) != expected_frame_count:
-        raise RuntimeError(
-            "FBX source timeline does not match Blender integer-frame contract: "
-            f"FBX samples={len(sample_key_times)} expectedFrames={expected_frame_count}"
-        )
-
-    normalized_curves: list[dict[str, Any]] = []
-    for curve in source_curves:
-        times = curve["keyTimes"]
-        values = curve["keyValues"]
-        if times == sample_key_times:
-            normalized_values = values
-        elif len(times) == 1:
-            normalized_values = [values[0]] * len(sample_key_times)
-        else:
-            raise RuntimeError(
-                "POC v1 cannot normalize sparse/nonuniform FBX curve "
-                f"{curve['bone']} {curve['property']}.{curve['axis']}; "
-                f"keys={len(times)} expected={len(sample_key_times)}"
-            )
-        normalized_curves.append(
-            {
-                **curve,
-                "keyTimes": sample_key_times,
-                "keyValues": normalized_values,
-            }
-        )
-    source_curves = normalized_curves
-
     bone_stacks = {
         name: native._model_transform_stack(models_by_name[name])
         for name in sorted(models_by_name)
     }
-    curve_map = {
-        (curve["bone"], curve["property"], curve["axis"]): curve
-        for curve in source_curves
-    }
-    stack_field_by_property = {
-        "translation": "Lcl Translation",
-        "rotation": "Lcl Rotation",
-        "scale": "Lcl Scaling",
-    }
-    for bone_name, stack in bone_stacks.items():
-        for property_name, stack_field in stack_field_by_property.items():
-            defaults = stack[stack_field]
-            for axis_index, axis_name in enumerate(("x", "y", "z")):
-                key = (bone_name, property_name, axis_name)
-                if key in curve_map:
-                    continue
-                curve = {
-                    "bone": bone_name,
-                    "property": property_name,
-                    "axis": axis_name,
-                    "keyTimes": sample_key_times,
-                    "keyValues": [float(defaults[axis_index])] * len(sample_key_times),
-                }
-                source_curves.append(curve)
-                curve_map[key] = curve
+    source_curves = complete_missing_transform_curve_diagnostics(
+        source_curves,
+        bone_stacks,
+        sample_key_times,
+    )
 
     rig_metadata = {
         "fbxVersion": int(version),
@@ -216,15 +179,6 @@ def extract_fbx_metadata_and_diagnostics(
         },
     }
 
-    stack_properties = native._properties70(selected_stack)
-    effective_local_start = int(stack_properties.get("LocalStart", sample_key_times[0]))
-    effective_local_stop = int(stack_properties.get("LocalStop", sample_key_times[-1]))
-    stack_timing = {
-        "LocalStart": effective_local_start,
-        "LocalStop": effective_local_stop,
-        "ReferenceStart": int(stack_properties.get("ReferenceStart", effective_local_start)),
-        "ReferenceStop": int(stack_properties.get("ReferenceStop", effective_local_stop)),
-    }
     animation_metadata = {
         "stack": native._name(selected_stack),
         "layer": native._name(selected_layer),
@@ -236,5 +190,5 @@ def extract_fbx_metadata_and_diagnostics(
     return (
         rig_metadata,
         animation_metadata,
-        sorted(source_curves, key=lambda item: (item["bone"], item["property"], item["axis"])),
+        source_curves,
     )
