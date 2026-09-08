@@ -10,7 +10,8 @@ import subprocess
 import tempfile
 import unicodedata
 import urllib.request
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -20,6 +21,7 @@ MAPPING = REPO_ROOT / "profiles" / "humanoid_motion" / "mixamo_humanoid_v1.json"
 CAMERA = REPO_ROOT / "profiles" / "cameras" / "front_humanoid_motion.json5"
 FIXTURES = REPO_ROOT / "tests" / "motion" / "humanoid_motion" / "fixtures" / "release_assets.json"
 PREPARE_MOTION_SOURCE = REPO_ROOT / "motion2sheet" / "motion" / "model_render" / "blender_prepare_motion_source.py"
+OUTPUT_FILES = ("animation.json", "preview.gif")
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,50 @@ class DuplicateClip:
     skipped: Path
     canonical: Path
     sha256: str
+
+
+@dataclass(frozen=True)
+class SuccessfulClip:
+    source: Path
+    output: Path
+
+
+@dataclass(frozen=True)
+class SkippedClip:
+    source: Path
+    reason: str
+
+
+@dataclass(frozen=True)
+class FailedClip:
+    source: Path
+    reason: str
+
+
+@dataclass
+class BuildSummary:
+    successful: list[SuccessfulClip] = field(default_factory=list)
+    skipped: list[SkippedClip] = field(default_factory=list)
+    failed: list[FailedClip] = field(default_factory=list)
+
+
+class CommandFailed(RuntimeError):
+    def __init__(
+        self,
+        step: str,
+        command: list[str],
+        returncode: int,
+        output_tail: list[str],
+    ) -> None:
+        detail = _best_failure_detail(output_tail)
+        message = f"{step} failed with exit code {returncode}"
+        if detail:
+            message += f": {detail}"
+        super().__init__(message)
+        self.step = step
+        self.command = command
+        self.returncode = returncode
+        self.output_tail = output_tail
 
 
 def sha256_file(path: Path) -> str:
@@ -91,9 +137,35 @@ def discover_source_clips(input_dir: Path) -> tuple[list[SourceClip], list[Dupli
     return selected, duplicates
 
 
-def _run(command: list[str]) -> None:
+def _best_failure_detail(lines: list[str]) -> str:
+    for marker in ("RuntimeError:", "ValueError:", "AssertionError:", "Error:"):
+        for line in reversed(lines):
+            if marker in line:
+                return line.strip()
+    return lines[-1].strip() if lines else ""
+
+
+def _run(step: str, command: list[str]) -> None:
     print("+", " ".join(command), flush=True)
-    subprocess.run(command, cwd=REPO_ROOT, check=True)
+    process = subprocess.Popen(
+        command,
+        cwd=REPO_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+        bufsize=1,
+    )
+    tail: deque[str] = deque(maxlen=80)
+    assert process.stdout is not None
+    for line in process.stdout:
+        print(line, end="", flush=True)
+        stripped = line.rstrip()
+        if stripped:
+            tail.append(stripped)
+    returncode = process.wait()
+    if returncode != 0:
+        raise CommandFailed(step, command, returncode, list(tail))
 
 
 def _download_preview_character(destination: Path) -> None:
@@ -124,7 +196,10 @@ def _prepare_preview_character(work_root: Path) -> tuple[Path, Path, Path]:
     source = work_root / "preview-character" / "character-a.fbx"
     output = work_root / "preview-character" / "export"
     _download_preview_character(source)
-    _run(["motion2sheet", "export-character", str(source), "--output", str(output)])
+    _run(
+        "preview character export",
+        ["motion2sheet", "export-character", str(source), "--output", str(output)],
+    )
 
     model = output / "model.glb"
     rig = output / "rig.json"
@@ -146,63 +221,75 @@ def _build_clip(clip: SourceClip, work_root: Path, preview_character: tuple[Path
     model, rig, skin = preview_character
 
     clip_root.mkdir(parents=True, exist_ok=True)
-    _run([
-        "blender",
-        "--background",
-        "--factory-startup",
-        "--python-exit-code",
-        "1",
-        "--python",
-        str(PREPARE_MOTION_SOURCE),
-        "--",
-        "--input",
-        str(clip.path),
-        "--output",
-        str(normalized),
-        "--report",
-        str(normalization_report),
-    ])
-    _run(["motion2sheet", "export-animation-json", str(normalized), "--output", str(source_json)])
-    _run([
-        "motion2sheet",
-        "export-humanoid-animation",
-        "--source-rig",
-        str(source_json / "rig.json"),
-        "--source-animation",
-        str(source_json / "animation.json"),
-        "--mapping",
-        str(MAPPING),
-        "--id",
-        clip.slug,
-        "--loop",
-        "--output",
-        str(humanoid),
-    ])
-    _run([
-        "motion2sheet",
-        "render-humanoid-animation",
-        "--model",
-        str(model),
-        "--character-rig",
-        str(rig),
-        "--skin",
-        str(skin),
-        "--character-mapping",
-        str(MAPPING),
-        "--animation",
-        str(humanoid / "animation.json"),
-        "--camera-profile",
-        str(CAMERA),
-        "--canvas",
-        "224x224",
-        "--sheet-columns",
-        "8",
-        "--render-samples",
-        "1",
-        "--gif",
-        "--output",
-        str(render),
-    ])
+    _run(
+        "normalize FBX",
+        [
+            "blender",
+            "--background",
+            "--factory-startup",
+            "--python-exit-code",
+            "1",
+            "--python",
+            str(PREPARE_MOTION_SOURCE),
+            "--",
+            "--input",
+            str(clip.path),
+            "--output",
+            str(normalized),
+            "--report",
+            str(normalization_report),
+        ],
+    )
+    _run(
+        "export Source Animation JSON",
+        ["motion2sheet", "export-animation-json", str(normalized), "--output", str(source_json)],
+    )
+    _run(
+        "export Humanoid Motion",
+        [
+            "motion2sheet",
+            "export-humanoid-animation",
+            "--source-rig",
+            str(source_json / "rig.json"),
+            "--source-animation",
+            str(source_json / "animation.json"),
+            "--mapping",
+            str(MAPPING),
+            "--id",
+            clip.slug,
+            "--loop",
+            "--output",
+            str(humanoid),
+        ],
+    )
+    _run(
+        "render Humanoid Motion preview",
+        [
+            "motion2sheet",
+            "render-humanoid-animation",
+            "--model",
+            str(model),
+            "--character-rig",
+            str(rig),
+            "--skin",
+            str(skin),
+            "--character-mapping",
+            str(MAPPING),
+            "--animation",
+            str(humanoid / "animation.json"),
+            "--camera-profile",
+            str(CAMERA),
+            "--canvas",
+            "224x224",
+            "--sheet-columns",
+            "8",
+            "--render-samples",
+            "1",
+            "--gif",
+            "--output",
+            str(render),
+        ],
+    )
 
     animation = humanoid / "animation.json"
     preview = render / "preview.gif"
@@ -220,36 +307,138 @@ def _build_clip(clip: SourceClip, work_root: Path, preview_character: tuple[Path
     return final
 
 
-def build_reference_samples(input_dir: Path, output_root: Path) -> list[Path]:
+def _is_complete_output(target: Path) -> bool:
+    return target.is_dir() and all(
+        (target / name).is_file() and (target / name).stat().st_size > 0
+        for name in OUTPUT_FILES
+    )
+
+
+def _promote_stage(stage: Path, target: Path) -> None:
+    target.mkdir(parents=True, exist_ok=True)
+    pending: list[tuple[Path, Path]] = []
+    try:
+        for name in OUTPUT_FILES:
+            source = stage / name
+            if not source.is_file() or source.stat().st_size == 0:
+                raise RuntimeError(f"staged reference output is missing or empty: {source}")
+            destination = target / name
+            temporary = target / f".{name}.tmp"
+            shutil.copy2(source, temporary)
+            pending.append((temporary, destination))
+        for temporary, destination in pending:
+            temporary.replace(destination)
+    finally:
+        for temporary, _destination in pending:
+            temporary.unlink(missing_ok=True)
+
+
+def _failure_reason(exc: Exception) -> str:
+    message = str(exc).strip()
+    return message if message else type(exc).__name__
+
+
+def build_reference_samples(
+    input_dir: Path,
+    output_root: Path,
+    *,
+    force: bool = False,
+) -> BuildSummary:
     clips, duplicates = discover_source_clips(input_dir)
     output_root = output_root.resolve()
+    summary = BuildSummary()
 
     for duplicate in duplicates:
-        print(
-            "Duplicate FBX skipped: "
-            f"{duplicate.skipped.name} -> {duplicate.canonical.name} "
-            f"sha256={duplicate.sha256}",
-            flush=True,
+        reason = (
+            f"byte-identical duplicate of {duplicate.canonical.name} "
+            f"(sha256={duplicate.sha256})"
         )
+        summary.skipped.append(SkippedClip(source=duplicate.skipped, reason=reason))
+        print(f"SKIP {duplicate.skipped.name}: {reason}", flush=True)
 
-    conflicts = [output_root / clip.slug for clip in clips if (output_root / clip.slug).exists()]
-    if conflicts:
-        joined = ", ".join(str(path) for path in conflicts)
-        raise ValueError(f"reference output already exists; refusing to overwrite trusted sample: {joined}")
+    build_candidates: list[SourceClip] = []
+    for clip in clips:
+        target = output_root / clip.slug
+        if target.exists() and not target.is_dir():
+            summary.failed.append(
+                FailedClip(
+                    source=clip.path,
+                    reason=f"output path exists but is not a directory: {target}",
+                )
+            )
+            continue
+
+        if target.exists() and not force:
+            if _is_complete_output(target):
+                reason = f"cached output already complete: {target}"
+                summary.skipped.append(SkippedClip(source=clip.path, reason=reason))
+                print(f"SKIP {clip.path.name}: {reason}", flush=True)
+            else:
+                summary.failed.append(
+                    FailedClip(
+                        source=clip.path,
+                        reason=(
+                            f"output directory exists but is incomplete: {target}; "
+                            "rerun with --force to rebuild it"
+                        ),
+                    )
+                )
+            continue
+
+        build_candidates.append(clip)
+
+    if not build_candidates:
+        return summary
 
     with tempfile.TemporaryDirectory(prefix="motion2sheet-reference-") as temporary:
         work_root = Path(temporary)
-        preview_character = _prepare_preview_character(work_root)
-        staged = [_build_clip(clip, work_root, preview_character) for clip in clips]
+        try:
+            preview_character = _prepare_preview_character(work_root)
+        except Exception as exc:
+            reason = f"shared preview character setup failed: {_failure_reason(exc)}"
+            for clip in build_candidates:
+                summary.failed.append(FailedClip(source=clip.path, reason=reason))
+            return summary
 
         output_root.mkdir(parents=True, exist_ok=True)
-        promoted: list[Path] = []
-        for stage in staged:
-            target = output_root / stage.name
-            shutil.copytree(stage, target)
-            promoted.append(target)
+        for clip in build_candidates:
+            target = output_root / clip.slug
+            print(f"\n=== Building {clip.path.name} -> {clip.slug} ===", flush=True)
+            try:
+                stage = _build_clip(clip, work_root, preview_character)
+                _promote_stage(stage, target)
+            except Exception as exc:
+                reason = _failure_reason(exc)
+                summary.failed.append(FailedClip(source=clip.path, reason=reason))
+                print(f"FAIL {clip.path.name}: {reason}", flush=True)
+                continue
 
-    return promoted
+            summary.successful.append(SuccessfulClip(source=clip.path, output=target))
+            print(f"PASS {clip.path.name}: {target}", flush=True)
+
+    return summary
+
+
+def _print_summary(summary: BuildSummary) -> None:
+    print("\n=== Humanoid reference build summary ===", flush=True)
+    print(f"Successful: {len(summary.successful)}", flush=True)
+    print(f"Skipped:    {len(summary.skipped)}", flush=True)
+    print(f"Failed:     {len(summary.failed)}", flush=True)
+
+    if summary.successful:
+        print("\nSuccessful files:", flush=True)
+        for item in summary.successful:
+            print(f"  PASS {item.source.name} -> {item.output}", flush=True)
+
+    if summary.skipped:
+        print("\nSkipped files:", flush=True)
+        for item in summary.skipped:
+            print(f"  SKIP {item.source.name}: {item.reason}", flush=True)
+
+    if summary.failed:
+        print("\nFailed files:", flush=True)
+        for item in summary.failed:
+            print(f"  FAIL {item.source.name}: {item.reason}", flush=True)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -266,6 +455,14 @@ def _parser() -> argparse.ArgumentParser:
         default=DEFAULT_OUTPUT_ROOT,
         help=f"reference output root (default: {DEFAULT_OUTPUT_ROOT.relative_to(REPO_ROOT)})",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "rebuild clips even when animation.json + preview.gif already exist; "
+            "wrapper-owned files are replaced only after a successful rebuild"
+        ),
+    )
     return parser
 
 
@@ -273,15 +470,22 @@ def main() -> int:
     parser = _parser()
     args = parser.parse_args()
     try:
-        promoted = build_reference_samples(args.input_folder, args.output_root)
+        summary = build_reference_samples(
+            args.input_folder,
+            args.output_root,
+            force=args.force,
+        )
     except ValueError as exc:
-        parser.error(str(exc))
+        print("\n=== Humanoid reference build summary ===", flush=True)
+        print("Successful: 0", flush=True)
+        print("Skipped:    0", flush=True)
+        print("Failed:     1", flush=True)
+        print(f"\nInput failure: {exc}", flush=True)
+        return 2
 
-    print(f"Built {len(promoted)} trusted Humanoid Motion reference sample(s):", flush=True)
-    for path in promoted:
-        print(f"  {path}", flush=True)
-    print("metadata.json is intentionally not generated by this wrapper.", flush=True)
-    return 0
+    _print_summary(summary)
+    print("\nmetadata.json is intentionally not generated by this wrapper.", flush=True)
+    return 1 if summary.failed else 0
 
 
 if __name__ == "__main__":
