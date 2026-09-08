@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import array
-import math
 from typing import Any
 
 from io_scene_fbx import encode_bin, parse_fbx
 from io_scene_fbx.parse_fbx import data_types
+
+from motion2sheet.motion.roundtrip.fbx_curve_diagnostics import validate_fbx_curve_samples
 
 TRANSFORM_PROPERTIES = (
     "Lcl Translation",
@@ -175,12 +176,7 @@ def _curve_arrays(curve) -> tuple[list[int], list[float]]:
         raise RuntimeError(f"FBX animation curve {_name(curve)!r} is missing KeyTime/KeyValueFloat")
     times = [int(value) for value in times_elem.props[0]]
     values = [float(value) for value in values_elem.props[0]]
-    if len(times) != len(values) or not times:
-        raise RuntimeError(f"FBX animation curve {_name(curve)!r} has invalid key arrays")
-    if any(right <= left for left, right in zip(times, times[1:])):
-        raise RuntimeError(f"FBX animation curve {_name(curve)!r} has non-increasing KeyTime values")
-    if not all(math.isfinite(value) for value in values):
-        raise RuntimeError(f"FBX animation curve {_name(curve)!r} contains non-finite values")
+    validate_fbx_curve_samples(times, values, label=_name(curve))
     return times, values
 
 

@@ -35,6 +35,69 @@ FBX_TIME_MODE_FPS = {
 }
 
 
+def build_sample_key_times(local_start: int, local_stop: int, frame_count: int) -> list[int]:
+    """Build the uniform endpoint-inclusive canonical FBX sample timeline."""
+
+    if isinstance(local_start, bool) or not isinstance(local_start, int):
+        raise ValueError("FBX LocalStart must be an integer KTime")
+    if isinstance(local_stop, bool) or not isinstance(local_stop, int):
+        raise ValueError("FBX LocalStop must be an integer KTime")
+    if isinstance(frame_count, bool) or not isinstance(frame_count, int) or frame_count <= 0:
+        raise ValueError("frameCount must be a positive integer")
+    if local_stop < local_start:
+        raise ValueError("FBX AnimationStack LocalStop must not precede LocalStart")
+    if frame_count == 1:
+        if local_start != local_stop:
+            raise ValueError(
+                "single-frame FBX timeline requires AnimationStack LocalStart == LocalStop: "
+                f"localStart={local_start} localStop={local_stop}"
+            )
+        return [local_start]
+
+    span = local_stop - local_start
+    denominator = frame_count - 1
+    samples = []
+    for index in range(frame_count):
+        quotient, remainder = divmod(index * span, denominator)
+        rounded_offset = quotient + int(remainder * 2 >= denominator)
+        samples.append(local_start + rounded_offset)
+    samples[0] = local_start
+    samples[-1] = local_stop
+    if any(right <= left for left, right in zip(samples, samples[1:])):
+        raise ValueError(
+            "FBX AnimationStack span cannot represent a strictly increasing canonical sample timeline: "
+            f"localStart={local_start} localStop={local_stop} frameCount={frame_count}"
+        )
+    return samples
+
+
+def resolve_fbx_stack_timing(
+    stack_properties: dict[str, Any],
+    source_curves: list[dict[str, Any]],
+    frame_count: int,
+) -> tuple[dict[str, int], list[int]]:
+    """Resolve stack timing, using the overall raw curve extent only when fields are absent."""
+
+    if not source_curves:
+        raise RuntimeError("No FBX transform animation curves were resolved for rig bones")
+
+    raw_start = min(int(curve["keyTimes"][0]) for curve in source_curves)
+    raw_stop = max(int(curve["keyTimes"][-1]) for curve in source_curves)
+    local_start = int(
+        stack_properties.get("LocalStart", stack_properties.get("ReferenceStart", raw_start))
+    )
+    local_stop = int(
+        stack_properties.get("LocalStop", stack_properties.get("ReferenceStop", raw_stop))
+    )
+    stack_timing = {
+        "LocalStart": local_start,
+        "LocalStop": local_stop,
+        "ReferenceStart": int(stack_properties.get("ReferenceStart", local_start)),
+        "ReferenceStop": int(stack_properties.get("ReferenceStop", local_stop)),
+    }
+    return stack_timing, build_sample_key_times(local_start, local_stop, frame_count)
+
+
 def resolve_fbx_ticks_per_second(
     fbx_version: int,
     *,
