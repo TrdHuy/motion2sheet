@@ -8,7 +8,7 @@ from io_scene_fbx import parse_fbx
 from motion2sheet.motion.roundtrip.fbx_curve_diagnostics import (
     complete_missing_transform_curve_diagnostics,
 )
-from motion2sheet.motion.roundtrip.native_timing import build_sample_key_times
+from motion2sheet.motion.roundtrip.native_timing import resolve_fbx_stack_timing
 
 from . import native
 
@@ -77,23 +77,6 @@ def extract_fbx_metadata_and_diagnostics(
     selected_stack, selected_layer = pairs[0]
     layer_id = int(selected_layer.props[0])
     stack_properties = native._properties70(selected_stack)
-    effective_local_start = int(
-        stack_properties.get("LocalStart", stack_properties.get("ReferenceStart", 0))
-    )
-    effective_local_stop = int(
-        stack_properties.get("LocalStop", stack_properties.get("ReferenceStop", effective_local_start))
-    )
-    stack_timing = {
-        "LocalStart": effective_local_start,
-        "LocalStop": effective_local_stop,
-        "ReferenceStart": int(stack_properties.get("ReferenceStart", effective_local_start)),
-        "ReferenceStop": int(stack_properties.get("ReferenceStop", effective_local_stop)),
-    }
-    sample_key_times = build_sample_key_times(
-        effective_local_start,
-        effective_local_stop,
-        expected_frame_count,
-    )
 
     curve_node_targets: dict[int, tuple[str, str]] = {}
     for elem_id, elem in table.items():
@@ -157,8 +140,11 @@ def extract_fbx_metadata_and_diagnostics(
             }
         )
 
-    if not source_curves:
-        raise RuntimeError("No FBX transform animation curves were resolved for rig bones")
+    stack_timing, sample_key_times = resolve_fbx_stack_timing(
+        stack_properties,
+        source_curves,
+        expected_frame_count,
+    )
 
     bone_stacks = {
         name: native._model_transform_stack(models_by_name[name])
