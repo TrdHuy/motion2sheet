@@ -30,7 +30,7 @@
     "motion-skin": {"paths": ["motion2sheet/motion/skin/**"], "depends_on": []},
     "motion-model-render": {"paths": ["motion2sheet/motion/model_render/**", "profiles/cameras/**"], "depends_on": ["motion-skin"]},
     "motion-character-render": {"paths": ["motion2sheet/motion/character_render/**", "profiles/characters/**"], "depends_on": []},
-    "motion-humanoid-motion": {"paths": ["motion2sheet/motion/humanoid_motion/**", "profiles/humanoid_motion/**"], "depends_on": ["motion-model-render", "motion-roundtrip"]},
+    "motion-humanoid-motion": {"paths": ["motion2sheet/motion/humanoid_motion/**", "profiles/humanoid_motion/**", "samples/humanoid_motion/**"], "depends_on": ["motion-model-render", "motion-roundtrip"]},
     "motion-cli": {"paths": ["motion2sheet/motion/cli.py"], "depends_on": []},
     "sprite-workflow": {"paths": ["skills/**", "sample/sprite-generation/**"], "depends_on": []},
     "vfx-output": {"paths": ["motion2sheet/vfx2sheet/common/output/**"], "depends_on": []},

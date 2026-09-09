@@ -1,0 +1,12 @@
+{
+  "schema": "motion2sheet.camera",
+  "version": 1,
+  "id": "topdown_game_humanoid_motion",
+  "projection": "ORTHO",
+  "location": [-2.2, -2.2, 7.6],
+  "target": [0.0, -0.10, 1.0],
+  "upAxis": [0.0, 0.0, 1.0],
+  "orthoScale": 3.8,
+  "followRoot": false,
+  "margin": 1.0
+}
