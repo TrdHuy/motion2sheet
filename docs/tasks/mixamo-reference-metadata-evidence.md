@@ -1,364 +1,346 @@
-# Task: Expert-reviewed Humanoid Motion reference metadata and visual evidence
+# Task: Evidence-first metadata for Humanoid Motion references
 
 ## Context
 
-This task is stacked on PR #17 (`data/mixamo-humanoid-reference-samples`). PR #17 adds the trusted Mixamo Humanoid Motion reference set under:
+This task is stacked on PR #17 (`data/mixamo-humanoid-reference-samples`).
+
+Each trusted reference clip is under:
 
 `sample/humanoid_motion/mixamo/<clip>/`
 
-Each clip already has a canonical `animation.json` and rendered `preview.gif`. One clip (`action-idle-to-standing-idle`) currently contains an initial `metadata.json` that can be used as a starting example, but this task must improve the metadata model for animation-reference use rather than merely copy that file.
+and already provides:
 
-The purpose of this task is to make the trusted reference set significantly more useful when authoring new Humanoid Motion animations. Metadata must help an animation expert or AI answer not only **what the clip is**, but also **how the body produces the motion, which frames matter, and what the clip is or is not a good reference for**.
+- `animation.json`
+- `preview.gif`
 
-## Primary goal
+One clip currently has an initial `metadata.json`, but its current shape is only a starting example.
 
-Create reliable, reviewable metadata for every trusted Mixamo reference clip in PR #17, with evidence that allows a human reviewer to validate each inferred field without having to read quaternion tracks manually.
+## Goal
 
-The workflow must combine:
+Create reliable metadata for every trusted Mixamo Humanoid Motion reference so future animation authoring can reuse the references with fewer trial-and-error iterations.
 
-`animation.json + preview.gif -> quantitative analysis -> expert/AI interpretation -> metadata.json -> review evidence -> PR review comment`
+The workflow is strictly **evidence first**:
 
-The output is not accepted merely because JSON validates. The inferred animation meaning must be visually reviewable.
+`animation.json + preview.gif`
+`-> generate evidence`
+`-> visually inspect evidence`
+`-> derive metadata from that evidence`
+`-> validate metadata/evidence mapping`
+`-> publish a short PR review comment`
 
-## Expert role
+Do **not** generate metadata first and then search for evidence to justify it afterward.
 
-Treat this as an animation-analysis task first and a data-generation task second.
+## Core rule
 
-The expert must reason about:
+Every important interpretive metadata field must be derived from already-generated evidence.
 
-- pose readability;
-- anticipation, action, impact, follow-through, recovery, settle, locomotion cycle or transition phases as applicable;
-- balance and weight transfer;
-- planted/supporting feet where the data supports that conclusion;
-- pelvis, torso, shoulder, arm and head coordination;
-- lead/support limb roles;
-- motion timing and change of energy;
-- which portions of a reference are useful when designing a new animation;
-- uncertainty when a claim cannot be established confidently from the available sources.
+Evidence may come from:
 
-Do not infer weapons, contact, emotion, intent or exact support-foot semantics when the evidence does not support them.
+- exact canonical motion measurements from `animation.json`;
+- exact source frames;
+- contact sheets;
+- short phase GIFs;
+- pelvis/hips trajectory plots;
+- joint/region activity measurements;
+- motion-onset measurements;
+- visual inspection of `preview.gif`.
+
+If the evidence is insufficient, omit the claim or mark it uncertain. Do not invent a confident interpretation.
 
 ## Authoritative inputs
 
-For each clip, analyze both sources:
+### `animation.json`
 
-1. `animation.json`
-   - authoritative for exact frame count, FPS, duration, joint tracks, root/hips motion and quantitative motion measurements;
-   - use it to measure motion rather than estimating numeric facts from the GIF.
+Authoritative for measurable facts:
 
-2. `preview.gif`
-   - authoritative visual review source for what the motion reads like;
-   - use it for intent, pose readability, phase interpretation and visual confirmation of quantitative findings.
+- frame count;
+- FPS and duration;
+- hips/root trajectory;
+- joint rotations;
+- per-region activity;
+- motion peaks;
+- candidate foot-contact or low-velocity windows where technically defensible;
+- onset ordering between major body regions where technically defensible.
 
-Neither source should silently override contradictions in the other. If the canonical data and visual interpretation disagree, record that as a note or warning.
+Do not estimate these facts from the GIF when they can be measured directly.
 
-## Metadata requirements
+### `preview.gif`
 
-Keep useful existing fields such as `intent`, `style`, `characterType`, `breakdown` and `notes` where appropriate, but add structured animation-reference information.
+Authoritative visual source for how the motion reads:
 
-### 1. `phases`
+- overall motion meaning;
+- phase readability;
+- key-pose readability;
+- whether a measured interpretation makes visual sense;
+- ambiguity caused by camera/view/occlusion.
 
-Describe meaningful motion phases with exact frame ranges.
+If quantitative evidence and visual evidence disagree, surface the discrepancy instead of hiding it.
 
-Example roles include, depending on the clip:
+## Required workflow per clip
 
-- ready / start stance;
-- anticipation / load;
-- strike / impact;
-- follow-through;
-- recovery / settle;
-- locomotion contact / passing / flight;
-- transition start / rise / turn / settle.
+### Step 1 — Generate evidence first
 
-Each phase must include at least:
+Before writing `metadata.json`, produce a compact evidence package for the clip.
 
-- `name`;
-- `startFrame`;
-- `endFrame`;
-- concise explanation;
-- confidence when the phase meaning is inferred rather than directly measurable.
+Generate only evidence that answers a concrete review question.
 
-Frame ranges must be within the canonical `frameCount` and should not contain unexplained gaps or overlaps.
+Minimum evidence set:
 
-### 2. `keyPoses`
+1. **Full-motion preview**
+   - existing `preview.gif`.
 
-Identify only the frames that are materially useful for understanding or reusing the motion.
+2. **Phase evidence**
+   - contact sheet and/or short GIFs covering candidate motion phases;
+   - exact frame numbers shown.
 
-Each entry should include:
+3. **Key-pose evidence**
+   - compact contact sheet of candidate important frames;
+   - every image labeled with exact source frame.
 
-- `frame`;
-- `role`;
-- short explanation;
-- confidence when the role is interpretive.
+4. **Weight-transfer evidence**
+   - relevant source frames;
+   - hips/pelvis trajectory or displacement measurements;
+   - lower-body/foot evidence when available;
+   - do not label a planted/support foot unless evidence is strong enough.
 
-Do not select many frames merely to make the metadata look detailed. Key poses should remain a compact summary of the clip.
+5. **Body-mechanics evidence**
+   - frames and/or measurements showing coordination between major regions;
+   - for example pelvis, chest, shoulders, arms/hands, legs and head;
+   - include onset/activity measurements when they are technically defensible.
 
-### 3. `weightTransfer`
+Evidence is not accepted just because it was generated. The specialist must inspect it visually before using it to create metadata.
 
-Describe how body weight appears to move over the clip when the evidence is sufficient.
+### Step 2 — Expert/AI reviews the evidence
 
-Useful concepts include:
+Review the evidence as an animation specialist.
 
-- left/right bias;
-- rear/front bias;
-- centered/balanced;
-- side-to-side transfer;
-- loading one side before an action;
-- settling back to center.
+Determine only what the evidence supports, including as applicable:
 
-Where possible, ground this interpretation in measurable hips/pelvis displacement, lower-body motion and foot-motion evidence.
+- motion intent/read;
+- meaningful phases;
+- key poses;
+- weight transfer;
+- body mechanics;
+- useful reference properties;
+- uncertainty/warnings.
 
-If a supporting/planted foot is uncertain because of camera occlusion or insufficient data, state the uncertainty instead of presenting a guess as fact.
+Do not infer unsupported weapons, props, exact contact semantics, emotion, attack role or support-foot role.
 
-### 4. `bodyMechanics`
+### Step 3 — Generate `metadata.json` from the reviewed evidence
+
+Only after Step 1 and Step 2, generate the metadata.
+
+Keep useful existing fields when appropriate:
+
+- `intent`
+- `style`
+- `characterType`
+- `breakdown`
+- `notes`
+
+Add the structured reference fields below.
+
+### `phases`
+
+Meaningful motion phases with exact frame ranges.
+
+Each phase should contain:
+
+- `name`
+- `startFrame`
+- `endFrame`
+- concise meaning
+- confidence if interpretive
+- supporting frame/evidence references where useful
+
+### `keyPoses`
+
+Only the small set of frames materially useful for understanding or reusing the motion.
+
+Each key pose should contain:
+
+- `frame`
+- `role`
+- concise meaning
+- confidence if interpretive
+
+### `weightTransfer`
+
+Describe how body weight appears to move only when supported by evidence.
+
+Use measurable hips/lower-body evidence where possible.
+
+If a supporting foot cannot be established confidently, do not state it as fact.
+
+### `bodyMechanics`
 
 Describe how major body regions coordinate to produce the motion.
 
-Where the data supports it, capture:
+Capture only supported information such as:
 
-- `primaryDriver` or primary driving body region;
-- ordered or overlapping motion sequence, for example pelvis -> chest -> shoulder -> arm/hand;
-- pelvis path/trajectory characteristics;
-- major torso counter-rotation;
+- primary driving region;
+- major sequencing/lag between regions;
+- pelvis path;
+- torso counter-rotation;
 - lower-body contribution;
-- lead/support limb relationship;
-- meaningful lag between major body regions.
+- lead/support limb relationship when genuinely supported.
 
-The purpose is to explain **why the motion works**, not to duplicate quaternion data.
+Do not duplicate raw quaternion tracks.
 
-### 5. `referenceUse`
+### `referenceUse`
 
-State what the clip should and should not be used as a reference for.
+State what this clip is useful or not useful as a future animation reference for.
 
-Example useful categories:
+Examples:
 
-- stance and balance;
+- stance/balance;
 - weight shift;
-- attack anticipation;
+- anticipation;
 - impact pose;
 - follow-through;
 - recovery;
-- guard acquisition;
 - locomotion cycle;
 - pelvis trajectory;
 - torso rotation;
 - dual-limb coordination.
 
-Include both:
+### Confidence and provenance
 
-- `usefulFor`;
-- `notUsefulFor` when a common but unsupported interpretation should be discouraged.
+Interpretive claims should include confidence and source provenance where useful.
 
-### 6. Confidence and provenance
+Deterministic facts such as FPS/frame count do not need confidence.
 
-Interpretive claims must be traceable.
+## Step 4 — Validate metadata against evidence
 
-For important inferred fields, include:
+Validation must confirm at least:
 
-- confidence value or level;
-- source(s), such as `animation.json`, `preview.gif`, or both;
-- supporting frame numbers where applicable.
+- metadata parses;
+- frame references exist;
+- phase ranges are within `[0, frameCount - 1]`;
+- phase ranges are ordered and logically valid;
+- key-pose frames exist;
+- evidence frames referenced by metadata exist;
+- duplicated deterministic facts match `animation.json`;
+- confidence values are valid;
+- provenance values are from the allowed source set;
+- no important interpretive field exists without corresponding evidence;
+- trusted `animation.json` and `preview.gif` remain unchanged.
 
-Do not add confidence to deterministic facts such as canonical FPS or frame count.
+## Step 5 — Publish a short evidence comment for review
 
-The exact JSON structure may be refined during implementation, but it must remain consistent across all reference clips and must be tested.
+Use **one top-level PR comment per animation clip**.
 
-## Quantitative analysis before AI/expert interpretation
+The comment is a review UI, not a report. Keep it short.
 
-Do not rely on visual guessing for facts that can be measured from `animation.json`.
+Do not repeat long explanations already present in metadata.
 
-Implement reusable analysis for useful signals such as:
-
-- hips/pelvis translation trajectory;
-- hips and major torso rotational activity;
-- per-joint or per-region rotational activity;
-- hand/arm activity;
-- lower-leg/foot activity;
-- candidate low-velocity foot-contact windows where technically defensible;
-- frames with local/major motion peaks;
-- onset ordering between major regions where technically defensible.
-
-The exact metrics can be adjusted to the canonical Humanoid Motion representation. Existing schema tolerances must not be weakened.
-
-The metrics are evidence for interpretation, not a substitute for visual review.
-
-## Evidence generation
-
-Every important inferred metadata field must have corresponding review evidence.
-
-Evidence is **review material**, not a requirement to permanently merge PNG/GIF files into the reference dataset.
-
-Generate compact evidence per clip, including as applicable:
-
-1. full `preview.gif` link;
-2. phase evidence — contact sheet and/or short GIFs for phase ranges;
-3. key-pose contact sheet with exact frame labels;
-4. weight-transfer image showing relevant frames and pelvis/hips path, with supporting-foot annotations only when confidence is sufficient;
-5. body-mechanics evidence showing the frames used to infer pelvis/torso/shoulder/limb ordering;
-6. compact quantitative table for the measurements supporting the conclusion;
-7. warnings/uncertainties when evidence is ambiguous.
-
-Do not create decorative evidence. Every image/GIF must answer a specific review question.
-
-## Evidence publication policy
-
-Metadata belongs in the PR diff. Review evidence should not be merged by default.
-
-Preferred review flow:
-
-- workflow generates evidence files;
-- publish them in a review-only location that can be embedded or linked from PR comments (for example a temporary review-evidence branch or another non-merge publication mechanism);
-- post/update PR conversation comments using stable links during review;
-- remove temporary review evidence when no longer needed;
-- do not add evidence binaries to the final PR diff unless explicitly approved.
-
-GitHub Actions artifacts may be kept as supplemental downloadable evidence, but do not rely on expiring artifact links as the only review path if the PR comments are expected to remain useful during the review window.
-
-## PR review comment format
-
-Use **one top-level review comment per animation clip**. The reviewer should not need to read the raw JSON first.
-
-Each comment should be easy to scan and should follow this structure:
+Use a compact format like:
 
 ```markdown
-## Metadata review — `<clip-name>`
+<!-- metadata-review:action-idle-to-standing-idle -->
+## `action-idle-to-standing-idle`
 
-### 1. Ý nghĩa chuyển động
-**Kết luận:** <short interpretation>
-**Độ tin cậy:** <confidence if inferred>
-**Evidence:** <full preview link/embed>
+▶️ [Full preview]
 
-- [ ] Đúng
-- [ ] Cần sửa
+| Metadata field | Proposed value | Evidence | Confidence |
+|---|---|---|---:|
+| `intent` | low staggered idle -> upright standing idle | [preview] | 97% |
+| `phases` | start / dip+shift / rise+turn / settle | [phase sheet] [phase GIF] | 92% |
+| `keyPoses` | f0, f7, f16, f28 | [key poses] | 95% |
+| `weightTransfer` | side-biased -> centered | [weight evidence] | 86% |
+| `bodyMechanics` | pelvis leads, torso follows | [mechanics evidence] | 91% |
+| `referenceUse` | weight shift, stance recovery, pelvis rise | [key poses] | 93% |
 
-### 2. Các giai đoạn chuyển động
-| Giai đoạn | Frame | Ý nghĩa |
-|---|---:|---|
-| ... | ... | ... |
+⚠️ `loop=true` does not visually read as a seamless loop.
 
-**Evidence:** <phase contact sheet/GIF>
-
-- [ ] Các phase hợp lý
-- [ ] Frame boundary cần chỉnh
-
-### 3. Các tư thế quan trọng
-| Frame | Vai trò |
-|---:|---|
-| ... | ... |
-
-**Evidence:** <key-pose contact sheet>
-
-- [ ] Key pose đúng
-- [ ] Cần thêm/bỏ key pose
-
-### 4. Chuyển trọng lượng cơ thể
-**Kết luận:** <weight-transfer interpretation>
-**Dữ liệu hỗ trợ:** <compact measurements>
-**Evidence:** <annotated evidence image>
-**Độ tin cậy:** <confidence>
-
-- [ ] Đồng ý
-- [ ] Sai chân / sai hướng chuyển trọng lượng
-- [ ] Evidence chưa đủ rõ
-
-### 5. Cách các phần cơ thể phối hợp
-**Kết luận:** <body-mechanics interpretation>
-**Thứ tự quan sát được:** <sequence if supported>
-**Evidence:** <mechanics evidence image>
-**Dữ liệu đo được:** <compact onset/activity table>
-**Độ tin cậy:** <confidence>
-
-- [ ] Đúng
-- [ ] Thứ tự chưa đúng
-- [ ] Không đủ evidence để kết luận
-
-### 6. Animation này hữu ích để tham khảo gì?
-**Nên dùng làm reference cho:** <list>
-**Không nên dùng làm reference chính cho:** <list if applicable>
-
-### 7. Cảnh báo / uncertainty
-<only warnings that materially matter>
-
-### Reviewer decision
-- [ ] Metadata có thể accept
-- [ ] Cần sửa một số field
-- [ ] Phân tích sai, cần generate lại
-
-Reviewer correction format:
-`field: <field-name> — <correction>`
+Review: [ ] accept  [ ] revise  [ ] regenerate
 ```
 
-Only show fields that actually require human interpretation. Deterministic facts such as FPS/frame count can stay compact and should not dominate the comment.
+Rules for the comment:
+
+- one row per metadata field that requires human review;
+- evidence link/image corresponds directly to that field;
+- keep proposed values short;
+- omit deterministic fields such as FPS/frameCount unless they are relevant to a warning;
+- warnings only when they materially matter;
+- no essay-style explanation;
+- reviewer should understand the proposal primarily by opening the evidence.
 
 ## Comment update behavior
 
-The workflow must be rerunnable without spamming duplicate comments.
+Publication must be idempotent.
 
-Use a stable hidden marker containing the clip identity so the automation can find and update the existing comment for that clip rather than posting another one every run.
+Use a stable hidden marker containing the clip identity so reruns update the existing comment instead of creating duplicates.
 
-Reviewer corrections must not be silently overwritten. If regeneration changes a field that the reviewer previously corrected, surface the change clearly for another review.
+Do not silently overwrite an explicit reviewer correction. If regenerated analysis conflicts with reviewed feedback, surface it for review.
 
-## Validation and tests
+## Evidence publication policy
 
-Add focused automated checks for at least:
+Evidence is review material and should **not be merged as binary dataset content by default**.
 
-- every trusted reference directory expected by PR #17 has `metadata.json`;
-- metadata JSON parses;
-- required field structure is consistent;
-- phase/key-pose frame numbers are within `[0, frameCount - 1]`;
-- phase ranges are ordered and logically valid;
-- referenced evidence frames exist;
-- deterministic canonical facts in metadata, if duplicated, agree with `animation.json`;
-- confidence values are within the defined range;
-- provenance/source values use allowed values;
-- review-comment generation is deterministic for the same metadata/evidence manifest;
-- rerunning comment publication updates the same clip comment rather than creating duplicates.
+Preferred approach:
 
-Do not loosen the canonical Humanoid Motion schema or existing tolerances to make these tests pass.
+- generate evidence in CI/workflow;
+- publish it in a review-only location with stable links during review;
+- optionally keep an Actions artifact as supplemental downloadable evidence;
+- link/embed evidence in the compact PR comment;
+- remove temporary evidence when no longer required;
+- final PR diff should not contain review-only evidence binaries unless explicitly approved.
 
-## Scope for PR #17 reference set
+## Implementation order
 
-Apply the workflow to all trusted Mixamo Humanoid Motion reference clips currently present on PR #17.
+1. Inventory all trusted clips from the exact PR #17 base.
+2. Implement deterministic motion measurements from `animation.json`.
+3. Implement evidence generation.
+4. Generate evidence for a clip.
+5. Visually inspect the evidence.
+6. Generate that clip's metadata from the inspected evidence.
+7. Validate metadata against the evidence and canonical animation.
+8. Publish/update the short PR evidence comment.
+9. Repeat for the remaining clips.
+10. Run focused tests on the exact final HEAD.
 
-`action-idle-to-standing-idle/metadata.json` is an initial example only. Migrate/enrich it into the final common structure instead of treating its current shape as an immutable contract.
+The implementation must prove the workflow on at least one clip before scaling to all references. Do not bulk-generate all metadata until the evidence/comment format has been visually reviewed and shown to be useful.
+
+## Tests
+
+Add focused tests for at least:
+
+- metadata coverage;
+- JSON structure;
+- valid phase/key-pose frame references;
+- valid confidence/provenance;
+- metadata-to-evidence traceability;
+- canonical-data consistency;
+- deterministic evidence manifest/comment rendering;
+- idempotent PR comment update behavior.
+
+Do not loosen the Humanoid Motion schema or tolerances.
 
 ## Non-goals
 
 Do not:
 
-- modify the trusted `animation.json` files;
-- modify the trusted `preview.gif` files merely to make metadata easier to generate;
-- regenerate or replace source motion;
-- infer unsupported weapons/props from finger poses;
-- create a general-purpose ontology unrelated to the current Humanoid Motion reference use case;
-- add a large catalog/framework beyond what is required to make the metadata reliable and reusable;
-- store review-only evidence binaries in the final PR diff by default;
-- merge this stacked PR into `master` directly;
-- merge or mark the PR ready for review without explicit user instruction.
-
-## Implementation order
-
-1. Inventory all trusted reference clips from the exact PR #17 base.
-2. Define the smallest consistent metadata structure covering the fields above.
-3. Implement deterministic motion-analysis metrics from `animation.json`.
-4. Implement evidence generation from canonical data + preview frames.
-5. Generate metadata using the quantitative results and visual interpretation.
-6. Generate one review package/comment per clip.
-7. Visually inspect the evidence; reject obvious bad inferences before requesting human review.
-8. Run metadata validation/tests.
-9. Post/update PR comments.
-10. Report exact HEAD, number of clips processed, generated metadata paths, evidence publication location, test results, and known uncertainties.
+- modify trusted PR #17 `animation.json` files;
+- modify trusted PR #17 `preview.gif` files;
+- regenerate source motion;
+- create evidence after metadata merely to justify an already-made conclusion;
+- infer unsupported weapons/props/contact semantics;
+- create a large unrelated ontology/framework;
+- commit review-only evidence binaries by default;
+- merge directly into `master`;
+- merge or mark this PR Ready for Review without explicit user instruction.
 
 ## Acceptance criteria
 
-This task is complete only when:
+The task is complete only when:
 
-- every trusted PR #17 reference clip has consistent `metadata.json`;
-- important interpretive fields include adequate provenance/confidence/evidence references;
-- every clip has an easy-to-review PR comment with corresponding visual/quantitative evidence;
-- the comment publisher is idempotent;
-- the expert has visually reviewed generated evidence before claiming success;
-- focused metadata/evidence tests pass on the exact final HEAD;
-- trusted PR #17 `animation.json` and `preview.gif` files remain unchanged;
-- review-only evidence is not accidentally included in the final merge diff;
-- the PR remains stacked on `data/mixamo-humanoid-reference-samples` and is not merged or marked Ready without explicit instruction.
+- evidence is generated before metadata for every processed clip;
+- metadata is derived from inspected evidence;
+- each important interpretive field maps to corresponding evidence;
+- each clip has one concise, idempotently updated PR review comment;
+- all trusted reference clips have consistent `metadata.json` files;
+- focused tests pass on exact final HEAD;
+- trusted PR #17 motion assets remain unchanged;
+- review-only evidence is absent from the final merge diff unless explicitly approved;
+- this PR remains stacked on `data/mixamo-humanoid-reference-samples` and is not merged or marked Ready without explicit instruction.
