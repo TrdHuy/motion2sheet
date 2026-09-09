@@ -1,19 +1,58 @@
 {
-  "intent": "transition from a low staggered idle stance into a neutral upright standing idle",
-  "style": "controlled low-energy stance transition",
-  "characterType": "humanoid",
-  "breakdown": [
-    "starts in a lowered asymmetrical stance with bent knees, offset weight, and the torso angled away from the final facing",
-    "makes a small additional dip while shifting the pelvis laterally and beginning a whole-body turn",
-    "progressively raises the pelvis and extends the legs as the torso and head rotate toward a more centered orientation",
-    "lets the arms and hands settle downward while the lower body organizes into a more even base",
-    "finishes in an upright balanced standing idle with reduced asymmetry"
+  "intent": "Transition from a low, asymmetric action-idle stance into a neutral upright standing idle.",
+  "phases": [
+    {
+      "startFrame": 0,
+      "endFrame": 3,
+      "label": "low action-idle settling dip"
+    },
+    {
+      "startFrame": 4,
+      "endFrame": 13,
+      "label": "primary rise with rightward pelvis shift and turn"
+    },
+    {
+      "startFrame": 14,
+      "endFrame": 23,
+      "label": "re-centering and upright/turn completion"
+    },
+    {
+      "startFrame": 24,
+      "endFrame": 28,
+      "label": "standing-idle settle"
+    }
   ],
-  "notes": [
-    "the motion is a short continuous transition of 29 frames at 30 FPS, lasting about 0.93 seconds",
-    "the pelvis follows a noticeable lateral arc while rising instead of moving straight upward",
-    "the starting pose is clearly asymmetrical while the ending pose is more neutral and centered",
-    "finger joints articulate substantially in the animation data, but the preview does not resolve a specific grasp, so no held object should be inferred",
-    "although animation.json is marked loop=true, the visual reads as a one-way stance transition and would jump from the upright end back to the lowered start if repeated seamlessly"
-  ]
+  "keyPoses": [
+    {
+      "frame": 0,
+      "role": "low asymmetric action-idle start"
+    },
+    {
+      "frame": 3,
+      "role": "lowest pelvis before the rise"
+    },
+    {
+      "frame": 10,
+      "role": "mid-rise left-leg drive"
+    },
+    {
+      "frame": 23,
+      "role": "turn completion, nearly upright"
+    },
+    {
+      "frame": 28,
+      "role": "neutral standing-idle target"
+    }
+  ],
+  "weightTransfer": "Pelvis/COM proxy shifts rearward and right early while dipping, then travels forward and toward center as it rises into standing. Support foot is not asserted.",
+  "bodyMechanics": "Arms and spine begin the unwind first around f2–f3, followed by left-leg extension around f8–f10, right-thigh adjustment at f14, late chest/shoulder alignment around f20–f21, then right lower-leg and root-turn completion at f23.",
+  "referenceUse": {
+    "recommended": [
+      "action-idle → standing-idle transitions",
+      "combat/ready stance disengage into neutral standing"
+    ],
+    "notRecommendedAsPrimary": [
+      "support-foot/contact timing"
+    ]
+  }
 }
