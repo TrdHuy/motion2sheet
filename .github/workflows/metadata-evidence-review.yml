@@ -1,0 +1,79 @@
+name: Metadata Evidence Review Helper
+
+on:
+  push:
+    branches:
+      - metadata-evidence/action-idle-to-standing-idle
+
+permissions:
+  contents: read
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install Pillow
+        run: python -m pip install pillow
+      - name: Extract source GIF frames and motion diagnostics
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageDraw, ImageFont
+          import json, math
+
+          src = Path('sample/humanoid_motion/mixamo/action-idle-to-standing-idle')
+          out = Path('build/metadata-evidence-review')
+          frames_dir = out / 'frames'
+          frames_dir.mkdir(parents=True, exist_ok=True)
+
+          gif = Image.open(src / 'preview.gif')
+          frames = []
+          i = 0
+          while True:
+              try:
+                  gif.seek(i)
+              except EOFError:
+                  break
+              frame = gif.convert('RGBA')
+              frames.append(frame.copy())
+              frame.save(frames_dir / f'f{i:02d}.png')
+              i += 1
+
+          cols = 6
+          cell_w, cell_h = frames[0].size
+          label_h = 24
+          rows = math.ceil(len(frames) / cols)
+          sheet = Image.new('RGB', (cols * cell_w, rows * (cell_h + label_h)), 'white')
+          draw = ImageDraw.Draw(sheet)
+          for idx, frame in enumerate(frames):
+              x = (idx % cols) * cell_w
+              y = (idx // cols) * (cell_h + label_h)
+              sheet.paste(frame.convert('RGB'), (x, y))
+              draw.rectangle((x, y + cell_h, x + cell_w - 1, y + cell_h + label_h - 1), fill='white', outline='black')
+              draw.text((x + 6, y + cell_h + 4), f'f{idx}', fill='black')
+          sheet.save(out / 'all-frames-contact-sheet.png')
+
+          motion = json.loads((src / 'animation.json').read_text())
+          diagnostics = {
+              'gifFrameCount': len(frames),
+              'gifSize': list(frames[0].size),
+              'motionFrameCount': motion.get('frameCount'),
+              'fps': motion.get('fps'),
+              'durationSeconds': motion.get('durationSeconds'),
+              'topLevelKeys': list(motion.keys()),
+              'hipsTranslations': motion.get('hips', {}).get('translations'),
+              'hipsRotations': motion.get('hips', {}).get('rotations'),
+              'jointNames': list(motion.get('jointRotations', {}).keys()) if isinstance(motion.get('jointRotations'), dict) else None,
+          }
+          (out / 'diagnostics.json').write_text(json.dumps(diagnostics, indent=2))
+          PY
+      - name: Upload review extraction
+        uses: actions/upload-artifact@v4
+        with:
+          name: metadata-evidence-review-action-idle-to-standing-idle
+          path: build/metadata-evidence-review/
+          retention-days: 7
