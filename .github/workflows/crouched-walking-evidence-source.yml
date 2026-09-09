@@ -1,0 +1,33 @@
+name: Crouched Walking Evidence Source
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/crouched-walking-evidence-source.yml'
+      - 'sample/humanoid_motion/mixamo/crouched-walking/**'
+
+permissions:
+  contents: read
+
+jobs:
+  package-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Package trusted source
+        run: |
+          set -euo pipefail
+          mkdir -p build/crouched-walking-source
+          cp sample/humanoid_motion/mixamo/crouched-walking/animation.json build/crouched-walking-source/
+          cp sample/humanoid_motion/mixamo/crouched-walking/preview.gif build/crouched-walking-source/
+          git rev-parse HEAD > build/crouched-walking-source/source-sha.txt
+      - name: Upload trusted source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: crouched-walking-source
+          path: build/crouched-walking-source/
+          retention-days: 1
