@@ -91,6 +91,28 @@ def scale_hips_translation(pose, factor=1.0, add=(0.0, 0.0, 0.0)):
     pose['hips_t'] = [pose['hips_t'][i] * factor + add[i] for i in range(3)]
 
 
+def qmirror_x(q):
+    # Mirror a scene-space rotation across the sagittal YZ plane.
+    w, x, y, z = q
+    return qnorm([w, x, -y, -z])
+
+
+def _swap_side(name):
+    if name.startswith('Left'):
+        return 'Right' + name[4:]
+    if name.startswith('Right'):
+        return 'Left' + name[5:]
+    return name
+
+
+def mirror_pose(pose):
+    return {
+        'hips_t': [-pose['hips_t'][0], pose['hips_t'][1], pose['hips_t'][2]],
+        'hips_r': qmirror_x(pose['hips_r']),
+        'joints': {_swap_side(name): qmirror_x(q) for name, q in pose['joints'].items()},
+    }
+
+
 # Eight deliberately staged silhouettes. Source frames are only anatomical/weight-transfer seeds;
 # every key is blended from multiple clips and then selectively re-authored.
 # Choreography: ready -> right load -> right cut -> right follow/left load -> left load -> left cut -> left follow -> recovery.
@@ -98,10 +120,10 @@ SPECS = [
     # label, sourceA, frameA, sourceB, frameB, blend-to-B
     ('ready',                 'guard', 30, 'dual',   0, 0.35),
     ('right_load',            'dual',  30, 'melee', 38, 0.28),
-    ('right_preimpact',       'dual',  40, 'melee', 51, 0.32),
+    ('right_impact',          'dual',  40, 'melee', 51, 0.32),
     ('right_follow_left_load','dual',  50, 'melee', 64, 0.30),
     ('left_load',             'dual',  69, 'club',  49, 0.22),
-    ('left_preimpact',        'dual',  79, 'melee', 89, 0.30),
+    ('left_impact',           'dual',  79, 'melee', 89, 0.30),
     ('left_follow',           'dual',  89, 'melee',102, 0.30),
     ('recovery',              'dual', 109, 'guard', 30, 0.35),
 ]
@@ -112,6 +134,11 @@ for label, a_name, a_frame, b_name, b_frame, t in SPECS:
     pose = blend_pose(frame_pose(REFS[a_name], a_frame), frame_pose(REFS[b_name], b_frame), t)
     labels.append(label)
     poses.append(pose)
+
+# The source seeds at slots 2 and 5 carry the opposite attacking limb. Mirror the full
+# canonical pose (body + fingers + lower body) so limb identity matches the authored choreography.
+poses[2] = mirror_pose(poses[2])
+poses[5] = mirror_pose(poses[5])
 
 # Re-author the line of action without destroying the source-derived anatomy.
 # Offsets are intentionally small and scene-space: the visual gate, not these numbers, is authoritative.
@@ -129,7 +156,7 @@ scene_offset(poses[1], 'RightUpperArm', (-5, 0, 12))
 scene_offset(poses[1], 'LeftUpperArm', (0, 0, -8))
 scale_hips_translation(poses[1], 1.20, (0.010, 0.0, -0.004))
 
-# right pre-impact: hip/chest uncoil, attacking arm stays long and crosses body; support side counters.
+# right impact: hip/chest uncoil, attacking arm stays long and crosses body; support side counters.
 hips_offset(poses[2], (0, 0, -8))
 scene_offset(poses[2], 'Chest', (0, 0, -12))
 scene_offset(poses[2], 'RightUpperArm', (0, 0, -10))
@@ -153,7 +180,7 @@ scene_offset(poses[4], 'LeftUpperArm', (0, 0, -10))
 scene_offset(poses[4], 'RightUpperArm', (0, 0, 8))
 scale_hips_translation(poses[4], 1.25, (-0.010, 0.0, -0.006))
 
-# left pre-impact: reverse uncoil with long left-side attack silhouette.
+# left impact: reverse uncoil with long left-side attack silhouette.
 hips_offset(poses[5], (0, 0, 10))
 scene_offset(poses[5], 'Chest', (0, 0, 14))
 scene_offset(poses[5], 'LeftUpperArm', (0, 0, 10))
