@@ -22,13 +22,16 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          from PIL import Image, ImageDraw, ImageFont
-          import json, math
+          from PIL import Image, ImageDraw
+          import json, math, shutil
 
           src = Path('sample/humanoid_motion/mixamo/action-idle-to-standing-idle')
           out = Path('build/metadata-evidence-review')
           frames_dir = out / 'frames'
           frames_dir.mkdir(parents=True, exist_ok=True)
+
+          shutil.copy2(src / 'animation.json', out / 'source-animation.json')
+          shutil.copy2(src / 'preview.gif', out / 'source-preview.gif')
 
           gif = Image.open(src / 'preview.gif')
           frames = []
@@ -67,7 +70,7 @@ jobs:
               'topLevelKeys': list(motion.keys()),
               'hipsTranslations': motion.get('hips', {}).get('translations'),
               'hipsRotations': motion.get('hips', {}).get('rotations'),
-              'jointNames': list(motion.get('jointRotations', {}).keys()) if isinstance(motion.get('jointRotations'), dict) else None,
+              'jointNames': list(motion.get('joints', {}).keys()) if isinstance(motion.get('joints'), dict) else None,
           }
           (out / 'diagnostics.json').write_text(json.dumps(diagnostics, indent=2))
           PY
