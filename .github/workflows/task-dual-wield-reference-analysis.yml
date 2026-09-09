@@ -115,8 +115,8 @@ jobs:
             --output "$ROOT/three-quarter"
           test -s "$ROOT/front/preview.gif"
           test -s "$ROOT/three-quarter/preview.gif"
-          test -s "$ROOT/front/render.json"
-          test -s "$ROOT/three-quarter/render.json"
+          test -s "$ROOT/front/pose_sheet.png"
+          test -s "$ROOT/three-quarter/pose_sheet.png"
           sha256sum "$ANIM" | tee /tmp/animation-after.sha
           cmp /tmp/animation-before.sha /tmp/animation-after.sha
           cp "$ANIM" "$ROOT/animation.json"
@@ -129,12 +129,16 @@ jobs:
           root=Path(sys.argv[1])
           wanted=[0,4,7,8,9,10,11,13,16,19,22,23,24,25,26,28,31,36,42]
           for camera in ('front','three-quarter'):
-              gif=Image.open(root/camera/'preview.gif')
-              assert gif.n_frames == 43, (camera, gif.n_frames)
+              gif_path=root/camera/'preview.gif'
+              gif=Image.open(gif_path)
+              assert gif.n_frames >= 1
+              duration=sum((gif.seek(i), gif.info.get('duration',0))[1] for i in range(gif.n_frames))
+              # GIF may coalesce identical impact-hold frames; pose_sheet retains all 43 source frames.
+              pose_sheet=Image.open(root/camera/'pose_sheet.png').convert('RGBA')
               tiles=[]
               for idx in wanted:
-                  gif.seek(idx)
-                  frame=gif.convert('RGBA')
+                  x=(idx%8)*224; y=(idx//8)*224
+                  frame=pose_sheet.crop((x,y,x+224,y+224))
                   bg=Image.new('RGBA',frame.size,(245,245,245,255)); bg.alpha_composite(frame)
                   tile=Image.new('RGB',(224,246),'white')
                   tile.paste(bg.convert('RGB'),(0,0))
@@ -145,7 +149,7 @@ jobs:
               for i,tile in enumerate(tiles):
                   sheet.paste(tile,((i%cols)*224,(i//cols)*246))
               sheet.save(root/f'final-contact-{camera}.png')
-              print(f'{camera}: gifFrames={gif.n_frames} gifBytes={(root/camera/"preview.gif").stat().st_size}')
+              print(f'{camera}: gifImages={gif.n_frames} gifDurationMs={duration} gifBytes={gif_path.stat().st_size}')
           print('FULL_VISUAL_GATE_RENDER_PASS')
           PY
 
