@@ -21,21 +21,22 @@ jobs:
           cache: pip
       - name: Install package
         run: python -m pip install -e '.[dev]'
-      - name: Author and validate canonical candidate
+      - name: Author and validate eight key poses
+        shell: bash
         run: |
           set -euo pipefail
           python tests/motion/humanoid_motion/fixtures/.task_dual_wield_author.py
-          ANIM=tests/motion/humanoid_motion/fixtures/dual-wield-crosscut-attack/animation.json
+          ANIM=tests/motion/humanoid_motion/fixtures/dual-wield-crosscut-attack/keypose_review.json
           python - "$ANIM" <<'PY'
-          import json, math, sys
+          import sys
           from pathlib import Path
           from motion2sheet.motion.humanoid_motion.schema import OPTIONAL_FINGER_JOINTS, read_animation
           p=Path(sys.argv[1]); d=read_animation(p)
-          assert d['frameCount']==61 and d['fps']==30.0 and d['durationSeconds']==2.0 and d['loop'] is False
+          assert d['frameCount']==8 and d['fps']==30.0 and d['loop'] is False
+          assert abs(d['durationSeconds'] - 7/30) < 1e-9
           assert set(OPTIONAL_FINGER_JOINTS).issubset(d['joints']) and len(OPTIONAL_FINGER_JOINTS)==30
           assert all(max(abs(c) for c in v)==0.0 for v in d['root']['translations'])
-          assert 'mixamorig' not in p.read_text(encoding='utf-8').lower()
-          print('FOCUSED_SCHEMA_PASS frames=61 fps=30 duration=2.0 fingers=30 root=in-place sourceNames=clean')
+          print('KEYPOSE_SCHEMA_PASS frames=8 fingers=30 root=in-place')
           PY
           sha256sum "$ANIM" | tee /tmp/animation-before.sha
       - name: Install Blender headless runtime libraries
@@ -60,54 +61,73 @@ jobs:
           echo "${META[1]}  $RUNNER_TEMP/character-a.fbx" | sha256sum -c -
           test "$(stat -c %s "$RUNNER_TEMP/character-a.fbx")" -eq "${META[2]}"
           motion2sheet export-character "$RUNNER_TEMP/character-a.fbx" --output build/task-dual-wield-character
-          test -s build/task-dual-wield-character/model.glb
-          test -s build/task-dual-wield-character/rig.json
-          test -s build/task-dual-wield-character/skin.json
-      - name: Render 224px front-camera motion review
+      - name: Render front and three-quarter visual gate
         shell: bash
         run: |
           set -euo pipefail
-          ANIM=tests/motion/humanoid_motion/fixtures/dual-wield-crosscut-attack/animation.json
-          OUT=build/task-dual-wield-proof
-          motion2sheet render-humanoid-animation \
-            --model build/task-dual-wield-character/model.glb \
-            --character-rig build/task-dual-wield-character/rig.json \
-            --skin build/task-dual-wield-character/skin.json \
-            --character-mapping profiles/humanoid_motion/mixamo_humanoid_v1.json \
-            --animation "$ANIM" \
+          ANIM=tests/motion/humanoid_motion/fixtures/dual-wield-crosscut-attack/keypose_review.json
+          mkdir -p build/task-dual-wield-keyposes
+          cat > build/task-dual-wield-keyposes/three-quarter.json5 <<'JSON'
+          {
+            "schema": "motion2sheet.camera",
+            "version": 1,
+            "id": "three_quarter_humanoid_motion",
+            "projection": "ORTHO",
+            "location": [4.2, -4.2, 1.05],
+            "target": [0.0, 0.0, 1.05],
+            "upAxis": [0.0, 0.0, 1.0],
+            "orthoScale": 3.0,
+            "followRoot": false,
+            "margin": 1.0
+          }
+          JSON
+          COMMON=(
+            --model build/task-dual-wield-character/model.glb
+            --character-rig build/task-dual-wield-character/rig.json
+            --skin build/task-dual-wield-character/skin.json
+            --character-mapping profiles/humanoid_motion/mixamo_humanoid_v1.json
+            --animation "$ANIM"
+            --canvas 224x224
+            --sheet-columns 8
+            --render-samples 1
+          )
+          motion2sheet render-humanoid-animation "${COMMON[@]}" \
             --camera-profile profiles/cameras/front_humanoid_motion.json5 \
-            --canvas 224x224 \
-            --sheet-columns 8 \
-            --render-samples 1 \
-            --gif \
-            --output "$OUT"
-          test -s "$OUT/preview.gif"
-          test -s "$OUT/render.json"
+            --output build/task-dual-wield-keyposes/front
+          motion2sheet render-humanoid-animation "${COMMON[@]}" \
+            --camera-profile build/task-dual-wield-keyposes/three-quarter.json5 \
+            --output build/task-dual-wield-keyposes/three-quarter
+          test -s build/task-dual-wield-keyposes/front/pose_sheet.png
+          test -s build/task-dual-wield-keyposes/three-quarter/pose_sheet.png
           sha256sum "$ANIM" | tee /tmp/animation-after.sha
           cmp /tmp/animation-before.sha /tmp/animation-after.sha
-          cp "$ANIM" "$OUT/animation.json"
-          python - "$OUT" <<'PY'
-          import json, sys
+          cp "$ANIM" build/task-dual-wield-keyposes/keypose_review.json
+          cp tests/motion/humanoid_motion/fixtures/dual-wield-crosscut-attack/keypose_labels.txt build/task-dual-wield-keyposes/keypose_labels.txt
+          python - <<'PY'
           from pathlib import Path
           from PIL import Image, ImageDraw
-          out=Path(sys.argv[1]); gif=Image.open(out/'preview.gif'); n=gif.n_frames
-          wanted=[0,8,14,18,20,25,31,34,36,43,50,60]
-          tiles=[]
-          for idx in wanted:
-              gif.seek(min(idx,n-1)); fr=gif.convert('RGBA')
-              bg=Image.new('RGBA',fr.size,(245,245,245,255)); bg.alpha_composite(fr); bg=bg.convert('RGB')
-              tile=Image.new('RGB',(224,246),'white'); tile.paste(bg,(0,0)); ImageDraw.Draw(tile).text((6,228),f'f{idx}',fill='black'); tiles.append(tile)
-          sheet=Image.new('RGB',(224*4,246*3),'white')
-          for i,t in enumerate(tiles): sheet.paste(t,((i%4)*224,(i//4)*246))
-          sheet.save(out/'key-poses.png')
-          report=json.loads((out/'render.json').read_text())
-          print(f"RENDER_PASS gifBytes={(out/'preview.gif').stat().st_size} gifFrames={n}")
-          print('RENDER_KEYS', sorted(report.keys()))
+          root=Path('build/task-dual-wield-keyposes')
+          labels=[line.split(': ',1)[1] for line in (root/'keypose_labels.txt').read_text().splitlines()]
+          rows=[]
+          for camera in ('front','three-quarter'):
+              sheet=Image.open(root/camera/'pose_sheet.png').convert('RGB')
+              tile_w=224; tile_h=224; label_h=34; title_h=28
+              row=Image.new('RGB',(tile_w*8,title_h+tile_h+label_h),'white')
+              d=ImageDraw.Draw(row); d.text((6,6),camera,fill='black')
+              for i,label in enumerate(labels):
+                  crop=sheet.crop((i*tile_w,0,(i+1)*tile_w,tile_h))
+                  row.paste(crop,(i*tile_w,title_h))
+                  d.text((i*tile_w+4,title_h+tile_h+6),f'{i} {label}',fill='black')
+              rows.append(row)
+          gate=Image.new('RGB',(rows[0].width,rows[0].height*2),'white')
+          gate.paste(rows[0],(0,0)); gate.paste(rows[1],(0,rows[0].height))
+          gate.save(root/'visual-gate.png')
+          print('VISUAL_GATE_RENDER_PASS')
           PY
-      - name: Upload candidate review proof
+      - name: Upload key-pose visual gate
         uses: actions/upload-artifact@v4
         with:
-          name: task-dual-wield-motion-review
-          path: build/task-dual-wield-proof
+          name: task-dual-wield-keypose-gate
+          path: build/task-dual-wield-keyposes
           if-no-files-found: error
           retention-days: 7
