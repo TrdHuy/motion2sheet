@@ -22,9 +22,18 @@ from motion2sheet.motion.humanoid_motion.blender_math import (
     world_pose_matrix,
     world_rest_matrix,
 )
-from motion2sheet.motion.humanoid_motion.mapping import mapping_diagnostics, read_mapping, validate_character_mapping
+from motion2sheet.motion.humanoid_motion.mapping import (
+    compatible_animation_joints,
+    mapping_diagnostics,
+    read_mapping,
+    validate_character_mapping,
+)
 from motion2sheet.motion.humanoid_motion.root_motion import humanoid_root_motion
-from motion2sheet.motion.humanoid_motion.schema import CANONICAL_SKELETON, MAPPED_JOINTS, read_animation
+from motion2sheet.motion.humanoid_motion.schema import (
+    CANONICAL_SKELETON,
+    OPTIONAL_FINGER_JOINTS,
+    read_animation,
+)
 from motion2sheet.motion.model_render.blender_helpers import (
     import_geometry_glb,
     mesh_layout,
@@ -61,7 +70,7 @@ def _track_rotation(animation: dict, semantic: str, sample: int) -> Quaternion:
 
 def _bridge_helpers(armature, joints: dict[str, str]) -> dict[str, tuple[str, str, float]]:
     result: dict[str, tuple[str, str, float]] = {}
-    for child_semantic in MAPPED_JOINTS:
+    for child_semantic in joints:
         parent_semantic = CANONICAL_SKELETON[child_semantic]
         if parent_semantic == "Root":
             continue
@@ -89,7 +98,7 @@ def _build_runtime_action(armature, animation: dict, mapping: dict) -> tuple[obj
     for pose_bone in armature.pose.bones:
         pose_bone.rotation_mode = "QUATERNION"
 
-    joints = mapping["joints"]
+    joints = compatible_animation_joints(animation, mapping)
     bone_to_semantic = {bone: semantic for semantic, bone in joints.items()}
     bridges = _bridge_helpers(armature, joints)
     order = ordered_bones(armature)
@@ -113,7 +122,7 @@ def _build_runtime_action(armature, animation: dict, mapping: dict) -> tuple[obj
         hips_offset = Vector(hips_track[sample]) * leg_length if hips_track else Vector((0.0, 0.0, 0.0))
         semantic_world_rotation = {
             semantic: (root_rotation @ _track_rotation(animation, semantic, sample) @ rest_world_rotation[semantic]).normalized()
-            for semantic in MAPPED_JOINTS
+            for semantic in joints
         }
 
         for data_bone in order:
@@ -162,17 +171,20 @@ def _build_runtime_action(armature, animation: dict, mapping: dict) -> tuple[obj
         "targetMeanLegLengthSceneUnits": leg_length,
         "bridgeHelpers": {name: {"from": value[0], "to": value[1], "factor": value[2]} for name, value in sorted(bridges.items())},
         "restWorldRotation": {semantic: quaternion_values(value) for semantic, value in rest_world_rotation.items()},
+        "activeSemantics": list(joints),
+        "activeFingerSemantics": [semantic for semantic in joints if semantic in OPTIONAL_FINGER_JOINTS],
     }
 
 
 def _playback_diagnostics(armature, animation: dict, mapping: dict, rig: dict, runtime: dict) -> tuple[dict, dict]:
-    joints = mapping["joints"]
+    joints = compatible_animation_joints(animation, mapping)
     leg_length = float(runtime["targetMeanLegLengthSceneUnits"])
     hips_name = joints["Hips"]
     hips_rest = armature.matrix_world @ armature.data.bones[hips_name].head_local
     rest_rotations = {semantic: world_rest_matrix(armature, bone).to_quaternion().normalized() for semantic, bone in joints.items()}
     max_rotation_error = 0.0
     worst_rotation = None
+    semantic_rotation_maxima = {semantic: 0.0 for semantic in joints}
     max_hips_error = 0.0
     worst_hips = None
     finite = True
@@ -194,6 +206,7 @@ def _playback_diagnostics(armature, animation: dict, mapping: dict, rig: dict, r
             actual_delta = root_rotation.inverted() @ pose_rotation @ rest_rotations[semantic].inverted()
             expected_delta = _track_rotation(animation, semantic, sample)
             error = rotation_error_degrees(actual_delta, expected_delta)
+            semantic_rotation_maxima[semantic] = max(semantic_rotation_maxima[semantic], error)
             if error > max_rotation_error:
                 max_rotation_error = error
                 worst_rotation = {"sample": sample, "canonicalSemantic": semantic, "targetBone": bone_name}
@@ -218,11 +231,20 @@ def _playback_diagnostics(armature, animation: dict, mapping: dict, rig: dict, r
         "pass": finite and max_rotation_error <= 0.001 and max_hips_error <= 1e-5,
         "frameCount": animation["frameCount"],
         "mappedJointCount": len(joints),
+        "activeSemantics": list(joints),
+        "activeFingerSemantics": [semantic for semantic in joints if semantic in OPTIONAL_FINGER_JOINTS],
+        "activeFingerSemanticCount": sum(semantic in OPTIONAL_FINGER_JOINTS for semantic in joints),
         "leftRightIdentity": mapping_diagnostics(mapping, rig)["leftRightIdentity"],
         "quaternionValidity": True,
         "nanInfCheck": finite,
         "fullMappedJointPlayback": True,
         "maxSemanticRotationErrorDegrees": max_rotation_error,
+        "semanticRotationMaximaDegrees": semantic_rotation_maxima,
+        "fingerRotationMaximaDegrees": {
+            semantic: semantic_rotation_maxima[semantic]
+            for semantic in joints
+            if semantic in OPTIONAL_FINGER_JOINTS
+        },
         "worstSemanticRotation": worst_rotation,
         "maxHipsPositionError": max_hips_error,
         "worstHipsPosition": worst_hips,
@@ -322,8 +344,11 @@ def main() -> None:
         "bridgeHelpers": runtime["bridgeHelpers"],
         "joints": [
             {"canonicalSemantic": semantic, "targetBone": mapping["joints"][semantic], "targetRestWorldRotation": runtime["restWorldRotation"][semantic], "restCorrectionApplied": True}
-            for semantic in MAPPED_JOINTS
+            for semantic in runtime["activeSemantics"]
         ],
+        "activeSemantics": runtime["activeSemantics"],
+        "activeFingerSemantics": runtime["activeFingerSemantics"],
+        "activeFingerSemanticCount": len(runtime["activeFingerSemantics"]),
     }
     _write(diagnostics / "retarget.json", retarget)
     playback, root_motion = _playback_diagnostics(armature, animation, mapping, rig, runtime)

@@ -7,12 +7,24 @@ from typing import Any
 
 from motion2sheet.motion.roundtrip.schema import validate_rig_document
 
-from .schema import CANONICAL_SKELETON, CANONICAL_SKELETON_ID, MAPPED_JOINTS
+from .schema import (
+    ALL_MAPPED_JOINTS,
+    CANONICAL_SKELETON,
+    CANONICAL_SKELETON_ID,
+    CORE_MAPPED_JOINTS,
+    OPTIONAL_FINGER_JOINTS,
+    active_mapped_joints,
+)
 
 MAPPING_SCHEMA = "motion2sheet.humanoid-motion.character-map"
 LEFT_RIGHT_TOLERANCE = 1e-6
 LEFT_RIGHT_SUFFIXES = (
     "Shoulder", "UpperArm", "LowerArm", "Hand", "UpperLeg", "LowerLeg", "Foot", "Toe",
+    "ThumbMetacarpal", "ThumbProximal", "ThumbDistal",
+    "IndexProximal", "IndexIntermediate", "IndexDistal",
+    "MiddleProximal", "MiddleIntermediate", "MiddleDistal",
+    "RingProximal", "RingIntermediate", "RingDistal",
+    "PinkyProximal", "PinkyIntermediate", "PinkyDistal",
 )
 
 
@@ -42,6 +54,8 @@ def _world_head(bone: dict[str, Any], rig: dict[str, Any]) -> list[float]:
 def left_right_diagnostics(joints: dict[str, str], bones: dict[str, dict[str, Any]], rig: dict[str, Any]) -> dict[str, Any]:
     pairs = []
     for suffix in LEFT_RIGHT_SUFFIXES:
+        if f"Left{suffix}" not in joints or f"Right{suffix}" not in joints:
+            continue
         left_name = joints[f"Left{suffix}"]
         right_name = joints[f"Right{suffix}"]
         left_x = _world_head(bones[left_name], rig)[0]
@@ -82,10 +96,20 @@ def validate_character_mapping(value: Any, rig: dict[str, Any]) -> dict[str, Any
     if value["canonicalSkeleton"] != CANONICAL_SKELETON_ID:
         raise ValueError(f"mapping canonicalSkeleton must be {CANONICAL_SKELETON_ID!r}")
     joints = value["joints"]
-    if not isinstance(joints, dict) or set(joints) != set(MAPPED_JOINTS):
-        absent = set(MAPPED_JOINTS) - set(joints or {})
-        extra = set(joints or {}) - set(MAPPED_JOINTS)
+    if not isinstance(joints, dict):
+        raise ValueError("mapping joints must be an object")
+    semantics = set(joints)
+    absent = set(CORE_MAPPED_JOINTS) - semantics
+    extra = semantics - set(ALL_MAPPED_JOINTS)
+    if absent or extra:
         raise ValueError(f"mapping semantic set mismatch; missing={sorted(absent)} extra={sorted(extra)}")
+    present_fingers = semantics & set(OPTIONAL_FINGER_JOINTS)
+    if present_fingers and present_fingers != set(OPTIONAL_FINGER_JOINTS):
+        missing_fingers = set(OPTIONAL_FINGER_JOINTS) - present_fingers
+        raise ValueError(
+            "mapping finger extension must contain all 30 finger semantics; "
+            f"missing={sorted(missing_fingers)}"
+        )
     if any(not isinstance(name, str) or not name for name in joints.values()):
         raise ValueError("mapping target bone names must be non-empty strings")
     if len(set(joints.values())) != len(joints):
@@ -108,7 +132,7 @@ def validate_character_mapping(value: Any, rig: dict[str, Any]) -> dict[str, Any
             current = bones[current]["parent"]
         return result
 
-    for semantic in MAPPED_JOINTS:
+    for semantic in mapping_joint_semantics(value):
         parent_semantic = CANONICAL_SKELETON[semantic]
         if parent_semantic == "Root":
             continue
@@ -127,6 +151,28 @@ def validate_character_mapping(value: Any, rig: dict[str, Any]) -> dict[str, Any
     return value
 
 
+def mapping_joint_semantics(mapping: dict[str, Any]) -> tuple[str, ...]:
+    present_fingers = set(mapping["joints"]) & set(OPTIONAL_FINGER_JOINTS)
+    return ALL_MAPPED_JOINTS if present_fingers else CORE_MAPPED_JOINTS
+
+
+def compatible_animation_joints(
+    animation: dict[str, Any],
+    mapping: dict[str, Any],
+) -> dict[str, str]:
+    semantics = active_mapped_joints(animation)
+    missing = [semantic for semantic in semantics if semantic not in mapping["joints"]]
+    if missing:
+        missing_fingers = [semantic for semantic in missing if semantic in OPTIONAL_FINGER_JOINTS]
+        if missing_fingers:
+            raise ValueError(
+                "Humanoid Motion contains authored finger animation but target mapping does not support "
+                f"the full finger extension; missing={missing_fingers}"
+            )
+        raise ValueError(f"target mapping is missing active Humanoid Motion semantics: {missing}")
+    return {semantic: mapping["joints"][semantic] for semantic in semantics}
+
+
 def mapping_diagnostics(value: dict[str, Any], rig: dict[str, Any]) -> dict[str, Any]:
     mapping = validate_character_mapping(value, rig)
     bones = {bone["name"]: bone for bone in rig["bones"]}
@@ -141,7 +187,7 @@ def mapping_diagnostics(value: dict[str, Any], rig: dict[str, Any]) -> dict[str,
         return result
 
     bridge_helpers: set[str] = set()
-    for semantic in MAPPED_JOINTS:
+    for semantic in mapping_joint_semantics(mapping):
         parent_semantic = CANONICAL_SKELETON[semantic]
         if parent_semantic == "Root":
             continue
@@ -155,6 +201,8 @@ def mapping_diagnostics(value: dict[str, Any], rig: dict[str, Any]) -> dict[str,
         "mappingId": mapping["id"],
         "canonicalSkeleton": CANONICAL_SKELETON_ID,
         "mappedJointCount": len(joints),
+        "mappedCoreJointCount": len(CORE_MAPPED_JOINTS),
+        "mappedFingerJointCount": len(set(joints) & set(OPTIONAL_FINGER_JOINTS)),
         "mappedJoints": dict(sorted(joints.items())),
         "missingRequiredJoints": [],
         "bridgeHelperBones": sorted(bridge_helpers),

@@ -99,6 +99,7 @@ def _install_render_stubs(monkeypatch, observed_fps: list[float]) -> None:
     monkeypatch.setattr(runner, "read_mapping", lambda path: {"id": "mapping-fixture"})
     monkeypatch.setattr(runner, "validate_character_mapping", lambda value, rig: value)
     monkeypatch.setattr(runner, "read_animation", lambda path: json.loads(path.read_text(encoding="utf-8")))
+    monkeypatch.setattr(runner, "compatible_animation_joints", lambda animation, mapping: {})
     monkeypatch.setattr(runner, "load_camera_profile", lambda path: {"id": "camera", "followRoot": False})
     monkeypatch.setattr(runner, "skin_statistics", lambda skin, rig: {"stub": True})
     monkeypatch.setattr(runner, "compose_sheet", lambda frame_paths, output, columns, canvas: {"sheetRows": 1, "sheetSize": [canvas[0] * len(frame_paths), canvas[1]]})

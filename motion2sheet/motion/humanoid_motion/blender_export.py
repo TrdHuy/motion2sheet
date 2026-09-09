@@ -20,14 +20,17 @@ from motion2sheet.motion.humanoid_motion.blender_math import (
     world_rest_matrix,
     yaw_twist,
 )
-from motion2sheet.motion.humanoid_motion.mapping import read_mapping, validate_character_mapping
+from motion2sheet.motion.humanoid_motion.mapping import (
+    mapping_joint_semantics,
+    read_mapping,
+    validate_character_mapping,
+)
 from motion2sheet.motion.humanoid_motion.schema import (
     ANIMATION_SCHEMA,
     CANONICAL_SKELETON_ID,
     EXPECTED_COORDINATE_SYSTEM,
     EXPECTED_QUATERNION_CONVENTION,
-    MAPPED_JOINTS,
-    ROTATION_JOINTS,
+    OPTIONAL_FINGER_JOINTS,
     write_animation,
 )
 from motion2sheet.motion.roundtrip.blender_json_scene import build_json_scene
@@ -51,7 +54,9 @@ def main() -> None:
         )
     mapping = validate_character_mapping(read_mapping(Path(request["mappingPath"])), source_rig)
     armature, _action = build_json_scene(source_rig, source_animation)
-    joints = mapping["joints"]
+    active_semantics = mapping_joint_semantics(mapping)
+    joints = {semantic: mapping["joints"][semantic] for semantic in active_semantics}
+    rotation_semantics = tuple(semantic for semantic in active_semantics if semantic != "Hips")
     leg_length = mean_leg_length(armature, joints)
     frames = [int(row["frame"]) for row in source_animation["frames"]]
     hips_name = joints["Hips"]
@@ -75,7 +80,7 @@ def main() -> None:
     root_translations: list[list[float]] = []
     root_rotations: list[Quaternion] = []
     hips_translations: list[list[float]] = []
-    rotations: dict[str, list[Quaternion]] = {semantic: [] for semantic in MAPPED_JOINTS}
+    rotations: dict[str, list[Quaternion]] = {semantic: [] for semantic in active_semantics}
     source_vertical_offsets: list[float] = []
     canonical_vertical_offsets: list[float] = []
     for sample, frame in enumerate(frames):
@@ -123,7 +128,7 @@ def main() -> None:
         },
         "joints": {
             semantic: {"rotations": continuous_quaternion_values(rotations[semantic])}
-            for semantic in ROTATION_JOINTS
+            for semantic in rotation_semantics
         },
     }
     output = Path(request["animationOutput"])
@@ -151,6 +156,14 @@ def main() -> None:
         "translationPolicy": "dimensionless mean-leg-length units",
         "rotationFormula": "D = inverse(Qroot) * Rpose * inverse(Rrest)",
         "sourceBoneNamesStoredInAnimation": False,
+        "activeMappedSemantics": list(active_semantics),
+        "activeMappedJointCount": len(active_semantics),
+        "activeFingerSemantics": [
+            semantic for semantic in active_semantics if semantic in OPTIONAL_FINGER_JOINTS
+        ],
+        "activeFingerJointCount": sum(
+            semantic in OPTIONAL_FINGER_JOINTS for semantic in active_semantics
+        ),
     }
     report_path = Path(request["diagnosticsOutput"])
     report_path.parent.mkdir(parents=True, exist_ok=True)

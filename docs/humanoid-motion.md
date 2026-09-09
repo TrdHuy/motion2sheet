@@ -20,7 +20,8 @@ canonical skeleton `humanoid_v1`. It stores:
 - `fps` and `frameCount` as the endpoint-inclusive sampling representation;
 - virtual `Root` translation and yaw tracks;
 - `Hips` local/residual translation and rotation;
-- rotation tracks for every other required humanoid semantic.
+- rotation tracks for every required core/body semantic;
+- an optional all-or-none set of 30 canonical finger rotation tracks.
 
 `Root.translation` is reserved and must remain within `1e-8` mean-leg-length
 units of `[0,0,0]` on every frame. Root yaw is retained only as canonical body
@@ -87,6 +88,30 @@ deterministic nearest-hemisphere continuity policy.
 Humanoid Motion stores no source joint positions, bone lengths, bind matrices,
 local axes, source/target bone names, FBX paths or model paths.
 
+## Optional finger rotation extension
+
+Humanoid Motion v1 keeps its original 21 non-virtual core semantics mandatory.
+Finger articulation is an additive optional extension: an animation or character
+mapping contains either none or all 30 finger semantics. Partial finger chains and
+unknown semantics fail closed. Finger tracks use the same rest-relative world
+rotation formula, quaternion normalization and sign-continuity rules as body
+tracks; there are no finger translation tracks.
+
+Each hand contains Thumb `Metacarpal/Proximal/Distal` and
+Index/Middle/Ring/Pinky `Proximal/Intermediate/Distal`. Their canonical parents
+form five chains below `LeftHand` or `RightHand`. The Mixamo profile maps these
+semantics to the corresponding `HandThumb1/2/3` and
+`Hand{Index,Middle,Ring,Pinky}1/2/3` bones.
+
+Compatibility is explicit:
+
+| Animation | Target mapping | Result |
+| --- | --- | --- |
+| Body-only | Body-only | Core motion applies unchanged |
+| Body-only | Finger-capable | Core motion applies; target fingers remain at rest |
+| Finger-capable | Finger-capable | Core and all 30 finger tracks apply |
+| Finger-capable | Body-only | Fail: authored finger motion cannot be discarded |
+
 ## Independent fidelity oracle
 
 Before Motion JSON or source FBX files are deleted, run:
@@ -103,9 +128,9 @@ motion2sheet verify-humanoid-animation-fidelity \
 The oracle evaluates the Source Rig + Source Animation hierarchy/rest/matrix-basis
 transforms in a separate pure-Python numeric path. It does not call the Humanoid
 Motion exporter, Blender playback, or their math helpers. It compares all samples,
-the exact copied `durationSeconds`, FPS/frame count, Root yaw, all 21 semantic
-rotations, Hips residual translation, left/right identity, Root invariants and
-quaternion validity/continuity.
+the exact copied `durationSeconds`, FPS/frame count, Root yaw, all active semantic
+rotations (21 core plus 30 fingers when present), Hips residual translation,
+left/right identity, Root invariants and quaternion validity/continuity.
 
 Tolerances remain `1e-9` for FPS, `1e-6` seconds for the explicit duration
 invariant, `0.005` degrees for rotations, `1e-5` for Hips translation and `1e-8`
@@ -113,9 +138,10 @@ for Root translation.
 
 ## Character mapping and independent targets
 
-`motion2sheet.humanoid-motion.character-map` v1 maps all 21 non-virtual semantics
-to distinct target bones. Validation fails closed for missing bones, invalid
-ancestry, or left/right rest geometry inconsistent with canonical `+X`.
+`motion2sheet.humanoid-motion.character-map` v1 maps all 21 non-virtual core
+semantics and optionally all 30 finger semantics to distinct target bones.
+Validation fails closed for partial extensions, missing bones, invalid ancestry,
+or left/right rest geometry inconsistent with canonical `+X`.
 
 The canonical independent acceptance matrix is:
 
