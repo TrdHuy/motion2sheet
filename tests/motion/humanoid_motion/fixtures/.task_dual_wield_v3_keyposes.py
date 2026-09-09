@@ -49,15 +49,24 @@ def continuous(seq):
     return out
 
 
-# Keep the successful V2 attack silhouettes, but stop the non-attacking arm from
-# opening into a near-horizontal T shape at the second impact. Blend that support
-# chain toward the grounded ready guard instead of inventing new Euler angles.
+# Keep the successful V2 attack silhouettes, but make the non-attacking weapon hand
+# read consistently as a guard/checking hand instead of opening into the attack line.
 ready = 0
+left_load = 4
 left_impact = 5
 support_names = ['RightShoulder', 'RightUpperArm', 'RightLowerArm', 'RightHand']
 support_names += [name for name in doc['joints'] if name.startswith('Right') and any(
     token in name for token in ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky')
 )]
+
+# At the second chamber the source seed put both hands around the face, which reads as a
+# block. Pull only the right/support chain back toward the grounded ready guard; preserve
+# the left attacking chain, torso coil and lower-body load untouched.
+for name in support_names:
+    track = doc['joints'][name]['rotations']
+    track[left_load] = slerp(track[left_load], track[ready], 0.54)
+
+# At second impact keep the same guard logic and remove the near-horizontal T silhouette.
 for name in support_names:
     track = doc['joints'][name]['rotations']
     track[left_impact] = slerp(track[left_impact], track[ready], 0.68)
@@ -75,4 +84,4 @@ for name in doc['joints']:
     doc['joints'][name]['rotations'] = continuous(doc['joints'][name]['rotations'])
 
 write_animation(PATH, doc)
-print('V3_KEYPOSE_REFINEMENT_PASS support-arm guard tightened at both impacts')
+print('V3_KEYPOSE_REFINEMENT_PASS support-arm guard tightened at second load and both impacts')
