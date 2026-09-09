@@ -1,0 +1,19 @@
+{
+  "intent": "transition from a low staggered idle stance into a neutral upright standing idle",
+  "style": "controlled low-energy stance transition",
+  "characterType": "humanoid",
+  "breakdown": [
+    "starts in a lowered asymmetrical stance with bent knees, offset weight, and the torso angled away from the final facing",
+    "makes a small additional dip while shifting the pelvis laterally and beginning a whole-body turn",
+    "progressively raises the pelvis and extends the legs as the torso and head rotate toward a more centered orientation",
+    "lets the arms and hands settle downward while the lower body organizes into a more even base",
+    "finishes in an upright balanced standing idle with reduced asymmetry"
+  ],
+  "notes": [
+    "the motion is a short continuous transition of 29 frames at 30 FPS, lasting about 0.93 seconds",
+    "the pelvis follows a noticeable lateral arc while rising instead of moving straight upward",
+    "the starting pose is clearly asymmetrical while the ending pose is more neutral and centered",
+    "finger joints articulate substantially in the animation data, but the preview does not resolve a specific grasp, so no held object should be inferred",
+    "although animation.json is marked loop=true, the visual reads as a one-way stance transition and would jump from the upright end back to the lowered start if repeated seamlessly"
+  ]
+}
