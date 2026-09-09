@@ -1,145 +1,33 @@
-name: Fast Run Evidence Inspect
+name: Fast Run Evidence Source
 
 on:
-  push:
-    branches:
-      - metadata/fast-run-evidence
+  pull_request:
+    types: [opened, synchronize, reopened]
     paths:
-      - .github/workflows/fast-run-evidence-inspect.yml
+      - '.github/workflows/fast-run-evidence-inspect.yml'
+      - 'sample/humanoid_motion/mixamo/fast-run/**'
 
 permissions:
   contents: read
 
 jobs:
-  inspect:
+  package-source:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - name: Checkout exact PR head
+        uses: actions/checkout@v6
         with:
-          python-version: '3.12'
-      - name: Install inspection dependency
-        run: python -m pip install pillow
-      - name: Inspect trusted fast-run sources
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Package trusted source
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          from PIL import Image, ImageDraw, ImageFont
-          import json, math, shutil
-
-          src = Path('sample/humanoid_motion/mixamo/fast-run')
-          out = Path('build/fast-run-evidence-inspect')
-          frames_dir = out / 'preview-frames'
-          frames_dir.mkdir(parents=True, exist_ok=True)
-
-          motion = json.loads((src / 'animation.json').read_text(encoding='utf-8'))
-          shutil.copy2(src / 'animation.json', out / 'animation.json')
-          shutil.copy2(src / 'preview.gif', out / 'preview.gif')
-
-          gif = Image.open(src / 'preview.gif')
-          frames = []
-          idx = 0
-          while True:
-              try:
-                  gif.seek(idx)
-              except EOFError:
-                  break
-              frame = gif.convert('RGB').copy()
-              frames.append(frame)
-              frame.save(frames_dir / f'preview_{idx:02d}.png')
-              idx += 1
-
-          def select_even_samples(frame_count: int, sample_count: int) -> list[int]:
-              if frame_count <= sample_count:
-                  return list(range(frame_count))
-              if sample_count == 1:
-                  return [0]
-              last = frame_count - 1
-              denominator = sample_count - 1
-              return [(i * last + denominator // 2) // denominator for i in range(sample_count)]
-
-          canonical = select_even_samples(motion['frameCount'], len(frames))
-          assert len(canonical) == len(frames)
-          assert canonical[0] == 0 and canonical[-1] == motion['frameCount'] - 1
-
-          font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 18)
-          w, h = frames[0].size
-          cols = 5
-          label_h = 32
-          rows = math.ceil(len(frames) / cols)
-          sheet = Image.new('RGB', (cols * w, rows * (h + label_h)), 'white')
-          draw = ImageDraw.Draw(sheet)
-          for n, (fi, frame) in enumerate(zip(canonical, frames)):
-              x = (n % cols) * w
-              y = (n // cols) * (h + label_h)
-              sheet.paste(frame, (x, y))
-              draw.rectangle((x, y + h, x + w - 1, y + h + label_h - 1), fill='white', outline='black')
-              draw.text((x + 8, y + h + 5), f'canonical f{fi}  |  preview #{n}', font=font, fill='black')
-          sheet.save(out / 'preview-contact-sheet.png')
-
-          def q_delta_deg(a, b):
-              dot = abs(sum(x*y for x, y in zip(a, b)))
-              dot = max(-1.0, min(1.0, dot))
-              return math.degrees(2.0 * math.acos(dot))
-
-          joint_deltas = {}
-          joint_peaks = {}
-          for joint, data in motion.get('joints', {}).items():
-              qs = data.get('rotations')
-              if not qs or len(qs) != motion['frameCount']:
-                  continue
-              ds = [0.0] + [q_delta_deg(qs[i], qs[i-1]) for i in range(1, len(qs))]
-              joint_deltas[joint] = ds
-              fi = max(range(len(ds)), key=ds.__getitem__)
-              joint_peaks[joint] = {'frame': fi, 'deltaDeg': ds[fi]}
-
-          hips = motion['hips']['translations']
-          xs = [p[0] for p in hips]
-          ys = [p[1] for p in hips]
-          zs = [p[2] for p in hips]
-          extrema = {
-              'xMin': {'frame': min(range(len(xs)), key=xs.__getitem__), 'value': min(xs)},
-              'xMax': {'frame': max(range(len(xs)), key=xs.__getitem__), 'value': max(xs)},
-              'yMin': {'frame': min(range(len(ys)), key=ys.__getitem__), 'value': min(ys)},
-              'yMax': {'frame': max(range(len(ys)), key=ys.__getitem__), 'value': max(ys)},
-              'zMin': {'frame': min(range(len(zs)), key=zs.__getitem__), 'value': min(zs)},
-              'zMax': {'frame': max(range(len(zs)), key=zs.__getitem__), 'value': max(zs)},
-          }
-
-          root_yaw = None
-          if isinstance(motion.get('root'), dict) and motion['root'].get('rotations'):
-              root_yaw = []
-              for q in motion['root']['rotations']:
-                  w, x, y, z = q
-                  root_yaw.append(math.degrees(2.0 * math.atan2(z, w)))
-
-          diagnostics = {
-              'id': motion.get('id'),
-              'fps': motion['fps'],
-              'frameCount': motion['frameCount'],
-              'durationSeconds': motion['durationSeconds'],
-              'loop': motion.get('loop'),
-              'previewFrameCount': len(frames),
-              'previewCanonicalSamplesByRepositoryEvenSamplingPolicy': canonical,
-              'hipsTranslations': hips,
-              'hipsExtrema': extrema,
-              'jointDeltaDegByFrame': joint_deltas,
-              'jointPeakDelta': joint_peaks,
-              'rootYawDeg': root_yaw,
-              'jointNames': sorted(joint_deltas),
-          }
-          (out / 'diagnostics.json').write_text(json.dumps(diagnostics, indent=2, sort_keys=True) + '\n', encoding='utf-8')
-          print(json.dumps({
-              'frameCount': motion['frameCount'],
-              'previewFrameCount': len(frames),
-              'canonicalSamples': canonical,
-              'hipsExtrema': extrema,
-              'jointPeakDelta': joint_peaks,
-          }, indent=2, sort_keys=True))
-          PY
-      - uses: actions/upload-artifact@v4
+          set -euo pipefail
+          mkdir -p build/fast-run-source
+          cp sample/humanoid_motion/mixamo/fast-run/animation.json build/fast-run-source/
+          cp sample/humanoid_motion/mixamo/fast-run/preview.gif build/fast-run-source/
+          git rev-parse HEAD > build/fast-run-source/source-sha.txt
+      - name: Upload trusted source artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: fast-run-evidence-inspect
-          path: build/fast-run-evidence-inspect
-          if-no-files-found: error
-          retention-days: 7
+          name: fast-run-source
+          path: build/fast-run-source/
+          retention-days: 1
