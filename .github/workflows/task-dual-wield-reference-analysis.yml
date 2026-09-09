@@ -1,0 +1,120 @@
+name: Task Dual-Wield Reference Analysis
+
+on:
+  push:
+    branches:
+      - feat/authored-dual-wield-crosscut-attack
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install image dependency
+        run: python -m pip install pillow
+      - name: Analyze all PR17 references and build contact sheets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/task-dual-wield-reference-analysis/contact-sheets
+          python - <<'PY'
+          import json, math
+          from pathlib import Path
+          from PIL import Image, ImageDraw
+
+          root = Path('sample/humanoid_motion/mixamo')
+          out = Path('build/task-dual-wield-reference-analysis')
+          selected = {
+              'dual-weapon-combo',
+              'standing-melee-combo-attack-ver-1',
+              'two-hand-club-combo',
+              'standing-idle-to-fight-idle',
+              'sword-and-shield-run',
+              'run',
+          }
+
+          def q_angle(a, b):
+              d = abs(sum(float(x)*float(y) for x,y in zip(a,b)))
+              d = min(1.0, max(-1.0, d))
+              return math.degrees(2.0 * math.acos(d))
+
+          def track_energy(track):
+              if len(track) < 2:
+                  return {'totalDeg':0.0,'maxStepDeg':0.0,'peakFrame':0}
+              vals = [q_angle(track[i-1], track[i]) for i in range(1, len(track))]
+              peak = max(range(len(vals)), key=vals.__getitem__)
+              return {'totalDeg':sum(vals),'maxStepDeg':vals[peak],'peakFrame':peak+1}
+
+          results = []
+          for anim_path in sorted(root.glob('*/animation.json')):
+              clip_dir = anim_path.parent
+              data = json.loads(anim_path.read_text(encoding='utf-8'))
+              joints = data['joints']
+              finger_names = [k for k in joints if any(s in k for s in ('Thumb','Index','Middle','Ring','Pinky'))]
+              torso_names = [k for k in ('Spine','Chest','Neck','Head') if k in joints]
+              arm_names = [k for k in joints if ('Arm' in k or k.endswith('Hand') or 'Shoulder' in k)]
+              leg_names = [k for k in joints if ('Leg' in k or k.endswith('Foot') or k.endswith('Toe'))]
+              torso = {k: track_energy(joints[k]['rotations']) for k in torso_names}
+              arms = {k: track_energy(joints[k]['rotations']) for k in arm_names}
+              legs = {k: track_energy(joints[k]['rotations']) for k in leg_names}
+              hips_r = track_energy(data['hips']['rotations'])
+              ht = data['hips'].get('translations') or []
+              if ht:
+                  first = ht[0]
+                  disp = [math.sqrt(sum((float(v[j])-float(first[j]))**2 for j in range(3))) for v in ht]
+                  hips_translation = {'maxFromStart':max(disp),'peakFrame':max(range(len(disp)), key=disp.__getitem__)}
+              else:
+                  hips_translation = {'maxFromStart':0.0,'peakFrame':0}
+              results.append({
+                  'clip': clip_dir.name,
+                  'id': data['id'],
+                  'frameCount': data['frameCount'],
+                  'fps': data['fps'],
+                  'durationSeconds': data['durationSeconds'],
+                  'loop': data['loop'],
+                  'fingerCount': len(finger_names),
+                  'hipsRotation': hips_r,
+                  'hipsTranslation': hips_translation,
+                  'torso': torso,
+                  'arms': arms,
+                  'legs': legs,
+              })
+
+              gif = clip_dir / 'preview.gif'
+              if clip_dir.name in selected and gif.exists():
+                  im = Image.open(gif)
+                  frames = []
+                  n = getattr(im, 'n_frames', 1)
+                  indices = sorted({round(i*(n-1)/11) for i in range(12)})
+                  for idx in indices:
+                      im.seek(idx)
+                      fr = im.convert('RGBA')
+                      bg = Image.new('RGBA', fr.size, (245,245,245,255))
+                      bg.alpha_composite(fr)
+                      bg = bg.convert('RGB')
+                      bg.thumbnail((180,180))
+                      tile = Image.new('RGB',(180,204),'white')
+                      tile.paste(bg,((180-bg.width)//2,0))
+                      d=ImageDraw.Draw(tile)
+                      d.text((5,184),f'f~{idx}/{n-1}',fill='black')
+                      frames.append(tile)
+                  sheet=Image.new('RGB',(180*4,204*3),'white')
+                  for i,fr in enumerate(frames[:12]):
+                      sheet.paste(fr,((i%4)*180,(i//4)*204))
+                  sheet.save(out/'contact-sheets'/f'{clip_dir.name}.png')
+
+          (out/'reference_stats.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
+          print('REFERENCE_STATS_BEGIN')
+          print(json.dumps(results, indent=2))
+          print('REFERENCE_STATS_END')
+          PY
+      - name: Upload analysis artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: task-dual-wield-reference-analysis
+          path: build/task-dual-wield-reference-analysis
+          if-no-files-found: error
