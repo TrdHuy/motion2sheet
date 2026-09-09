@@ -22,12 +22,13 @@ jobs:
       - name: Install package
         run: python -m pip install -e '.[dev]'
 
-      - name: Author key poses then staged full motion
+      - name: Author and refine V3 motion
         shell: bash
         run: |
           set -euo pipefail
           python tests/motion/humanoid_motion/fixtures/.task_dual_wield_author.py
-          python tests/motion/humanoid_motion/fixtures/.task_dual_wield_full.py
+          python tests/motion/humanoid_motion/fixtures/.task_dual_wield_v3_keyposes.py
+          python tests/motion/humanoid_motion/fixtures/.task_dual_wield_v3_full.py
           ANIM=tests/motion/humanoid_motion/fixtures/dual-wield-crosscut-attack/animation.json
           python - "$ANIM" <<'PY'
           import sys
@@ -43,7 +44,7 @@ jobs:
           assert len(OPTIONAL_FINGER_JOINTS) == 30
           assert all(max(abs(c) for c in v) == 0.0 for v in d['root']['translations'])
           assert 'mixamorig' not in p.read_text(encoding='utf-8').lower()
-          print('FINAL_SCHEMA_PASS frames=43 fps=30 duration=1.4 fingers=30 root=in-place sourceNames=clean')
+          print('V3_SCHEMA_PASS frames=43 fps=30 duration=1.4 fingers=30 root=in-place sourceNames=clean')
           PY
           sha256sum "$ANIM" | tee /tmp/animation-before.sha
 
@@ -75,7 +76,7 @@ jobs:
           test -s build/task-dual-wield-character/rig.json
           test -s build/task-dual-wield-character/skin.json
 
-      - name: Render full motion front and three-quarter
+      - name: Render V3 front and three-quarter
         shell: bash
         run: |
           set -euo pipefail
@@ -127,14 +128,14 @@ jobs:
           from pathlib import Path
           from PIL import Image, ImageDraw
           root=Path(sys.argv[1])
-          wanted=[0,4,7,8,9,10,11,13,16,19,22,23,24,25,26,28,31,36,42]
+          wanted=[0,4,7,8,9,10,11,13,16,19,22,23,24,25,26,28,31,35,38,42]
           for camera in ('front','three-quarter'):
               gif_path=root/camera/'preview.gif'
               gif=Image.open(gif_path)
               assert gif.n_frames >= 1
               duration=sum((gif.seek(i), gif.info.get('duration',0))[1] for i in range(gif.n_frames))
-              # GIF may coalesce identical impact-hold frames; pose_sheet retains all 43 source frames.
               pose_sheet=Image.open(root/camera/'pose_sheet.png').convert('RGBA')
+              assert pose_sheet.size == (224*8, 224*6), pose_sheet.size
               tiles=[]
               for idx in wanted:
                   x=(idx%8)*224; y=(idx//8)*224
@@ -148,15 +149,15 @@ jobs:
               sheet=Image.new('RGB',(224*cols,246*rows),'white')
               for i,tile in enumerate(tiles):
                   sheet.paste(tile,((i%cols)*224,(i//cols)*246))
-              sheet.save(root/f'final-contact-{camera}.png')
+              sheet.save(root/f'v3-contact-{camera}.png')
               print(f'{camera}: gifImages={gif.n_frames} gifDurationMs={duration} gifBytes={gif_path.stat().st_size}')
-          print('FULL_VISUAL_GATE_RENDER_PASS')
+          print('V3_VISUAL_GATE_RENDER_PASS')
           PY
 
-      - name: Upload full-motion visual gate
+      - name: Upload V3 visual gate
         uses: actions/upload-artifact@v4
         with:
-          name: task-dual-wield-full-motion-gate
+          name: task-dual-wield-v3-motion-gate
           path: build/task-dual-wield-full
           if-no-files-found: error
           retention-days: 7
