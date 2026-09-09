@@ -1,4 +1,4 @@
-name: Catwalk source bridge
+name: Catwalk evidence generator
 
 on:
   push:
@@ -8,25 +8,30 @@ on:
       - .github/workflows/catwalk-source-bridge.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  snapshot:
+  generate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - name: Stage trusted source snapshot
-        run: |
-          mkdir -p source-snapshot
-          cp sample/humanoid_motion/mixamo/catwalk-walk/animation.json source-snapshot/animation.json
-          cp sample/humanoid_motion/mixamo/catwalk-walk/preview.gif source-snapshot/preview.gif
-          sha1sum source-snapshot/animation.json source-snapshot/preview.gif > source-snapshot/sha1.txt
-          git rev-parse HEAD > source-snapshot/commit.txt
-      - name: Upload source snapshot
-        uses: actions/upload-artifact@v4
+      - uses: actions/setup-python@v5
         with:
-          name: catwalk-source-snapshot
-          path: source-snapshot/
-          retention-days: 1
+          python-version: '3.12'
+      - name: Install evidence dependency
+        run: python -m pip install --disable-pip-version-check pillow
+      - name: Generate evidence from trusted source
+        run: python .github/scripts/catwalk_generate_evidence.py
+      - name: Commit evidence and remove temporary helpers
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add sample/humanoid_motion/mixamo/catwalk-walk/phases.png
+          git add sample/humanoid_motion/mixamo/catwalk-walk/key-poses.png
+          git add sample/humanoid_motion/mixamo/catwalk-walk/weight-transfer.png
+          git add sample/humanoid_motion/mixamo/catwalk-walk/body-mechanics.png
+          git rm .github/workflows/catwalk-source-bridge.yml .github/scripts/catwalk_generate_evidence.py
+          git commit -m 'Add review evidence for catwalk-walk metadata'
+          git push origin HEAD:codex/catwalk-walk-metadata-evidence
