@@ -14,7 +14,12 @@ from motion2sheet.motion.roundtrip.schema import read_json, validate_animation_d
 from motion2sheet.motion.skin import skin_statistics, validate_skin_document
 
 from .fidelity import compare_source_to_humanoid_motion
-from .mapping import mapping_diagnostics, read_mapping, validate_character_mapping
+from .mapping import (
+    compatible_animation_joints,
+    mapping_diagnostics,
+    read_mapping,
+    validate_character_mapping,
+)
 from .root_motion import humanoid_root_motion
 from .schema import read_animation
 
@@ -128,6 +133,9 @@ def export_humanoid_animation(*, source_rig_path: Path, source_animation_path: P
         "schema": "motion2sheet.humanoid-motion.export", "version": 1, "humanoidMotionSchema": animation["schema"], "animationId": animation["id"], "canonicalSkeleton": animation["canonicalSkeleton"], "durationSeconds": animation["durationSeconds"], "fps": animation["fps"], "frameCount": animation["frameCount"], "loop": animation["loop"], "animationSha256": sha256(output / "animation.json"),
         "sourceAuthorities": {"rigSha256": sha256(source_rig_path), "animationSha256": sha256(source_animation_path), "mappingSha256": sha256(mapping_path)},
         "semanticMapping": mapping_diagnostics(mapping, rig), "rootMotion": humanoid_root_motion(animation),
+        "activeSemantics": blender_diagnostics["activeMappedSemantics"],
+        "activeFingerSemantics": blender_diagnostics["activeFingerSemantics"],
+        "activeFingerSemanticCount": blender_diagnostics["activeFingerJointCount"],
         "canonicalization": {"locomotionPolicy": blender_diagnostics["locomotionPolicy"], "sourcePlanarEndToEnd": blender_diagnostics["sourcePlanarEndToEnd"], "sourcePlanarDisplacement": blender_diagnostics["sourcePlanarDisplacement"], "strippedPlanarEndToEnd": blender_diagnostics["strippedPlanarEndToEnd"], "sourceHipsVerticalRange": blender_diagnostics["sourceHipsVerticalRange"], "canonicalHipsVerticalRange": blender_diagnostics["canonicalHipsVerticalRange"]},
         "sourceFbxRequired": False, "outputs": {"animation": "animation.json", "diagnostics": "diagnostics/"},
     }
@@ -168,7 +176,7 @@ def render_humanoid_animation(*, model_path: Path, character_rig_path: Path, ski
     for path in paths:
         if not path.is_file():
             raise ValueError(f"render-humanoid-animation input does not exist: {path}")
-    rig = validate_rig_document(read_json(character_rig_path)); skin = validate_skin_document(read_json(skin_path), rig); mapping = validate_character_mapping(read_mapping(mapping_path), rig); animation = read_animation(animation_path); camera = load_camera_profile(camera_profile_path)
+    rig = validate_rig_document(read_json(character_rig_path)); skin = validate_skin_document(read_json(skin_path), rig); mapping = validate_character_mapping(read_mapping(mapping_path), rig); animation = read_animation(animation_path); compatible_animation_joints(animation, mapping); camera = load_camera_profile(camera_profile_path)
     selected = select_even_samples(animation["frameCount"], sample_count) if sample_count is not None else parse_samples(frames or "all", animation["frameCount"])
     presentation_fps = float(animation["fps"]) if output_fps is None else float(output_fps)
     output = output.resolve(); output.mkdir(parents=True, exist_ok=True)

@@ -17,8 +17,8 @@ DURATION_TOLERANCE_SECONDS = 1e-6
 
 # Root is a virtual canonical-orientation parent. Humanoid Motion v1 is in-place:
 # Root translation is reserved and must remain zero within the strict tolerance.
-# Every other semantic is explicitly mapped to one target bone.
-CANONICAL_SKELETON: dict[str, str | None] = {
+# Every other active semantic is explicitly mapped to one target bone.
+CORE_CANONICAL_SKELETON: dict[str, str | None] = {
     "Root": None,
     "Hips": "Root",
     "Spine": "Hips",
@@ -42,8 +42,50 @@ CANONICAL_SKELETON: dict[str, str | None] = {
     "RightFoot": "RightLowerLeg",
     "RightToe": "RightFoot",
 }
-MAPPED_JOINTS = tuple(name for name in CANONICAL_SKELETON if name != "Root")
-ROTATION_JOINTS = tuple(name for name in MAPPED_JOINTS if name != "Hips")
+FINGER_CANONICAL_SKELETON: dict[str, str] = {
+    "LeftThumbMetacarpal": "LeftHand",
+    "LeftThumbProximal": "LeftThumbMetacarpal",
+    "LeftThumbDistal": "LeftThumbProximal",
+    "LeftIndexProximal": "LeftHand",
+    "LeftIndexIntermediate": "LeftIndexProximal",
+    "LeftIndexDistal": "LeftIndexIntermediate",
+    "LeftMiddleProximal": "LeftHand",
+    "LeftMiddleIntermediate": "LeftMiddleProximal",
+    "LeftMiddleDistal": "LeftMiddleIntermediate",
+    "LeftRingProximal": "LeftHand",
+    "LeftRingIntermediate": "LeftRingProximal",
+    "LeftRingDistal": "LeftRingIntermediate",
+    "LeftPinkyProximal": "LeftHand",
+    "LeftPinkyIntermediate": "LeftPinkyProximal",
+    "LeftPinkyDistal": "LeftPinkyIntermediate",
+    "RightThumbMetacarpal": "RightHand",
+    "RightThumbProximal": "RightThumbMetacarpal",
+    "RightThumbDistal": "RightThumbProximal",
+    "RightIndexProximal": "RightHand",
+    "RightIndexIntermediate": "RightIndexProximal",
+    "RightIndexDistal": "RightIndexIntermediate",
+    "RightMiddleProximal": "RightHand",
+    "RightMiddleIntermediate": "RightMiddleProximal",
+    "RightMiddleDistal": "RightMiddleIntermediate",
+    "RightRingProximal": "RightHand",
+    "RightRingIntermediate": "RightRingProximal",
+    "RightRingDistal": "RightRingIntermediate",
+    "RightPinkyProximal": "RightHand",
+    "RightPinkyIntermediate": "RightPinkyProximal",
+    "RightPinkyDistal": "RightPinkyIntermediate",
+}
+CANONICAL_SKELETON: dict[str, str | None] = {
+    **CORE_CANONICAL_SKELETON,
+    **FINGER_CANONICAL_SKELETON,
+}
+CORE_MAPPED_JOINTS = tuple(name for name in CORE_CANONICAL_SKELETON if name != "Root")
+OPTIONAL_FINGER_JOINTS = tuple(FINGER_CANONICAL_SKELETON)
+ALL_MAPPED_JOINTS = (*CORE_MAPPED_JOINTS, *OPTIONAL_FINGER_JOINTS)
+CORE_ROTATION_JOINTS = tuple(name for name in CORE_MAPPED_JOINTS if name != "Hips")
+
+# Compatibility aliases: these names continue to mean the required v1 body set.
+MAPPED_JOINTS = CORE_MAPPED_JOINTS
+ROTATION_JOINTS = CORE_ROTATION_JOINTS
 
 EXPECTED_COORDINATE_SYSTEM = {
     "handedness": "right-handed",
@@ -120,6 +162,15 @@ def _quaternion_track(value: Any, frame_count: int, label: str) -> list[list[flo
     return track
 
 
+def active_rotation_joints(animation: dict[str, Any]) -> tuple[str, ...]:
+    finger_joints = set(animation["joints"]) & set(OPTIONAL_FINGER_JOINTS)
+    return (*CORE_ROTATION_JOINTS, *OPTIONAL_FINGER_JOINTS) if finger_joints else CORE_ROTATION_JOINTS
+
+
+def active_mapped_joints(animation: dict[str, Any]) -> tuple[str, ...]:
+    return ("Hips", *active_rotation_joints(animation))
+
+
 def validate_animation(value: Any) -> dict[str, Any]:
     document = _object(
         value,
@@ -174,11 +225,21 @@ def validate_animation(value: Any) -> dict[str, Any]:
     hips["rotations"] = _quaternion_track(hips["rotations"], frame_count, "hips.rotations")
 
     joints = document["joints"]
-    if not isinstance(joints, dict) or set(joints) != set(ROTATION_JOINTS):
-        missing = set(ROTATION_JOINTS) - set(joints or {})
-        extra = set(joints or {}) - set(ROTATION_JOINTS)
-        raise ValueError(f"Humanoid Motion joint set mismatch; missing={sorted(missing)} extra={sorted(extra)}")
-    for semantic in ROTATION_JOINTS:
+    if not isinstance(joints, dict):
+        raise ValueError("Humanoid Motion joints must be an object")
+    semantics = set(joints)
+    missing = set(CORE_ROTATION_JOINTS) - semantics
+    unknown = semantics - set(CORE_ROTATION_JOINTS) - set(OPTIONAL_FINGER_JOINTS)
+    if missing or unknown:
+        raise ValueError(f"Humanoid Motion joint set mismatch; missing={sorted(missing)} extra={sorted(unknown)}")
+    present_fingers = semantics & set(OPTIONAL_FINGER_JOINTS)
+    if present_fingers and present_fingers != set(OPTIONAL_FINGER_JOINTS):
+        absent_fingers = set(OPTIONAL_FINGER_JOINTS) - present_fingers
+        raise ValueError(
+            "Humanoid Motion finger extension must contain all 30 finger semantics; "
+            f"missing={sorted(absent_fingers)}"
+        )
+    for semantic in active_rotation_joints(document):
         row = _object(joints[semantic], f"joints.{semantic}", {"rotations"})
         row["rotations"] = _quaternion_track(row["rotations"], frame_count, f"joints.{semantic}.rotations")
     return document
