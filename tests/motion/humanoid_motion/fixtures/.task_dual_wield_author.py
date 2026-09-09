@@ -179,13 +179,22 @@ for pose in poses:
         raise RuntimeError('Reference joint sets differ; key-pose review requires identical canonical tracks')
 
 # Preserve continuous nearest-hemisphere signs frame-to-frame.
+def _lex_negative(q):
+    for v in q:
+        if abs(v) > 1e-12:
+            return v < 0.0
+    return False
+
+
 def continuous(seq):
     out = []
     for q in seq:
-        q = list(q)
-        if out and sum(a*b for a, b in zip(out[-1], q)) < 0:
+        q = qnorm(list(q))
+        if not out and _lex_negative(q):
             q = [-v for v in q]
-        out.append(qnorm(q))
+        elif out and sum(a*b for a, b in zip(out[-1], q)) < 0:
+            q = [-v for v in q]
+        out.append(q)
     return out
 
 root_r = [[1.0, 0.0, 0.0, 0.0] for _ in poses]
