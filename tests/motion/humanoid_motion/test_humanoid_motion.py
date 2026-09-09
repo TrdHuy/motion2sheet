@@ -10,22 +10,28 @@ import pytest
 
 from motion2sheet.motion.cli import parser
 from motion2sheet.motion.humanoid_motion.fidelity import compare_source_to_humanoid_motion
-from motion2sheet.motion.humanoid_motion.mapping import mapping_diagnostics, validate_character_mapping
+from motion2sheet.motion.humanoid_motion.mapping import (
+    compatible_animation_joints,
+    mapping_diagnostics,
+    validate_character_mapping,
+)
 from motion2sheet.motion.humanoid_motion.root_motion import humanoid_root_motion
 from motion2sheet.motion.humanoid_motion.runner import parse_samples
 from motion2sheet.motion.humanoid_motion.schema import (
     ANIMATION_SCHEMA,
+    ALL_MAPPED_JOINTS,
     CANONICAL_SKELETON,
     EXPECTED_COORDINATE_SYSTEM,
     EXPECTED_QUATERNION_CONVENTION,
     MAPPED_JOINTS,
+    OPTIONAL_FINGER_JOINTS,
     ROTATION_JOINTS,
     ROOT_TRANSLATION_TOLERANCE,
     validate_animation,
 )
 
 
-def _animation(frame_count=2):
+def _animation(frame_count=2, *, fingers=False):
     identity = [1.0, 0.0, 0.0, 0.0]
     return {
         "schema": ANIMATION_SCHEMA,
@@ -48,7 +54,7 @@ def _animation(frame_count=2):
         },
         "joints": {
             semantic: {"rotations": [identity[:] for _ in range(frame_count)]}
-            for semantic in ROTATION_JOINTS
+            for semantic in (*ROTATION_JOINTS, *(OPTIONAL_FINGER_JOINTS if fingers else ()))
         },
     }
 
@@ -68,11 +74,12 @@ def _properties():
     }
 
 
-def _rig_and_mapping():
+def _rig_and_mapping(*, fingers=False):
     bones = []
     heads = {}
     joints = {}
-    for semantic in MAPPED_JOINTS:
+    semantics = ALL_MAPPED_JOINTS if fingers else MAPPED_JOINTS
+    for semantic in semantics:
         parent_semantic = CANONICAL_SKELETON[semantic]
         parent_name = joints.get(parent_semantic)
         side_x = 1.0 if semantic.startswith("Left") else -1.0 if semantic.startswith("Right") else 0.0
@@ -154,6 +161,38 @@ def test_quaternion_normalization_and_sign_continuity_fail_closed():
         validate_animation(discontinuous)
 
 
+def test_finger_animation_extension_is_optional_complete_and_strict():
+    assert validate_animation(_animation())["frameCount"] == 2
+    full = _animation(fingers=True)
+    assert set(OPTIONAL_FINGER_JOINTS) <= set(validate_animation(full)["joints"])
+
+    partial = _animation(fingers=True)
+    del partial["joints"]["LeftIndexDistal"]
+    with pytest.raises(ValueError, match="must contain all 30 finger semantics"):
+        validate_animation(partial)
+
+    unknown = _animation()
+    unknown["joints"]["LeftIndexTip"] = {"rotations": [[1.0, 0.0, 0.0, 0.0]] * 2}
+    with pytest.raises(ValueError, match="joint set mismatch.*LeftIndexTip"):
+        validate_animation(unknown)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "error"),
+    [
+        (lambda track: track.pop(), "frameCount"),
+        (lambda track: track.__setitem__(0, [2.0, 0.0, 0.0, 0.0]), "normalized"),
+        (lambda track: track.__setitem__(0, [-1.0, 0.0, 0.0, 0.0]), "lexicographic-positive"),
+        (lambda track: track.__setitem__(1, [-1.0, 0.0, 0.0, 0.0]), "sign-continuous"),
+    ],
+)
+def test_finger_quaternion_tracks_use_existing_strict_rules(mutate, error):
+    animation = _animation(fingers=True)
+    mutate(animation["joints"]["LeftIndexProximal"]["rotations"])
+    with pytest.raises(ValueError, match=error):
+        validate_animation(animation)
+
+
 def test_mapping_requires_every_semantic_and_valid_ancestry():
     rig, mapping = _rig_and_mapping()
     assert validate_character_mapping(mapping, rig) is mapping
@@ -174,6 +213,61 @@ def test_mapping_requires_every_semantic_and_valid_ancestry():
         validate_character_mapping(swapped, rig)
 
 
+def test_full_finger_mapping_is_optional_complete_and_hierarchical():
+    body_rig, body_mapping = _rig_and_mapping()
+    assert validate_character_mapping(body_mapping, body_rig) is body_mapping
+
+    rig, mapping = _rig_and_mapping(fingers=True)
+    assert validate_character_mapping(mapping, rig) is mapping
+    diagnostics = mapping_diagnostics(mapping, rig)
+    assert diagnostics["mappedJointCount"] == 51
+    assert diagnostics["mappedFingerJointCount"] == 30
+
+    partial = copy.deepcopy(mapping)
+    del partial["joints"]["RightPinkyDistal"]
+    with pytest.raises(ValueError, match="must contain all 30 finger semantics"):
+        validate_character_mapping(partial, rig)
+
+    wrong_hierarchy = copy.deepcopy(mapping)
+    wrong_hierarchy["joints"]["LeftIndexIntermediate"], wrong_hierarchy["joints"]["LeftMiddleIntermediate"] = (
+        wrong_hierarchy["joints"]["LeftMiddleIntermediate"],
+        wrong_hierarchy["joints"]["LeftIndexIntermediate"],
+    )
+    with pytest.raises(ValueError, match="hierarchy mismatch"):
+        validate_character_mapping(wrong_hierarchy, rig)
+
+    duplicate = copy.deepcopy(mapping)
+    duplicate["joints"]["LeftIndexDistal"] = duplicate["joints"]["LeftIndexIntermediate"]
+    with pytest.raises(ValueError, match="distinct target bone"):
+        validate_character_mapping(duplicate, rig)
+
+    swapped_side = copy.deepcopy(mapping)
+    for suffix in ("ThumbMetacarpal", "ThumbProximal", "ThumbDistal"):
+        left, right = f"Left{suffix}", f"Right{suffix}"
+        swapped_side["joints"][left], swapped_side["joints"][right] = (
+            swapped_side["joints"][right],
+            swapped_side["joints"][left],
+        )
+    with pytest.raises(ValueError, match="hierarchy mismatch"):
+        validate_character_mapping(swapped_side, rig)
+
+    unknown = copy.deepcopy(mapping)
+    unknown["joints"]["LeftIndexTip"] = "bone_LeftIndexDistal"
+    with pytest.raises(ValueError, match="semantic set mismatch.*LeftIndexTip"):
+        validate_character_mapping(unknown, rig)
+
+
+def test_animation_and_target_mapping_resolve_active_finger_capability():
+    _body_rig, body_mapping = _rig_and_mapping()
+    _finger_rig, finger_mapping = _rig_and_mapping(fingers=True)
+
+    assert len(compatible_animation_joints(_animation(), body_mapping)) == 21
+    assert len(compatible_animation_joints(_animation(), finger_mapping)) == 21
+    assert len(compatible_animation_joints(_animation(fingers=True), finger_mapping)) == 51
+    with pytest.raises(ValueError, match="authored finger animation.*does not support"):
+        compatible_animation_joints(_animation(fingers=True), body_mapping)
+
+
 def test_root_motion_checks_every_sample_and_sample_selection_is_data_driven():
     animation = _animation(3)
     animation["root"]["translations"][1] = [0.0, 2.0, 0.0]
@@ -191,6 +285,9 @@ def test_mapping_profile_contains_no_animation_authority():
     root = Path(__file__).parents[3]
     data = json.loads((root / "profiles" / "humanoid_motion" / "mixamo_humanoid_v1.json").read_text())
     assert set(data) == {"schema", "version", "id", "canonicalSkeleton", "joints"}
+    assert set(data["joints"]) == set(ALL_MAPPED_JOINTS)
+    assert data["joints"]["LeftThumbMetacarpal"] == "mixamorig:LeftHandThumb1"
+    assert data["joints"]["RightPinkyDistal"] == "mixamorig:RightHandPinky3"
 
 
 def test_release_fixture_manifest_is_immutable_and_records_independent_targets():
@@ -283,6 +380,24 @@ def test_independent_fidelity_oracle_catches_corruption_and_preserves_bounce():
     assert failed["timing"]["durationErrorSeconds"] is None
     assert failed["timing"]["durationExactCopy"] is False
     assert failed["timing"]["durationWithinTolerance"] is False
+
+
+def test_independent_fidelity_oracle_compares_all_active_fingers():
+    rig, mapping = _rig_and_mapping(fingers=True)
+    source = _source_animation(rig)
+    animation = _animation(3, fingers=True)
+    animation["hips"]["translations"] = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.1], [0.0, 0.0, 0.0]]
+    report = compare_source_to_humanoid_motion(rig, source, mapping, animation)
+    assert report["pass"] is True
+    assert report["activeFingerSemanticCount"] == 30
+    assert set(report["fingerRotationMaximaDegrees"]) == set(OPTIONAL_FINGER_JOINTS)
+
+    corrupted = copy.deepcopy(animation)
+    corrupted["joints"]["LeftIndexProximal"]["rotations"][1] = [2 ** -0.5, 0.0, 0.0, 2 ** -0.5]
+    failed = compare_source_to_humanoid_motion(rig, source, mapping, corrupted)
+    assert failed["pass"] is False
+    assert failed["maxErrors"]["fingerRotationDegrees"] > 89.0
+    assert failed["worstFingerSemantic"]["semantic"] == "LeftIndexProximal"
 
 
 def test_fidelity_oracle_is_architecturally_independent_from_export_and_playback():

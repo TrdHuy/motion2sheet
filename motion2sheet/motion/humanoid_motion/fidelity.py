@@ -4,9 +4,10 @@ import copy
 import math
 from typing import Any
 
+from .mapping import compatible_animation_joints
 from .schema import (
     DURATION_TOLERANCE_SECONDS,
-    MAPPED_JOINTS,
+    OPTIONAL_FINGER_JOINTS,
     QUATERNION_CONTINUITY_TOLERANCE,
     QUATERNION_NORM_TOLERANCE,
     ROOT_TRANSLATION_TOLERANCE,
@@ -219,7 +220,18 @@ def compare_source_to_humanoid_motion(source_rig: dict[str, Any], source_animati
     except (KeyError, TypeError, ValueError) as exc:
         return {"schema": "motion2sheet.humanoid-motion.source-fidelity", "version": 1, "pass": False, "independentPath": "pure-python Motion JSON hierarchy/TRS evaluation; no Humanoid Motion exporter or playback imports", "schemaValidation": {"pass": False, "error": str(exc)}, "failures": [f"Humanoid Motion schema validation failed: {exc}"]}
 
-    joints = mapping["joints"]
+    try:
+        joints = compatible_animation_joints(animation, mapping)
+    except ValueError as exc:
+        return {
+            "schema": "motion2sheet.humanoid-motion.source-fidelity",
+            "version": 1,
+            "pass": False,
+            "independentPath": "pure-python Motion JSON hierarchy/TRS evaluation; no Humanoid Motion exporter or playback imports",
+            "schemaValidation": {"pass": True},
+            "mappingCompatibility": {"pass": False, "error": str(exc)},
+            "failures": [f"Humanoid Motion/target mapping compatibility failed: {exc}"],
+        }
     _validate_source_hierarchy_mode(source_rig, joints)
     frames = source_animation["frames"]
     frame_count_pass = animation["frameCount"] == source_animation["frameCount"] == len(frames)
@@ -266,7 +278,9 @@ def compare_source_to_humanoid_motion(source_rig: dict[str, Any], source_animati
     worst_root_rotation = None
     max_semantic_rotation_error = 0.0
     worst_semantic_rotation = None
-    semantic_maxima = {semantic: 0.0 for semantic in MAPPED_JOINTS}
+    semantic_maxima = {semantic: 0.0 for semantic in joints}
+    max_finger_rotation_error = 0.0
+    worst_finger_rotation = None
     max_hips_translation_error = 0.0
     worst_hips_translation = None
     expected_vertical: list[float] = []
@@ -296,6 +310,14 @@ def compare_source_to_humanoid_motion(source_rig: dict[str, Any], source_animati
             if error > max_semantic_rotation_error:
                 max_semantic_rotation_error = error
                 worst_semantic_rotation = {"sample": sample, "sourceFrame": source_frame["frame"], "semantic": semantic, "sourceBone": bone_name}
+            if semantic in OPTIONAL_FINGER_JOINTS and error > max_finger_rotation_error:
+                max_finger_rotation_error = error
+                worst_finger_rotation = {
+                    "sample": sample,
+                    "sourceFrame": source_frame["frame"],
+                    "semantic": semantic,
+                    "sourceBone": bone_name,
+                }
 
     translations = animation["root"]["translations"]
     root_magnitudes = [math.sqrt(sum(component * component for component in row)) for row in translations]
@@ -316,7 +338,8 @@ def compare_source_to_humanoid_motion(source_rig: dict[str, Any], source_animati
         failures.append("quaternion validity/continuity failed")
 
     left_right_pairs = []
-    for suffix in ("Shoulder", "UpperArm", "LowerArm", "Hand", "UpperLeg", "LowerLeg", "Foot", "Toe"):
+    paired_suffixes = [semantic[4:] for semantic in joints if semantic.startswith("Left") and f"Right{semantic[4:]}" in joints]
+    for suffix in paired_suffixes:
         left_semantic, right_semantic = f"Left{suffix}", f"Right{suffix}"
         left_x = _matrix_position(rest_world[joints[left_semantic]])[0]
         right_x = _matrix_position(rest_world[joints[right_semantic]])[0]
@@ -340,9 +363,18 @@ def compare_source_to_humanoid_motion(source_rig: dict[str, Any], source_animati
         "humanoidMotion": {"animationId": animation["id"], "durationSeconds": animation["durationSeconds"], "frameCount": animation["frameCount"], "fps": animation["fps"]},
         "tolerances": {"durationSeconds": DURATION_TOLERANCE_SECONDS, "fps": FPS_TOLERANCE, "rotationDegrees": ROTATION_TOLERANCE_DEGREES, "hipsTranslationMeanLegLength": HIPS_TRANSLATION_TOLERANCE, "rootTranslationMeanLegLength": ROOT_TRANSLATION_TOLERANCE},
         "timing": {"pass": frame_count_pass and fps_error <= FPS_TOLERANCE and duration_exact_copy, "durationErrorSeconds": duration_error, "durationExactCopy": duration_exact_copy, "durationWithinTolerance": duration_within_tolerance, "fpsError": fps_error},
-        "maxErrors": {"rootRotationDegrees": max_root_rotation_error, "semanticRotationDegrees": max_semantic_rotation_error, "hipsTranslationMeanLegLength": max_hips_translation_error, "rootTranslationMeanLegLength": root_max_abs},
-        "worstRootRotation": worst_root_rotation, "worstSemantic": worst_semantic_rotation, "worstHipsTranslation": worst_hips_translation,
+        "activeSemantics": list(joints),
+        "activeFingerSemantics": [semantic for semantic in joints if semantic in OPTIONAL_FINGER_JOINTS],
+        "activeFingerSemanticCount": sum(semantic in OPTIONAL_FINGER_JOINTS for semantic in joints),
+        "mappingCompatibility": {"pass": True},
+        "maxErrors": {"rootRotationDegrees": max_root_rotation_error, "semanticRotationDegrees": max_semantic_rotation_error, "fingerRotationDegrees": max_finger_rotation_error, "hipsTranslationMeanLegLength": max_hips_translation_error, "rootTranslationMeanLegLength": root_max_abs},
+        "worstRootRotation": worst_root_rotation, "worstSemantic": worst_semantic_rotation, "worstFingerSemantic": worst_finger_rotation, "worstHipsTranslation": worst_hips_translation,
         "semanticRotationMaximaDegrees": semantic_maxima,
+        "fingerRotationMaximaDegrees": {
+            semantic: semantic_maxima[semantic]
+            for semantic in joints
+            if semantic in OPTIONAL_FINGER_JOINTS
+        },
         "rootInvariant": {"pass": root_pass, "tolerance": ROOT_TRANSLATION_TOLERANCE, "maxAbsComponent": root_max_abs, "maxMagnitude": root_max_magnitude, "worstFrame": root_worst},
         "locomotionStripping": {"pass": locomotion_pass, "policy": "linear-endpoint-planar-detrend-v1", "sourcePlanarEndToEnd": planar_end_to_end, "sourcePlanarDisplacement": planar_displacement, "sourceHadPlanarLocomotion": planar_displacement > LOCOMOTION_DETECTION_TOLERANCE, "detectionTolerance": LOCOMOTION_DETECTION_TOLERANCE, "strippedPlanarEndToEnd": planar_end_to_end, "expectedHipsVerticalRange": expected_vertical_range, "actualHipsVerticalRange": actual_vertical_range, "verticalRangeError": abs(expected_vertical_range - actual_vertical_range)},
         "leftRightVerification": {"pass": left_right_pass, "rightAxis": "+X", "pairs": left_right_pairs},

@@ -7,6 +7,8 @@ import math
 from pathlib import Path
 from typing import Any
 
+from motion2sheet.motion.humanoid_motion.schema import OPTIONAL_FINGER_JOINTS
+
 CHARACTERS = ("character-a", "maria", "warrok")
 CLIPS = ("idle", "run", "run-inplace")
 SMOKE_CELLS = {
@@ -131,6 +133,15 @@ def main() -> None:
         export = _read(root / "animations" / clip / "export.json")
         if not fidelity["pass"]:
             failures.append(f"{clip}: independent Source -> Humanoid Motion fidelity failed")
+        active_fingers = set(animation["joints"]) & set(OPTIONAL_FINGER_JOINTS)
+        if active_fingers != set(OPTIONAL_FINGER_JOINTS):
+            failures.append(f"{clip}: canonical animation is missing finger tracks")
+        if fidelity.get("activeFingerSemanticCount") != 30:
+            failures.append(f"{clip}: independent fidelity did not compare all finger semantics")
+        if set(fidelity.get("fingerRotationMaximaDegrees", {})) != set(OPTIONAL_FINGER_JOINTS):
+            failures.append(f"{clip}: independent fidelity finger maxima are incomplete")
+        if export.get("activeFingerSemanticCount") != 30:
+            failures.append(f"{clip}: exporter did not report all finger semantics")
         if not fidelity["rootInvariant"]["pass"] or fidelity["rootInvariant"]["maxAbsComponent"] > ROOT_TOLERANCE:
             failures.append(f"{clip}: Humanoid Motion Root invariant failed")
 
@@ -161,12 +172,21 @@ def main() -> None:
                 failures.append(f"{character}/{clip}: playback gate failed")
             if not model["pass"] or model["vertexCount"] <= 0 or not skin["pass"]:
                 failures.append(f"{character}/{clip}: actual skinned mesh gate failed")
-            if mapping["missingRequiredJoints"] or mapping["mappedJointCount"] != 21:
+            if (
+                mapping["missingRequiredJoints"]
+                or mapping["mappedCoreJointCount"] != 21
+                or mapping["mappedFingerJointCount"] != 30
+                or mapping["mappedJointCount"] != 51
+            ):
                 failures.append(f"{character}/{clip}: semantic mapping incomplete")
             if not mapping["leftRightVerification"]["pass"]:
                 failures.append(f"{character}/{clip}: left/right mapping failed")
             if not all(row["restCorrectionApplied"] for row in retarget["joints"]):
                 failures.append(f"{character}/{clip}: target rest correction missing")
+            if playback.get("activeFingerSemanticCount") != 30:
+                failures.append(f"{character}/{clip}: finger semantics were not applied during playback")
+            if retarget.get("activeFingerSemanticCount") != 30:
+                failures.append(f"{character}/{clip}: finger semantics were not included in retarget diagnostics")
             for relative in ("pose_sheet.png", "preview.gif", "render.json", "diagnostics/playback.json"):
                 if not (render_dir / relative).is_file():
                     failures.append(f"{character}/{clip}: missing {relative}")
