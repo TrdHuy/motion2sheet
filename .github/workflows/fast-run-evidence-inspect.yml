@@ -1,33 +1,271 @@
-name: Fast Run Evidence Source
+name: Fast Run Evidence Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [synchronize]
     paths:
       - '.github/workflows/fast-run-evidence-inspect.yml'
-      - 'sample/humanoid_motion/mixamo/fast-run/**'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  package-source:
+  generate-evidence:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact PR head
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - name: Package trusted source
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install evidence tooling
+        run: python -m pip install pillow matplotlib
+
+      - name: Generate evidence from trusted source
+        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p build/fast-run-source
-          cp sample/humanoid_motion/mixamo/fast-run/animation.json build/fast-run-source/
-          cp sample/humanoid_motion/mixamo/fast-run/preview.gif build/fast-run-source/
-          git rev-parse HEAD > build/fast-run-source/source-sha.txt
-      - name: Upload trusted source artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: fast-run-source
-          path: build/fast-run-source/
-          retention-days: 1
+          python - <<'PY'
+          import io
+          import json
+          import math
+          import textwrap
+          from pathlib import Path
+
+          import matplotlib.pyplot as plt
+          from PIL import Image, ImageDraw, ImageFont
+
+          root = Path('sample/humanoid_motion/mixamo/fast-run')
+          animation = json.loads((root / 'animation.json').read_text(encoding='utf-8'))
+          assert animation['frameCount'] == 17
+          assert animation['fps'] == 30.0
+          assert animation['loop'] is True
+          assert animation['coordinateSystem']['rightAxis'] == '+X'
+          assert animation['coordinateSystem']['forwardAxis'] == '-Y'
+          assert animation['quaternionConvention']['componentOrder'] == 'wxyz'
+
+          gif = Image.open(root / 'preview.gif')
+          frames = []
+          for frame_id in range(animation['frameCount']):
+              gif.seek(frame_id)
+              frames.append(gif.convert('RGB').copy())
+          try:
+              gif.seek(animation['frameCount'])
+              raise AssertionError('preview.gif contains more frames than animation.json')
+          except EOFError:
+              pass
+
+          regular = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+          bold = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+          def font(size, strong=False):
+              return ImageFont.truetype(bold if strong else regular, size)
+          title_font = font(34, True)
+          subtitle_font = font(18)
+          frame_font = font(26, True)
+          role_font = font(16, True)
+          small_font = font(13)
+          tiny_font = font(11)
+
+          crop_box = (55, 15, 175, 223)
+          def panel(frame_id, width, height):
+              crop = frames[frame_id].crop(crop_box)
+              scale = min(width / crop.width, height / crop.height)
+              size = (max(1, int(crop.width * scale)), max(1, int(crop.height * scale)))
+              resized = crop.resize(size, Image.Resampling.NEAREST)
+              result = Image.new('RGB', (width, height), 'black')
+              result.paste(resized, ((width-size[0])//2, (height-size[1])//2))
+              return result
+
+          def wrapped(draw, xy, text, width, fnt, fill='black', spacing=3):
+              approx = max(12, int(width / max(7, fnt.size * 0.56)))
+              lines = textwrap.wrap(text, width=approx) or ['']
+              draw.multiline_text(xy, '\n'.join(lines), font=fnt, fill=fill, spacing=spacing)
+
+          def q_angle_deg(q):
+              w = abs(float(q[0]))
+              w = max(-1.0, min(1.0, w))
+              return math.degrees(2.0 * math.acos(w))
+
+          def peak_rotation_frame(joint):
+              values = [q_angle_deg(q) for q in animation['joints'][joint]['rotations']]
+              return max(range(len(values)), key=values.__getitem__), values
+
+          left_upper_peak, _ = peak_rotation_frame('LeftUpperLeg')
+          right_upper_peak, _ = peak_rotation_frame('RightUpperLeg')
+          right_lower_peak, right_lower_mag = peak_rotation_frame('RightLowerLeg')
+          left_lower_peak, left_lower_mag = peak_rotation_frame('LeftLowerLeg')
+          assert (left_upper_peak, right_upper_peak, right_lower_peak, left_lower_peak) == (2, 10, 6, 14)
+
+          hips = animation['hips']['translations']
+          hips_x = [float(v[0]) for v in hips]
+          hips_z = [float(v[2]) for v in hips]
+          assert min(range(17), key=hips_x.__getitem__) == 4
+          assert max(range(17), key=hips_x.__getitem__) == 12
+          assert min(range(17), key=hips_z.__getitem__) == 2
+
+          # Loop closure check: f16 returns to f0 within numerical tolerance.
+          hips_seam = math.sqrt(sum((float(a)-float(b))**2 for a,b in zip(hips[16], hips[0])))
+          max_joint_seam = 0.0
+          for data in animation['joints'].values():
+              q0, q1 = data['rotations'][0], data['rotations'][16]
+              dot = abs(sum(float(a)*float(b) for a,b in zip(q0,q1)))
+              dot = max(-1.0, min(1.0, dot))
+              max_joint_seam = max(max_joint_seam, math.degrees(2.0*math.acos(dot)))
+          assert hips_seam < 1e-6
+          assert max_joint_seam < 1e-3
+
+          # phases.png — exact start/end frames referenced by the review text.
+          phase_items = [
+              (0, 'START P1', 'left-leg forward swing → reach'),
+              (3, 'END P1', 'left-leg reach / extension'),
+              (4, 'START P2', 'right-leg recovery begins'),
+              (7, 'END P2', 'right leg swings forward'),
+              (8, 'START P3', 'right-leg forward swing → reach'),
+              (11, 'END P3', 'right-leg reach / extension'),
+              (12, 'START P4', 'left-leg recovery begins'),
+              (16, 'END P4', 'return to loop seam'),
+          ]
+          W, margin, gap, cols, header, panel_h, label_h, footer_h = 1800, 20, 16, 4, 94, 390, 82, 54
+          cell_w = (W - 2*margin - (cols-1)*gap)//cols
+          H = header + 2*(panel_h+label_h) + gap + footer_h
+          canvas = Image.new('RGB', (W,H), 'white')
+          draw = ImageDraw.Draw(canvas)
+          draw.text((20,12), 'Phase boundary evidence — fast-run', font=title_font, fill='black')
+          draw.text((20,56), 'Exact canonical frames from preview.gif; phase ranges are grounded in animation.json limb tracks.', font=subtitle_font, fill='black')
+          for n,(frame_id,kind,desc) in enumerate(phase_items):
+              row,col = divmod(n,cols)
+              x = margin + col*(cell_w+gap)
+              y = header + row*(panel_h+label_h+gap)
+              canvas.paste(panel(frame_id,cell_w,panel_h),(x,y))
+              ly = y + panel_h
+              draw.rectangle((x,ly,x+cell_w-1,ly+label_h-1),fill='white',outline='black')
+              draw.text((x+8,ly+7),f'f{frame_id} — {kind}',font=frame_font,fill='black')
+              wrapped(draw,(x+8,ly+42),desc,cell_w-16,small_font)
+          draw.text((20,H-footer_h+12), 'Ranges: f0–f3 left swing/reach · f4–f7 right recovery/swing · f8–f11 right swing/reach · f12–f16 left recovery/loop return.', font=small_font, fill='black')
+          canvas.save(root / 'phases.png', optimize=True)
+
+          # key-poses.png — only mechanically distinctive poses.
+          key_items = [
+              (2, 'left-leg forward reach', 'LeftUpperLeg rotation magnitude peaks; pelvis Z minimum'),
+              (6, 'right-leg compact recovery', 'RightLowerLeg rotation magnitude peaks'),
+              (10, 'right-leg forward reach', 'RightUpperLeg rotation magnitude peaks'),
+              (14, 'left-leg compact recovery', 'LeftLowerLeg rotation magnitude peaks'),
+              (16, 'loop seam', 'pose returns to f0 within numerical tolerance'),
+          ]
+          W, margin, gap, cols, header, panel_h, label_h = 1800, 18, 16, 5, 100, 520, 105
+          cell_w = (W - 2*margin - (cols-1)*gap)//cols
+          H = header + panel_h + label_h + 20
+          canvas = Image.new('RGB',(W,H),'white')
+          draw = ImageDraw.Draw(canvas)
+          draw.text((20,12),'Key poses — fast-run',font=title_font,fill='black')
+          draw.text((20,56),'Only mechanically distinctive poses are retained; interpolation-only frames are omitted.',font=subtitle_font,fill='black')
+          for n,(frame_id,role,detail) in enumerate(key_items):
+              x = margin + n*(cell_w+gap)
+              y = header
+              canvas.paste(panel(frame_id,cell_w,panel_h),(x,y))
+              ly = y+panel_h
+              draw.rectangle((x,ly,x+cell_w-1,ly+label_h-1),fill='white',outline='black')
+              draw.text((x+8,ly+6),f'f{frame_id}',font=frame_font,fill='black')
+              wrapped(draw,(x+8,ly+40),role,cell_w-16,role_font)
+              wrapped(draw,(x+8,ly+64),detail,cell_w-16,tiny_font)
+          canvas.save(root / 'key-poses.png', optimize=True)
+
+          # weight-transfer.png — pelvis is a COM proxy; support foot is intentionally not inferred.
+          selected = [0,4,7,12,16]
+          fig = plt.figure(figsize=(18,10.2), dpi=110)
+          fig.text(.015,.972,'Weight transfer evidence — fast-run',fontsize=25,fontweight='bold',va='top')
+          fig.text(.015,.94,'Pelvis/COM proxy shifts from −X (left) to +X (right) and returns; no support-foot identity is asserted.',fontsize=15,va='top')
+          for i,frame_id in enumerate(selected):
+              ax = fig.add_axes([0.012+i*0.195,0.53,0.185,0.36])
+              ax.imshow(panel(frame_id,360,620)); ax.set_axis_off()
+              ax.set_title(f'f{frame_id}',loc='left',fontsize=18,fontweight='bold')
+              ax.text(.01,-.06,f'hips.x = {hips_x[frame_id]:+.4f}',transform=ax.transAxes,fontsize=12,fontweight='bold')
+          ax = fig.add_axes([.09,.105,.84,.30])
+          x = list(range(animation['frameCount']))
+          ax.plot(x,hips_x,marker='o',markersize=3,label='Hips X (+X = character right)')
+          for frame_id in selected:
+              ax.scatter([frame_id],[hips_x[frame_id]])
+              offset = (-6,10) if frame_id in (4,12) else (0,9)
+              ax.annotate(f'f{frame_id}\n{hips_x[frame_id]:+.4f}',(frame_id,hips_x[frame_id]),xytext=offset,textcoords='offset points',ha='center',fontsize=9)
+          ax.axhline(0,linewidth=.8)
+          ax.set_title('animation.json — lateral pelvis translation (unit = mean-leg-length)',fontsize=16)
+          ax.set_xlabel('canonical frame'); ax.set_ylabel('hips.x'); ax.grid(True,alpha=.25); ax.legend(loc='upper right')
+          fig.text(.015,.035,f'Measured extrema: f4 = {hips_x[4]:+.4f} (left), f12 = {hips_x[12]:+.4f} (right); f16 = {hips_x[16]:+.4f}, matching the loop-start lateral position. Pelvis is used only as a COM proxy.',fontsize=11)
+          fig.savefig(root / 'weight-transfer.png',bbox_inches='tight')
+          plt.close(fig)
+
+          # body-mechanics.png — visible contralateral pairing + exact torso/root rotation channels.
+          def yaw_deg(q):
+              w,x,y,z = [float(v) for v in q]
+              return math.degrees(math.atan2(2*(w*z+x*y),1-2*(y*y+z*z)))
+          def x_pitch_deg(q):
+              w,x,y,z = [float(v) for v in q]
+              return math.degrees(math.atan2(2*(w*x+y*z),1-2*(x*x+y*y)))
+
+          root_yaw = [yaw_deg(q) for q in animation['root']['rotations']]
+          chest_yaw = [yaw_deg(q) for q in animation['joints']['Chest']['rotations']]
+          root_delta = [v-root_yaw[0] for v in root_yaw]
+          chest_delta = [v-chest_yaw[0] for v in chest_yaw]
+          spine_x = [x_pitch_deg(q) for q in animation['joints']['Spine']['rotations']]
+          chest_x = [x_pitch_deg(q) for q in animation['joints']['Chest']['rotations']]
+          body_items = [
+              (2,'left leg + right arm forward'),
+              (6,'right-leg compact recovery'),
+              (10,'right leg + left arm forward'),
+              (14,'left-leg compact recovery'),
+              (16,'loop seam'),
+          ]
+          fig = plt.figure(figsize=(18,12.5), dpi=110)
+          fig.text(.015,.978,'Body mechanics evidence — fast-run',fontsize=25,fontweight='bold',va='top')
+          fig.text(.015,.950,'Opposite arm/leg pairs alternate while the torso stays pitched forward; axial root/chest rotation changes through the stride.',fontsize=14,va='top')
+          for i,(frame_id,role) in enumerate(body_items):
+              ax = fig.add_axes([0.018+i*0.195,0.61,0.18,0.29])
+              ax.imshow(panel(frame_id,360,620)); ax.set_axis_off()
+              ax.set_title(f'f{frame_id}',loc='left',fontsize=18,fontweight='bold')
+              ax.text(.01,-.055,role,transform=ax.transAxes,fontsize=9,fontweight='bold',wrap=True)
+          ax = fig.add_axes([.08,.345,.85,.18])
+          x = list(range(animation['frameCount']))
+          ax.plot(x,root_delta,label='Root yaw Δ from f0')
+          ax.plot(x,chest_delta,label='Chest yaw Δ from f0')
+          for frame_id in [2,10,16]:
+              ax.axvline(frame_id,linestyle='--',alpha=.25)
+          ax.axhline(0,linewidth=.8)
+          ax.set_title('animation.json — axial rotation changes across the alternating stride',fontsize=15)
+          ax.set_xlabel('canonical frame'); ax.set_ylabel('Δ yaw (degrees)'); ax.grid(True,alpha=.25); ax.legend(fontsize=9)
+          ax = fig.add_axes([.08,.105,.85,.15])
+          ax.plot(x,spine_x,label='Spine X pitch')
+          ax.plot(x,chest_x,label='Chest X pitch')
+          ax.set_title('animation.json — torso X-pitch remains sustained',fontsize=15)
+          ax.set_xlabel('canonical frame'); ax.set_ylabel('degrees from canonical rest'); ax.grid(True,alpha=.25); ax.legend(fontsize=9)
+          fig.text(.015,.026,f'Visual pairing: f2 left leg / right arm forward; f10 right leg / left arm forward. Chest yaw moves from {chest_yaw[2]:+.1f}° at f2 to {chest_yaw[10]:+.1f}° at f10. Spine X pitch {min(spine_x):.1f}–{max(spine_x):.1f}°, Chest {min(chest_x):.1f}–{max(chest_x):.1f}°. Lower-leg recovery rotation magnitude peaks: right f{right_lower_peak}, left f{left_lower_peak}.',fontsize=10)
+          fig.savefig(root / 'body-mechanics.png',bbox_inches='tight')
+          plt.close(fig)
+          PY
+
+      - name: Verify trusted source is untouched
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- sample/humanoid_motion/mixamo/fast-run/animation.json
+          git diff --exit-code -- sample/humanoid_motion/mixamo/fast-run/preview.gif
+          test ! -e sample/humanoid_motion/mixamo/fast-run/metadata.json
+
+      - name: Commit evidence on PR branch
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            sample/humanoid_motion/mixamo/fast-run/phases.png \
+            sample/humanoid_motion/mixamo/fast-run/key-poses.png \
+            sample/humanoid_motion/mixamo/fast-run/weight-transfer.png \
+            sample/humanoid_motion/mixamo/fast-run/body-mechanics.png
+          git commit -m 'docs: add fast-run metadata evidence'
+          git push origin HEAD:"$HEAD_BRANCH"
