@@ -1,0 +1,57 @@
+{
+  "intent": "Stylized walk-in-place loop with alternating high knee lifts; the upper body and both arms change pose with the stepping rhythm.",
+  "phases": [
+    {
+      "startFrame": 0,
+      "endFrame": 31,
+      "description": "The left-leg lift continues across the loop seam, reaches its high-knee peak at f10, then lowers into the low-pelvis region at f31."
+    },
+    {
+      "startFrame": 32,
+      "endFrame": 55,
+      "description": "Step transition; the right leg moves out of its lower excursion while the pelvis shifts toward its -Y extreme."
+    },
+    {
+      "startFrame": 56,
+      "endFrame": 103,
+      "description": "The right leg lifts, reaches its high-knee peak at f78, then lowers into the second low-pelvis region at f103."
+    },
+    {
+      "startFrame": 104,
+      "endFrame": 138,
+      "description": "Step transition into the next left-leg lift, closing the loop back toward f0. The f138-to-f0 seam occurs during the left-leg lift rather than at a natural contact boundary."
+    }
+  ],
+  "keyPoses": [
+    {
+      "frame": 10,
+      "role": "left high-knee lift peak"
+    },
+    {
+      "frame": 31,
+      "role": "first downshift; pelvis reaches its lowest Z position"
+    },
+    {
+      "frame": 78,
+      "role": "right high-knee lift peak"
+    },
+    {
+      "frame": 103,
+      "role": "second downshift; pelvis reaches a local low point"
+    }
+  ],
+  "weightTransfer": "The pelvis follows a broad -X -> -Y -> +X -> +Y path before returning near its starting position, while also bobbing along Z. This is used as a pelvis/hips weight-shift proxy; no support foot is assigned because the source does not provide sufficient contact flags or world-space foot positions for exact support/contact timing.",
+  "bodyMechanics": "The two main torso pulses repeat the same timing order: hips reach a rotation extreme around canonical X first, Spine follows, then Chest/Shoulders follow (f13 -> f25 -> f26 and f85 -> f90 -> f100).",
+  "referenceUse": {
+    "recommended": [
+      "high-knee walk-in-place motion",
+      "alternating left/right leg timing",
+      "pelvis shift and bob in a gait loop",
+      "hips-to-torso coordination"
+    ],
+    "notRecommendedAsPrimary": [
+      "forward root trajectory because root translation is zero throughout the clip",
+      "exact foot-contact or support-foot timing without additional contact or world-space foot-position evidence"
+    ]
+  }
+}
