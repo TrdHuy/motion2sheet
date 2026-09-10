@@ -1,0 +1,59 @@
+{
+  "intent": "Fast in-place run loop with pronounced alternating leg drive, compact contralateral arm swing, and sustained forward torso pitch.",
+  "phases": [
+    {
+      "startFrame": 0,
+      "endFrame": 3,
+      "label": "left-leg forward swing → reach / extension"
+    },
+    {
+      "startFrame": 4,
+      "endFrame": 7,
+      "label": "right-leg recovery → forward swing"
+    },
+    {
+      "startFrame": 8,
+      "endFrame": 11,
+      "label": "right-leg forward swing → reach / extension"
+    },
+    {
+      "startFrame": 12,
+      "endFrame": 16,
+      "label": "left-leg recovery → loop return"
+    }
+  ],
+  "keyPoses": [
+    {
+      "frame": 2,
+      "role": "left-leg forward reach"
+    },
+    {
+      "frame": 6,
+      "role": "right-leg compact recovery"
+    },
+    {
+      "frame": 10,
+      "role": "right-leg forward reach"
+    },
+    {
+      "frame": 14,
+      "role": "left-leg compact recovery"
+    },
+    {
+      "frame": 16,
+      "role": "loop seam / opening pose restored"
+    }
+  ],
+  "weightTransfer": "Pelvis/COM proxy shifts from -X/left at f4 (-0.0167) toward +X/right at f12 (+0.0238), then returns to the opening lateral position at f16. Support foot is not asserted.",
+  "bodyMechanics": "Opposite arm/leg pairs alternate (left leg + right arm around f2; right leg + left arm around f10) while torso pitch stays sustained; axial root/chest rotation changes through the stride, with compact lower-leg recovery at f6 and f14.",
+  "referenceUse": {
+    "recommended": [
+      "fast in-place run cadence",
+      "contralateral arm-leg coordination and compact recovery timing",
+      "lateral pelvis transfer with sustained torso pitch"
+    ],
+    "notRecommendedAsPrimary": [
+      "support-foot / contact timing"
+    ]
+  }
+}
