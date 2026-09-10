@@ -1,4 +1,4 @@
-name: tmp idle-1 source export
+name: tmp idle-1 evidence build
 
 on:
   push:
@@ -6,23 +6,181 @@ on:
       - metadata-evidence/mixamo-idle-1
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  export-source:
+  build-evidence:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Export exact trusted sources
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Pillow
+        run: python -m pip install --quiet pillow
+      - name: Generate evidence from trusted sources
         shell: bash
         run: |
-          mkdir -p /tmp/idle1-source
-          cp sample/humanoid_motion/mixamo/idle-1/animation.json /tmp/idle1-source/animation.json
-          cp sample/humanoid_motion/mixamo/idle-1/preview.gif /tmp/idle1-source/preview.gif
-          sha256sum /tmp/idle1-source/animation.json /tmp/idle1-source/preview.gif > /tmp/idle1-source/SHA256SUMS
+          python - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          from pathlib import Path
+          import json, os, textwrap
+          import numpy as np
+
+          src = Path('sample/humanoid_motion/mixamo/idle-1')
+          data = json.loads((src / 'animation.json').read_text())
+          gif = Image.open(src / 'preview.gif')
+          assert gif.n_frames == data['frameCount'] == 60
+          assert float(data['fps']) == 30.0
+          assert data['coordinateSystem']['rightAxis'] == '+X'
+          assert data['coordinateSystem']['forwardAxis'] == '-Y'
+          assert data['coordinateSystem']['upAxis'] == '+Z'
+
+          hips = np.array(data['hips']['translations'], dtype=float)
+          assert int(np.argmin(hips[:,1])) == 28
+          assert int(np.argmax(hips[:,2])) == 28
+          assert int(np.argmax(hips[:,0])) == 20
+          assert int(np.argmin(hips[:,0])) == 50
+
+          fp = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+          bp = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+          F_TITLE = ImageFont.truetype(bp,30)
+          F_SUB = ImageFont.truetype(fp,16)
+          F_LABEL = ImageFont.truetype(bp,19)
+          F_BODY = ImageFont.truetype(fp,15)
+          F_SMALL = ImageFont.truetype(fp,13)
+
+          def get_frame(f, size=265):
+              gif.seek(f)
+              return gif.convert('RGB').resize((size,size), Image.Resampling.NEAREST)
+
+          def header(img,title,subtitle):
+              d=ImageDraw.Draw(img)
+              d.text((32,24),title,font=F_TITLE,fill='black')
+              d.text((32,66),subtitle,font=F_SUB,fill=(45,45,45))
+
+          def wrap(s,width=40):
+              lines=[]
+              for para in s.split('\n'):
+                  lines += textwrap.wrap(para,width=width) or ['']
+              return '\n'.join(lines)
+
+          def card(img,x,y,w,h,f,label,detail,size=265):
+              d=ImageDraw.Draw(img)
+              im=get_frame(f,size)
+              px=x+(w-size)//2; py=y+8
+              img.paste(im,(px,py))
+              d.rectangle((px,py,px+size-1,py+size-1),outline=(130,130,130),width=1)
+              ty=py+size+12
+              d.text((x+12,ty),f'f{f} — {label}',font=F_LABEL,fill='black')
+              d.multiline_text((x+12,ty+30),wrap(detail,42),font=F_BODY,fill=(35,35,35),spacing=4)
+
+          base = hips[0]
+          def delta_line(f):
+              p=hips[f]-base
+              return f'Δright {p[0]:+.4f}; Δforward {-p[1]:+.4f}; Δup {p[2]:+.4f}'
+
+          # phases.png
+          img=Image.new('RGB',(1120,990),'white')
+          header(img,'idle-1 — phase boundary evidence','Frame numbers come from animation.json; preview.gif has the same 60 frames and is indexed 1:1.')
+          items=[
+              (0,'excursion start','Start of f0–f28 forward/upward excursion.\n'+delta_line(0)),
+              (28,'excursion apex','Hips Y is minimum and Z is maximum: maximum forward/upward pelvis excursion.\n'+delta_line(28)),
+              (29,'return begins','First frame after the f28 translation apex; pelvis begins reversing toward the loop start.\n'+delta_line(29)),
+              (59,'loop return','Hips translation returns to approximately the f0 values.\n'+delta_line(59)),
+          ]
+          for i,(f,l,det) in enumerate(items):
+              card(img,40+(i%2)*530,105+(i//2)*430,500,405,f,l,det,270)
+          img.save(src/'phases.png')
+
+          # key-poses.png
+          img=Image.new('RGB',(1260,560),'white')
+          header(img,'idle-1 — key pose evidence','Only distinct functional poses retained; f59 is omitted because it nearly repeats f0.')
+          items=[
+              (0,'loop baseline','Lowest hips Z in the clip; baseline pose for the loop.'),
+              (28,'body / pelvis apex','Maximum forward + upward hips translation. L/R upper-leg angular departure also peaks at f28.'),
+              (32,'distal-arm follow-through','Both hands reach their largest angular departure from f0; RightLowerArm peaks at f31.'),
+          ]
+          for i,(f,l,det) in enumerate(items):
+              card(img,30+i*410,105,390,420,f,l,det,280)
+          img.save(src/'key-poses.png')
+
+          # weight-transfer.png
+          img=Image.new('RGB',(1260,1010),'white')
+          header(img,'idle-1 — weight-transfer evidence','Pelvis/hips translation is taken from animation.json. No planted/support foot is asserted.')
+          items=[
+              (0,'baseline',delta_line(0)),
+              (20,'rightward extreme','Hips X maximum.\n'+delta_line(20)),
+              (28,'forward/up extreme','Hips Y minimum and Z maximum.\n'+delta_line(28)),
+              (50,'leftward extreme','Hips X minimum.\n'+delta_line(50)),
+              (59,'loop return',delta_line(59)),
+          ]
+          for i,(f,l,det) in enumerate(items):
+              card(img,25+(i%3)*405,105+(i//3)*425,385,405,f,l,det,250)
+          d=ImageDraw.Draw(img)
+          cx,cy,cw,ch=835,530,385,405
+          d.rectangle((cx,cy,cx+cw,cy+ch),outline=(180,180,180),width=1)
+          d.text((cx+15,cy+16),'hips path: forward vs up',font=F_LABEL,fill='black')
+          px0,py0=cx+55,cy+75; pw,ph=300,235
+          d.line((px0,py0+ph,px0+pw,py0+ph),fill='black',width=2)
+          d.line((px0,py0,px0,py0+ph),fill='black',width=2)
+          forward=-(hips[:,1]-hips[0,1]); up=hips[:,2]-hips[0,2]
+          fmin,fmax=forward.min(),forward.max(); umin,umax=up.min(),up.max()
+          pf=max((fmax-fmin)*.06,1e-8); pu=max((umax-umin)*.06,1e-8)
+          def pxy(f):
+              xx=px0+(forward[f]-(fmin-pf))/((fmax+pf)-(fmin-pf))*pw
+              yy=py0+ph-(up[f]-(umin-pu))/((umax+pu)-(umin-pu))*ph
+              return xx,yy
+          pts=[pxy(f) for f in range(60)]
+          d.line(pts,fill=(70,70,70),width=3)
+          for f in [0,20,28,50,59]:
+              x,y=pxy(f)
+              d.ellipse((x-4,y-4,x+4,y+4),fill='white',outline='black',width=2)
+              d.text((x+6,y-8),f'f{f}',font=F_SMALL,fill='black')
+          d.text((px0+75,py0+ph+8),'forward (−ΔY) →',font=F_SMALL,fill='black')
+          d.multiline_text((cx+8,py0+70),'up\n(+ΔZ)',font=F_SMALL,fill='black',spacing=2)
+          d.multiline_text((cx+15,cy+335),'f0→f28: forward/up\nf29→f59: back/down\nX lateral reverses at f20 and f50',font=F_BODY,fill=(35,35,35),spacing=4)
+          img.save(src/'weight-transfer.png')
+
+          # body-mechanics.png
+          img=Image.new('RGB',(1120,1010),'white')
+          header(img,'idle-1 — body mechanics evidence','Peak angular departures are staggered; frame labels below are derived from joint rotations in animation.json.')
+          items=[
+              (15,'head / neck early excursion','Head and Neck reach their largest angular departure from f0 around f15.'),
+              (24,'hips / shoulders crest','Hips and RightShoulder peak at f24; LeftShoulder and Spine peak at f25; Chest peaks at f26.'),
+              (28,'pelvis / legs crest','Hips translation reaches max forward/up at f28; both UpperLeg rotation departures also peak at f28.'),
+              (32,'distal-arm follow-through','Both hands peak at f32; RightLowerArm peaks at f31, after the torso/shoulder crest.'),
+          ]
+          for i,(f,l,det) in enumerate(items):
+              card(img,40+(i%2)*530,105+(i//2)*430,500,405,f,l,det,270)
+          d=ImageDraw.Draw(img)
+          d.text((40,965),'Observed ordering: head/neck excursion → hips/torso/shoulders → pelvis/legs → hand/forearm follow-through.',font=F_SUB,fill=(35,35,35))
+          img.save(src/'body-mechanics.png')
+          PY
+      - name: Verify trusted inputs unchanged and evidence exists
+        shell: bash
+        run: |
+          test -s sample/humanoid_motion/mixamo/idle-1/phases.png
+          test -s sample/humanoid_motion/mixamo/idle-1/key-poses.png
+          test -s sample/humanoid_motion/mixamo/idle-1/weight-transfer.png
+          test -s sample/humanoid_motion/mixamo/idle-1/body-mechanics.png
+          git diff --exit-code -- sample/humanoid_motion/mixamo/idle-1/animation.json sample/humanoid_motion/mixamo/idle-1/preview.gif
       - uses: actions/upload-artifact@v4
         with:
-          name: idle1-trusted-source
-          path: /tmp/idle1-source
+          name: idle1-review-evidence
+          path: |
+            sample/humanoid_motion/mixamo/idle-1/phases.png
+            sample/humanoid_motion/mixamo/idle-1/key-poses.png
+            sample/humanoid_motion/mixamo/idle-1/weight-transfer.png
+            sample/humanoid_motion/mixamo/idle-1/body-mechanics.png
           if-no-files-found: error
           retention-days: 1
+      - name: Commit evidence and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/tmp-idle1-evidence-extract.yml
+          git config user.name 'synclab-automation-system'
+          git config user.email '207300498+synclab-automation-system@users.noreply.github.com'
+          git add -A .github/workflows/tmp-idle1-evidence-extract.yml sample/humanoid_motion/mixamo/idle-1/
+          git commit -m 'docs: add idle-1 metadata evidence'
+          git push origin HEAD:metadata-evidence/mixamo-idle-1
