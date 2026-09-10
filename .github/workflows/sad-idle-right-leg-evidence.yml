@@ -1,0 +1,172 @@
+name: sad-idle-right-leg-evidence
+
+on:
+  push:
+    branches:
+      - metadata-evidence/sad-idle
+    paths:
+      - .github/workflows/sad-idle-right-leg-evidence.yml
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 12
+
+      - name: Verify trusted source and evidence scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:sample/humanoid_motion/mixamo/sad-idle/animation.json)" = "09d7400deee3cbadb711c677625fabc4639b0193"
+          test "$(git rev-parse HEAD:sample/humanoid_motion/mixamo/sad-idle/preview.gif)" = "163e1783c4153aed19205f4b13fdfe125720cfb9"
+          for f in phases.png key-poses.png weight-transfer.png body-mechanics.png; do
+            test -f "sample/humanoid_motion/mixamo/sad-idle/$f"
+          done
+
+      - name: Install Pillow
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Regenerate key poses and body mechanics
+        shell: bash
+        run: |
+          python - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          import json, math
+
+          base='sample/humanoid_motion/mixamo/sad-idle'
+          with open(f'{base}/animation.json',encoding='utf-8') as f:
+              anim=json.load(f)
+          gif=Image.open(f'{base}/preview.gif')
+          n=anim['frameCount']
+          assert n == 85 and gif.n_frames == 85
+
+          def qdist(a,b):
+              dot=abs(sum(x*y for x,y in zip(a,b)))
+              dot=max(-1.0,min(1.0,dot))
+              return math.degrees(2*math.acos(dot))
+
+          def tr(j): return anim['joints'][j]['rotations']
+          def pose_peak(j):
+              t=tr(j); vals=[qdist(t[0],q) for q in t]
+              fr=max(range(n-1),key=lambda i:vals[i])
+              return fr, vals[fr]
+          def step_peak(j):
+              t=tr(j); vals=[0.0]+[qdist(t[i-1],t[i]) for i in range(1,n)]
+              fr=max(range(1,n-1),key=lambda i:vals[i])
+              return fr, vals[fr]
+
+          rul_f,rul_d=pose_peak('RightUpperLeg')
+          rll_f,rll_d=pose_peak('RightLowerLeg')
+          rf_f,rf_d=pose_peak('RightFoot')
+          rt_f,rt_d=pose_peak('RightToe')
+          rll_vf,rll_v=step_peak('RightLowerLeg')
+          rf_vf,rf_v=step_peak('RightFoot')
+          rt_vf,rt_v=step_peak('RightToe')
+          assert rul_f == 50
+          assert rll_f == rf_f == rt_f == 30
+          assert rll_vf == rf_vf == 38 and rt_vf == 37
+
+          hips=anim['hips']['translations']
+          def qfrom0(j,fr):
+              t=anim['hips']['rotations'] if j=='Hips' else tr(j)
+              return qdist(t[0],t[fr])
+
+          font_path='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+          title=ImageFont.truetype(font_path,26)
+          label=ImageFont.truetype(font_path,18)
+          small=ImageFont.truetype(font_path,14)
+
+          def wrap(draw,text,font,maxw,maxlines=3):
+              words=text.split(); out=[]; cur=''
+              for w in words:
+                  trial=(cur+' '+w).strip()
+                  if draw.textbbox((0,0),trial,font=font)[2] <= maxw:
+                      cur=trial
+                  else:
+                      if cur: out.append(cur)
+                      cur=w
+              if cur: out.append(cur)
+              return out[:maxlines]
+
+          def panel(fr,heading,desc,w=390,h=350):
+              gif.seek(fr)
+              im=gif.convert('RGB').resize((347,347),Image.Resampling.NEAREST)
+              c=Image.new('RGB',(w,h+104),'white'); c.paste(im,((w-347)//2,0))
+              d=ImageDraw.Draw(c); d.text((10,h+3),heading,font=label,fill='black')
+              y=h+31
+              for line in wrap(d,desc,small,w-20,3):
+                  d.text((10,y),line,font=small,fill='black'); y+=19
+              return c
+
+          # Key poses: add the right-leg chamber and outward swing to the existing global anchors.
+          keyposes=[
+              (0,'loop start / reference'),
+              (16,'maximum canonical body yaw (-34.21°)'),
+              (30,f'right-leg raised/flexed pose: R lower leg Δ{rll_d:.1f}°, foot Δ{rf_d:.1f}°'),
+              (38,f'pelvis +X apex; rapid R lower-leg/foot reversal ({rll_v:.1f}°/{rf_v:.1f}° per frame)'),
+              (50,f'right upper-leg global pose peak Δ{rul_d:.1f}°; leg visibly swung outward'),
+              (56,'pelvis high rebound; neck rotational peak'),
+              (68,'late secondary pelvis low / settle'),
+              (84,'loop endpoint; Root and Hips match f0'),
+          ]
+          pw=390; ph=454; cols=4; rows=2
+          canvas=Image.new('RGB',(cols*pw,58+rows*ph),'white'); d=ImageDraw.Draw(canvas)
+          d.text((16,14),'sad-idle key poses — includes the measured right-leg gesture',font=title,fill='black')
+          for k,(fr,desc) in enumerate(keyposes):
+              canvas.paste(panel(fr,f'f{fr}',desc,pw,350),((k%cols)*pw,58+(k//cols)*ph))
+          canvas.save(f'{base}/key-poses.png')
+
+          # Body mechanics: preserve whole-body timing but include the previously omitted right lower leg/foot/toe event.
+          events=[
+              (22,f'LeftUpperArm peak Δ{qfrom0("LeftUpperArm",22):.1f}°; right-leg gesture building'),
+              (30,f'RLowerLeg/RFoot/RToe pose peaks: {rll_d:.1f}° / {rf_d:.1f}° / {rt_d:.1f}°'),
+              (36,f'Head peak Δ{qfrom0("Head",36):.1f}° while right lower leg/foot are already reversing'),
+              (38,f'RLowerLeg/RFoot maximum per-frame reversal: {rll_v:.1f}° / {rf_v:.1f}°; RToe fastest at f37 ({rt_v:.1f}°)'),
+              (49,f'Chest peak Δ{qfrom0("Chest",49):.1f}°'),
+              (50,f'RightUpperLeg global peak Δ{rul_d:.1f}° + Hips Δ{qfrom0("Hips",50):.1f}°'),
+              (56,f'Neck peak Δ{qfrom0("Neck",56):.1f}° + pelvis high rebound'),
+          ]
+          pw=390; ph=462; cols=4; rows=2
+          canvas=Image.new('RGB',(cols*pw,58+rows*ph),'white'); d=ImageDraw.Draw(canvas)
+          d.text((16,14),'body mechanics — staggered torso/arm timing plus right-leg lift, reversal and outward swing',font=title,fill='black')
+          for k,(fr,desc) in enumerate(events):
+              canvas.paste(panel(fr,f'f{fr}',desc,pw,350),((k%cols)*pw,58+(k//cols)*ph))
+          summary=Image.new('RGB',(pw,ph),'white'); sd=ImageDraw.Draw(summary)
+          sd.text((14,14),'Measured right-leg sequence',font=label,fill='black')
+          lines=[
+              'f30: lower leg / foot / toe',
+              'maximum pose departure',
+              'f37–38: fastest reversal',
+              'of toe / lower leg / foot',
+              'f50: upper-leg global peak',
+              '',
+              'Interpretation:',
+              'a clear right-leg lift/flex →',
+              'rapid reposition → outward',
+              'swing integrated into the idle.',
+              '',
+              'No impact/contact is asserted.'
+          ]
+          y=48
+          for line in lines:
+              sd.text((14,y),line,font=small,fill='black'); y+=24
+          canvas.paste(summary,(3*pw,58+ph))
+          canvas.save(f'{base}/body-mechanics.png')
+          PY
+
+      - name: Commit revised evidence and remove helper workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "synclab-automation-system"
+          git config user.email "207300498+synclab-automation-system@users.noreply.github.com"
+          git rm .github/workflows/sad-idle-right-leg-evidence.yml
+          git add sample/humanoid_motion/mixamo/sad-idle/key-poses.png \
+                  sample/humanoid_motion/mixamo/sad-idle/body-mechanics.png
+          git commit -m "docs: add sad-idle right-leg event to review evidence"
+          git push origin HEAD:metadata-evidence/sad-idle
