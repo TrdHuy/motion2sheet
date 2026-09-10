@@ -1,0 +1,186 @@
+name: Standing Idle To Fight Idle Analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/standing-idle-to-fight-idle-analysis.yml'
+      - 'sample/humanoid_motion/mixamo/standing-idle-to-fight-idle/**'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install analysis tooling
+        run: python -m pip install pillow
+
+      - name: Analyze trusted source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import math
+          from pathlib import Path
+          from PIL import Image, ImageDraw, ImageFont
+
+          root = Path('sample/humanoid_motion/mixamo/standing-idle-to-fight-idle')
+          out = Path('build/standing-idle-to-fight-idle-analysis')
+          out.mkdir(parents=True, exist_ok=True)
+          animation = json.loads((root / 'animation.json').read_text())
+          assert animation['frameCount'] == 31
+          assert animation['fps'] == 30.0
+          assert animation['coordinateSystem']['rightAxis'] == '+X'
+          assert animation['coordinateSystem']['upAxis'] == '+Z'
+          assert animation['quaternionConvention']['componentOrder'] == 'wxyz'
+
+          gif = Image.open(root / 'preview.gif')
+          assert getattr(gif, 'n_frames', 1) == animation['frameCount'], (gif.n_frames, animation['frameCount'])
+          frames = []
+          for i in range(animation['frameCount']):
+              gif.seek(i)
+              frames.append(gif.convert('RGB').copy())
+
+          regular = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+          bold = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+          title_font = ImageFont.truetype(bold, 30)
+          frame_font = ImageFont.truetype(bold, 18)
+          small_font = ImageFont.truetype(regular, 14)
+
+          # Full visual overview, all canonical frames, no frame inference from GIF.
+          cols = 8
+          cell_w, cell_h = 250, 280
+          rows = math.ceil(animation['frameCount'] / cols)
+          canvas = Image.new('RGB', (cols*cell_w, 70 + rows*cell_h), 'white')
+          draw = ImageDraw.Draw(canvas)
+          draw.text((16, 12), 'standing-idle-to-fight-idle — all 31 canonical frames', font=title_font, fill='black')
+          draw.text((16, 47), 'Frame IDs come from animation.json; preview.gif supplies the rendered visual.', font=small_font, fill='black')
+          for i, frame in enumerate(frames):
+              r, c = divmod(i, cols)
+              x, y = c*cell_w, 70 + r*cell_h
+              # keep the whole trusted preview frame to avoid hiding feet/hands
+              resized = frame.resize((224,224), Image.Resampling.NEAREST)
+              canvas.paste(resized, (x+13, y+28))
+              draw.text((x+14,y+4), f'f{i}', font=frame_font, fill='black')
+          canvas.save(out / 'overview.png', optimize=True)
+
+          def q_angle_deg(a, b):
+              # shortest angular distance between unit quaternions, sign-invariant
+              dot = abs(sum(float(x)*float(y) for x,y in zip(a,b)))
+              dot = max(-1.0, min(1.0, dot))
+              return math.degrees(2.0 * math.acos(dot))
+
+          def q_step_deg(seq, i):
+              if i == 0:
+                  return 0.0
+              return q_angle_deg(seq[i-1], seq[i])
+
+          hips = [[float(v) for v in p] for p in animation['hips']['translations']]
+          xs = [p[0] for p in hips]
+          ys = [p[1] for p in hips]
+          zs = [p[2] for p in hips]
+          root_step = [0.0]
+          for i in range(1, len(hips)):
+              root_step.append(math.dist(hips[i-1], hips[i]))
+
+          joint_metrics = {}
+          for name, data in animation['joints'].items():
+              seq = data['rotations']
+              from0 = [q_angle_deg(seq[0], q) for q in seq]
+              step = [q_step_deg(seq, i) for i in range(len(seq))]
+              joint_metrics[name] = {
+                  'peakDepartureFrame': max(range(len(from0)), key=from0.__getitem__),
+                  'peakDepartureDeg': max(from0),
+                  'peakStepFrame': max(range(len(step)), key=step.__getitem__),
+                  'peakStepDegPerFrame': max(step),
+                  'departureDegByFrame': from0,
+                  'stepDegByFrame': step,
+              }
+
+          groups = {
+              'torso': ['Spine','Chest','UpperChest','Neck','Head'],
+              'leftArm': ['LeftShoulder','LeftUpperArm','LeftLowerArm','LeftHand'],
+              'rightArm': ['RightShoulder','RightUpperArm','RightLowerArm','RightHand'],
+              'leftLeg': ['LeftUpperLeg','LeftLowerLeg','LeftFoot','LeftToe'],
+              'rightLeg': ['RightUpperLeg','RightLowerLeg','RightFoot','RightToe'],
+          }
+          group_activity = {}
+          for group, names in groups.items():
+              names = [n for n in names if n in joint_metrics]
+              departure = []
+              step = []
+              for i in range(animation['frameCount']):
+                  departure.append(sum(joint_metrics[n]['departureDegByFrame'][i] for n in names))
+                  step.append(sum(joint_metrics[n]['stepDegByFrame'][i] for n in names))
+              group_activity[group] = {
+                  'joints': names,
+                  'peakDepartureFrame': max(range(len(departure)), key=departure.__getitem__),
+                  'peakDepartureSumDeg': max(departure),
+                  'peakStepFrame': max(range(len(step)), key=step.__getitem__),
+                  'peakStepSumDegPerFrame': max(step),
+                  'departureSumDegByFrame': departure,
+                  'stepSumDegByFrame': step,
+              }
+
+          summary = {
+              'id': animation['id'],
+              'frameCount': animation['frameCount'],
+              'fps': animation['fps'],
+              'durationSeconds': animation['durationSeconds'],
+              'loop': animation.get('loop'),
+              'hips': {
+                  'xMin': {'frame': min(range(len(xs)), key=xs.__getitem__), 'value': min(xs)},
+                  'xMax': {'frame': max(range(len(xs)), key=xs.__getitem__), 'value': max(xs)},
+                  'yMin': {'frame': min(range(len(ys)), key=ys.__getitem__), 'value': min(ys)},
+                  'yMax': {'frame': max(range(len(ys)), key=ys.__getitem__), 'value': max(ys)},
+                  'zMin': {'frame': min(range(len(zs)), key=zs.__getitem__), 'value': min(zs)},
+                  'zMax': {'frame': max(range(len(zs)), key=zs.__getitem__), 'value': max(zs)},
+                  'peakTranslationStep': {'frame': max(range(len(root_step)), key=root_step.__getitem__), 'value': max(root_step)},
+                  'translationsByFrame': hips,
+                  'translationStepByFrame': root_step,
+              },
+              'groups': group_activity,
+              'joints': joint_metrics,
+          }
+          (out / 'metrics.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
+
+          print('=== SOURCE SUMMARY ===')
+          print(json.dumps({k: summary[k] for k in ['id','frameCount','fps','durationSeconds','loop']}, indent=2))
+          print('=== HIPS EXTREMA ===')
+          print(json.dumps({k:v for k,v in summary['hips'].items() if not k.endswith('ByFrame')}, indent=2))
+          print('=== GROUP PEAKS ===')
+          for group, m in group_activity.items():
+              print(group, 'departure', m['peakDepartureFrame'], round(m['peakDepartureSumDeg'],3), 'step', m['peakStepFrame'], round(m['peakStepSumDegPerFrame'],3))
+          print('=== KEY JOINT PEAKS ===')
+          for n in ['Chest','Neck','Head','LeftShoulder','LeftUpperArm','LeftLowerArm','LeftHand','RightShoulder','RightUpperArm','RightLowerArm','RightHand','LeftUpperLeg','LeftLowerLeg','LeftFoot','RightUpperLeg','RightLowerLeg','RightFoot']:
+              if n in joint_metrics:
+                  m = joint_metrics[n]
+                  print(n, 'departure', m['peakDepartureFrame'], round(m['peakDepartureDeg'],3), 'step', m['peakStepFrame'], round(m['peakStepDegPerFrame'],3))
+          PY
+
+      - name: Verify trusted source is untouched
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- sample/humanoid_motion/mixamo/standing-idle-to-fight-idle/animation.json
+          git diff --exit-code -- sample/humanoid_motion/mixamo/standing-idle-to-fight-idle/preview.gif
+          test ! -e sample/humanoid_motion/mixamo/standing-idle-to-fight-idle/metadata.json
+
+      - name: Upload analysis artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: standing-idle-to-fight-idle-analysis
+          path: build/standing-idle-to-fight-idle-analysis/
+          if-no-files-found: error
