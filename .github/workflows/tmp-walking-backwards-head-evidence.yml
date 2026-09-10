@@ -1,0 +1,77 @@
+name: Temporary Walking Backwards Head Evidence
+
+on:
+  push:
+    branches:
+      - metadata/walking-backwards-evidence
+    paths:
+      - '.github/workflows/tmp-walking-backwards-head-evidence.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  update-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pillow
+      - name: Regenerate body mechanics evidence
+        run: |
+          set -euo pipefail
+          SRC='sample/humanoid_motion/mixamo/walking-backwards'
+          test "$(git hash-object "$SRC/animation.json")" = '715955d70fe5aa90c0e9d65775f54c2fef520d93'
+          test "$(git hash-object "$SRC/preview.gif")" = 'aa98330bd085defa4fd7647842afebc234e801ea'
+          python - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont, ImageOps
+          from pathlib import Path
+          src = Path('sample/humanoid_motion/mixamo/walking-backwards')
+          gif = Image.open(src / 'preview.gif')
+          frames=[]
+          try:
+              i=0
+              while True:
+                  gif.seek(i); frames.append(gif.convert('RGB').copy()); i += 1
+          except EOFError:
+              pass
+          assert len(frames) == 46
+          font='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+          bold='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+          def F(s,b=False): return ImageFont.truetype(bold if b else font,s)
+          sel=[8,12,23,30,34]
+          roles=[('mốc chân 1','chân nửa chu kỳ 1 đang thu'),('passing 1','đổi hình thế chân 1'),('pelvis +X cực đại','mốc giữa chu kỳ'),('mốc chân 2','chân nửa chu kỳ 2 đang thu'),('passing 2','đổi hình thế chân 2')]
+          canvas=Image.new('RGB',(1250,810),'white'); d=ImageDraw.Draw(canvas)
+          d.text((18,14),'walking-backwards — evidence phối hợp cơ thể',font=F(28,True),fill='black')
+          for k,(idx,(role,detail)) in enumerate(zip(sel,roles)):
+              x=k*250
+              d.text((x+10,58),f'f{idx}',font=F(23,True),fill='black')
+              d.text((x+65,61),role,font=F(15,True),fill='black')
+              d.text((x+10,90),detail,font=F(13),fill='black')
+              pose=ImageOps.contain(frames[idx],(230,245))
+              canvas.paste(pose,(x+(250-pose.width)//2,118))
+          d.text((20,380),'Cổ / đầu:',font=F(19,True),fill='black')
+          d.text((125,382),'các frame chọn đều cho thấy đầu ngửa ra sau so với trục thân.',font=F(17),fill='black')
+          for k,idx in enumerate(sel):
+              x=k*250+34
+              crop=frames[idx].crop((90,43,158,112)).resize((180,180),Image.Resampling.NEAREST)
+              canvas.paste(crop,(x,420)); d.rectangle((x,420,x+180,600),outline='black',width=1)
+              d.text((x+65,605),f'f{idx}',font=F(16,True),fill='black')
+          d.text((30,650),'Thứ tự nhịp chân/pelvis:',font=F(18,True),fill='black')
+          d.text((30,680),'f8 → f12 → f23 → f30 → f34',font=F(18),fill='black')
+          d.text((30,720),'Thân trên hơi ngả sau; cổ và đầu duy trì tư thế ngửa ra sau trong chu kỳ.',font=F(17,True),fill='black')
+          d.text((30,755),'Tay/vai thay đổi nhẹ hơn nhịp chân; evidence không suy ra hướng nhìn ngoài tư thế ngửa đầu.',font=F(15),fill='black')
+          canvas.quantize(colors=128,method=Image.Quantize.MEDIANCUT,dither=Image.Dither.NONE).save(src/'body-mechanics.png',optimize=True)
+          PY
+      - name: Commit updated evidence
+        run: |
+          set -euo pipefail
+          git config user.name 'synclab-automation-system'
+          git config user.email '207300498+synclab-automation-system@users.noreply.github.com'
+          git add sample/humanoid_motion/mixamo/walking-backwards/body-mechanics.png
+          git commit -m 'review: clarify head posture in walking-backwards evidence'
+          git push origin HEAD:metadata/walking-backwards-evidence
