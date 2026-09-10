@@ -17,15 +17,16 @@ jobs:
       - name: Checkout branch
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 3
 
-      - name: Verify exact parent and trusted blobs
+      - name: Verify trusted base and source blobs
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "bc3adebd68d6a699a371c874bcfb773ef59515e9"
+          test "$(git rev-parse HEAD~2)" = "bc3adebd68d6a699a371c874bcfb773ef59515e9"
           test "$(git rev-parse HEAD:sample/humanoid_motion/mixamo/sad-idle/animation.json)" = "09d7400deee3cbadb711c677625fabc4639b0193"
           test "$(git rev-parse HEAD:sample/humanoid_motion/mixamo/sad-idle/preview.gif)" = "163e1783c4153aed19205f4b13fdfe125720cfb9"
+          test "$(git diff --name-only bc3adebd68d6a699a371c874bcfb773ef59515e9..HEAD | sort)" = ".github/workflows/sad-idle-evidence-generate.yml"
 
       - name: Install image dependency
         run: python -m pip install --disable-pip-version-check pillow
@@ -50,19 +51,25 @@ jobs:
           assert gif.n_frames == n
           hips = anim['hips']['translations']
 
-          # Exact loop closure across every exported motion track.
+          # Root and pelvis endpoint tracks close exactly. Other joint endpoints are
+          # measured below instead of being assumed exact merely because loop=true.
           assert anim['root']['translations'][0] == anim['root']['translations'][-1]
           assert anim['root']['rotations'][0] == anim['root']['rotations'][-1]
           assert anim['hips']['translations'][0] == anim['hips']['translations'][-1]
           assert anim['hips']['rotations'][0] == anim['hips']['rotations'][-1]
-          for obj in anim['joints'].values():
-              assert obj['rotations'][0] == obj['rotations'][-1]
 
           def qangle(track, frame):
               q0, q = track[0], track[frame]
               dot = abs(sum(a*b for a,b in zip(q0,q)))
               dot = max(-1.0, min(1.0, dot))
               return math.degrees(2.0 * math.acos(dot))
+
+          joint_closure = {
+              name: qangle(obj['rotations'], n-1)
+              for name,obj in anim['joints'].items()
+          }
+          max_closure_joint = max(joint_closure, key=joint_closure.get)
+          max_closure_degrees = joint_closure[max_closure_joint]
 
           def signed_root_yaw(frame):
               q = anim['root']['rotations'][frame]
@@ -78,8 +85,8 @@ jobs:
               end = n if end is None else end
               return max(range(start, end), key=lambda i: hips[i][axis])
 
-          # Motion-derived event candidates. Endpoint f84 duplicates f0 and is excluded
-          # from extrema searches so the seam cannot become a false phase event.
+          # Motion-derived event candidates. Endpoint f84 is excluded from extrema
+          # searches so the seam cannot become a false phase event.
           search_end = n - 1
           f_turn = max(range(search_end), key=lambda i: abs(signed_root_yaw(i)))
           f_xmax = argmax_axis(0, 0, search_end)
@@ -120,7 +127,7 @@ jobs:
                   'hipsXMaximum': f_xmax,
                   'hipsHighestAfterXMax': f_high,
                   'hipsLateLowAfterHigh': f_late_low,
-                  'loopClosure': f_end,
+                  'loopEndpoint': f_end,
               },
               'hips': {
                   'xMinFrame': argmin_axis(0,0,search_end),
@@ -138,6 +145,11 @@ jobs:
               },
               'jointPeakFramesFromF0': joint_peaks,
               'jointPeakDegreesFromF0': {k: round(v,6) for k,v in joint_peak_angles.items()},
+              'jointEndpointClosureDegrees': {k: round(v,6) for k,v in joint_closure.items()},
+              'maxJointEndpointClosure': {
+                  'joint': max_closure_joint,
+                  'degrees': round(max_closure_degrees,6),
+              },
           }
           print('METRICS_JSON=' + json.dumps(summary, sort_keys=True))
           for fr in sorted(set([0, f_turn, f_xmax, f_high, f_late_low, f_end])):
@@ -184,7 +196,7 @@ jobs:
               (f_turn+1, f_xmax, 2, 'pelvis continues lateral sweep after yaw apex'),
               (f_xmax+1, f_high, 3, 'pelvis reverses lateral travel and rises'),
               (f_high+1, f_late_low, 4, 'secondary downward settle'),
-              (f_late_low+1, f_end, 5, 'return to exact loop seam'),
+              (f_late_low+1, f_end, 5, 'return toward loop endpoint'),
           ]
           entries=[]
           for s,e,p,name in phase_pairs:
@@ -202,7 +214,7 @@ jobs:
               (f_xmax,'maximum +X pelvis excursion'),
               (f_high,'highest pelvis after lateral apex'),
               (f_late_low,'secondary late pelvis low'),
-              (f_end,'exact loop closure = f0'),
+              (f_end,'loop endpoint; root/hips equal f0'),
           ]
           pw=370
           canvas=Image.new('RGB',(3*pw,58+2*470),'white'); draw=ImageDraw.Draw(canvas)
@@ -217,7 +229,7 @@ jobs:
           wt=[0, f_turn, f_xmax, f_high, f_late_low, f_end]
           roles={
               0:'start', f_turn:'yaw apex', f_xmax:'+X pelvis apex',
-              f_high:'high rebound', f_late_low:'late low', f_end:'loop closure'
+              f_high:'high rebound', f_late_low:'late low', f_end:'loop endpoint'
           }
           tw,th=340,370
           canvas=Image.new('RGB',(3*tw,58+2*th+430),'white'); draw=ImageDraw.Draw(canvas)
@@ -249,7 +261,7 @@ jobs:
               draw.text((px+8,py-20),f'f{fr}',font=tiny,fill='black')
           px,py=mappt(xs[0],fwds[0]); r=7
           draw.ellipse((px-r,py-r,px+r,py+r),fill='white',outline='black',width=2)
-          draw.text((px+8,py+5),'f0=f84',font=tiny,fill='black')
+          draw.text((px+8,py+5),'hips f0=f84',font=tiny,fill='black')
 
           z_x0=700; z_y0=chart_y0; z_w=260; z_h=280
           draw.text((z_x0,z_y0-34),'hips Z over time',font=label,fill='black')
@@ -273,7 +285,6 @@ jobs:
               fr=joint_peaks[joint]
               events.append((fr,joint,joint_peak_angles[joint]))
           events=sorted(events)
-          # Keep every distinct event frame, merging labels that share a frame.
           merged=[]
           for fr,joint,deg in events:
               if merged and merged[-1][0] == fr:
@@ -297,8 +308,12 @@ jobs:
               f'pelvis high rebound: f{f_high}',
               f'late pelvis low: f{f_late_low}',
               '',
-              'Upper-body rotational peaks',
-          ] + [f'{joint}: f{joint_peaks[joint]} ({joint_peak_angles[joint]:.1f}°)' for joint in mechanics_joints]
+              'Rotational departure peaks',
+          ] + [f'{joint}: f{joint_peaks[joint]} ({joint_peak_angles[joint]:.1f}°)' for joint in mechanics_joints] + [
+              '',
+              f'max joint endpoint gap: {max_closure_joint}',
+              f'{max_closure_degrees:.3f}° vs f0',
+          ]
           y=50
           for line in lines:
               sd.text((14,y),line,font=small,fill='black'); y+=23
