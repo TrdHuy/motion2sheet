@@ -1,0 +1,146 @@
+name: temp-build-run-look-back-evidence
+
+on:
+  push:
+    branches:
+      - metadata-evidence/run-look-back
+
+permissions:
+  contents: write
+
+jobs:
+  build-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify trusted source blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object sample/humanoid_motion/mixamo/run-look-back/animation.json)" = "e8fca5650afc4a4b800bb12300226ebea62c7fe0"
+          test "$(git hash-object sample/humanoid_motion/mixamo/run-look-back/preview.gif)" = "939ec80c0a5859dfb1cdd0ff0cc22edacfed5582"
+      - name: Install image tooling
+        run: python -m pip install --disable-pip-version-check pillow
+      - name: Build evidence PNGs from trusted source
+        shell: bash
+        run: |
+          python - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          from pathlib import Path
+          import json, math
+
+          SRC = Path('sample/humanoid_motion/mixamo/run-look-back')
+          anim = json.loads((SRC / 'animation.json').read_text())
+          gif = Image.open(SRC / 'preview.gif')
+          FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+          FONT_B = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+
+          def font(size, bold=False):
+              return ImageFont.truetype(FONT_B if bold else FONT, size)
+
+          def get_frame(n, scale=2):
+              gif.seek(n)
+              return gif.convert('RGB').resize((gif.width * scale, gif.height * scale), Image.Resampling.NEAREST)
+
+          def twist_z(q):
+              w, x, y, z = q
+              norm = math.hypot(w, z)
+              if norm < 1e-12:
+                  return 0.0
+              w, z = w / norm, z / norm
+              return math.degrees(2 * math.atan2(z, w))
+
+          root_tw = [twist_z(q) for q in anim['root']['rotations']]
+          head_tw = [twist_z(q) for q in anim['joints']['Head']['rotations']]
+          chest_tw = [twist_z(q) for q in anim['joints']['Chest']['rotations']]
+          hips_z = [v[2] for v in anim['hips']['translations']]
+
+          def make_grid(name, frames, captions, cols, title, extra=None):
+              scale = 2
+              fw, fh = gif.width * scale, gif.height * scale
+              caption_h = 100 if extra else 72
+              title_h = 56
+              rows = (len(frames) + cols - 1) // cols
+              canvas = Image.new('RGB', (cols * fw, title_h + rows * (fh + caption_h)), 'white')
+              d = ImageDraw.Draw(canvas)
+              d.text((16, 12), title, font=font(28, True), fill='black')
+              for i, n in enumerate(frames):
+                  r, c = divmod(i, cols)
+                  x, y = c * fw, title_h + r * (fh + caption_h)
+                  canvas.paste(get_frame(n, scale), (x, y))
+                  d.rectangle((x, y, x + fw - 1, y + fh - 1), outline=(120, 120, 120), width=1)
+                  d.text((x + 10, y + fh + 8), captions[i], font=font(21, True), fill='black')
+                  if extra:
+                      d.text((x + 10, y + fh + 39), extra[i], font=font(17), fill=(70, 70, 70))
+              canvas.save(SRC / name, optimize=True)
+
+          # Exactly the boundary frames used by the four phase intervals.
+          make_grid(
+              'phases.png',
+              [0, 4, 5, 27, 28, 43, 44, 67],
+              ['f0', 'f4', 'f5', 'f27', 'f28', 'f43', 'f44', 'f67'],
+              4,
+              'run-look-back — phase boundary evidence',
+          )
+
+          make_grid(
+              'key-poses.png',
+              [0, 8, 27, 43, 60],
+              [
+                  'f0 — baseline run',
+                  'f8 — head leads look-back',
+                  'f27 — strongest backward gaze',
+                  'f43 — maximum root/body turn',
+                  'f60 — gaze forward; body unwinding',
+              ],
+              5,
+              'run-look-back — key poses',
+          )
+
+          weight_frames = [9, 14, 18, 39, 45, 51]
+          make_grid(
+              'weight-transfer.png',
+              weight_frames,
+              [
+                  'f9 — loading', 'f14 — pelvis rise', 'f18 — next loading',
+                  'f39 — loading', 'f45 — pelvis rise', 'f51 — next loading',
+              ],
+              3,
+              'run-look-back — repeated running weight-transfer evidence',
+              [f'hips.z = {hips_z[n]:+.3f}' for n in weight_frames],
+          )
+
+          body_frames = [4, 8, 27, 43, 60, 67]
+          scale = 2
+          fw, fh = gif.width * scale, gif.height * scale
+          cols, caption_h, title_h = 3, 116, 56
+          canvas = Image.new('RGB', (cols * fw, title_h + 2 * (fh + caption_h)), 'white')
+          d = ImageDraw.Draw(canvas)
+          d.text((16, 12), 'run-look-back — head / torso / root coordination', font=font(28, True), fill='black')
+          roles = [
+              'baseline coordination', 'head rotates before root', 'backward gaze maintained',
+              'root/body catches up', 'head counters during return', 'loop orientation restored',
+          ]
+          for i, n in enumerate(body_frames):
+              r, c = divmod(i, cols)
+              x, y = c * fw, title_h + r * (fh + caption_h)
+              canvas.paste(get_frame(n, scale), (x, y))
+              d.rectangle((x, y, x + fw - 1, y + fh - 1), outline=(120, 120, 120), width=1)
+              d.text((x + 10, y + fh + 8), f'f{n} — {roles[i]}', font=font(20, True), fill='black')
+              d.text((x + 10, y + fh + 40), f'root z-turn {root_tw[n]:+.1f}°', font=font(16), fill=(70, 70, 70))
+              d.text((x + 10, y + fh + 66), f'head Δz {head_tw[n]:+.1f}° | chest Δz {chest_tw[n]:+.1f}°', font=font(16), fill=(70, 70, 70))
+          canvas.save(SRC / 'body-mechanics.png', optimize=True)
+          PY
+      - name: Commit evidence and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/temp-build-run-look-back-evidence.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A .github/workflows/temp-build-run-look-back-evidence.yml sample/humanoid_motion/mixamo/run-look-back
+          git diff --cached --name-status
+          git commit -m "docs: add run-look-back metadata evidence"
+          git push origin HEAD:metadata-evidence/run-look-back
