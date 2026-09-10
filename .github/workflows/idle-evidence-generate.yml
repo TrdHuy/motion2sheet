@@ -1,0 +1,263 @@
+name: idle-evidence-generate
+
+on:
+  push:
+    branches:
+      - metadata-evidence/idle-pr17
+    paths:
+      - .github/workflows/idle-evidence-generate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact parent and trusted blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "bc3adebd68d6a699a371c874bcfb773ef59515e9"
+          test "$(git rev-parse HEAD:sample/humanoid_motion/mixamo/idle/animation.json)" = "30ec4d9f7f0d1f0ec7ec8c4a3c95c173241f560c"
+          test "$(git rev-parse HEAD:sample/humanoid_motion/mixamo/idle/preview.gif)" = "a38685f2bdd14ed261f105d92cd174f7f43c59f0"
+
+      - name: Install image dependency
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Generate evidence from exact tracks
+        shell: bash
+        run: |
+          python - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          import json, math, os
+
+          base = 'sample/humanoid_motion/mixamo/idle'
+          with open(f'{base}/animation.json', encoding='utf-8') as fh:
+              anim = json.load(fh)
+          gif = Image.open(f'{base}/preview.gif')
+          assert anim['frameCount'] == 251
+          assert gif.n_frames == 251
+          hips = anim['hips']['translations']
+
+          def argmin(axis): return min(range(251), key=lambda i: hips[i][axis])
+          def argmax(axis): return max(range(251), key=lambda i: hips[i][axis])
+          assert argmin(0) == 94
+          assert argmax(2) == 128
+          assert argmin(1) == 163
+          assert argmin(2) == 182
+          assert argmax(0) == 238 and argmax(1) == 238
+
+          def qangle(track, frame):
+              q0, q = track[0], track[frame]
+              dot = abs(sum(a*b for a,b in zip(q0,q)))
+              dot = max(-1.0, min(1.0, dot))
+              return math.degrees(2.0 * math.acos(dot))
+
+          def peak(obj, start, end):
+              track = obj['rotations']
+              return max(range(start,end), key=lambda i: qangle(track,i))
+
+          assert peak(anim['joints']['RightUpperArm'],0,150) == 54
+          assert peak(anim['joints']['RightLowerArm'],0,150) == 54
+          assert peak(anim['hips'],0,150) == 96
+          assert peak(anim['joints']['Spine'],0,150) == 123
+          assert peak(anim['joints']['LeftShoulder'],0,150) == 123
+          assert peak(anim['joints']['Head'],0,150) == 131
+          assert peak(anim['joints']['Chest'],150,220) == 194
+          assert peak(anim['joints']['Neck'],150,220) == 194
+          assert peak(anim['joints']['Head'],150,220) == 198
+
+          # Exact loop closure across every exported motion track.
+          assert anim['root']['translations'][0] == anim['root']['translations'][-1]
+          assert anim['root']['rotations'][0] == anim['root']['rotations'][-1]
+          assert anim['hips']['translations'][0] == anim['hips']['translations'][-1]
+          assert anim['hips']['rotations'][0] == anim['hips']['rotations'][-1]
+          for obj in anim['joints'].values():
+              assert obj['rotations'][0] == obj['rotations'][-1]
+
+          font_path='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+          title=ImageFont.truetype(font_path,26)
+          label=ImageFont.truetype(font_path,18)
+          small=ImageFont.truetype(font_path,15)
+          tiny=ImageFont.truetype(font_path,13)
+
+          def wrap(draw,text,font,max_width):
+              words=text.split(); lines=[]; cur=''
+              for word in words:
+                  trial=(cur+' '+word).strip()
+                  if draw.textbbox((0,0),trial,font=font)[2] <= max_width:
+                      cur=trial
+                  else:
+                      if cur: lines.append(cur)
+                      cur=word
+              if cur: lines.append(cur)
+              return lines
+
+          def frame_image(i, scale=1.6):
+              gif.seek(i)
+              im=gif.convert('RGB')
+              return im.resize((round(im.width*scale),round(im.height*scale)),Image.Resampling.NEAREST)
+
+          def panel(frame, heading, role=None, width=360, image_h=358):
+              im=frame_image(frame)
+              canvas=Image.new('RGB',(width,image_h+78),'white')
+              canvas.paste(im,((width-im.width)//2,0))
+              draw=ImageDraw.Draw(canvas)
+              draw.text((10,image_h+6),heading,font=label,fill='black')
+              if role:
+                  y=image_h+32
+                  for line in wrap(draw,role,small,width-20)[:2]:
+                      draw.text((10,y),line,font=small,fill='black'); y+=19
+              return canvas
+
+          phase_pairs=[
+              (0,94,1,'initial lateral/forward sway'),
+              (95,131,2,'rise + first upper-body follow-through'),
+              (132,182,3,'second forward/down sway'),
+              (183,198,4,'second upper-body follow-through'),
+              (199,238,5,'return to right/back extreme'),
+              (239,250,6,'loop closure'),
+          ]
+          entries=[]
+          for s,e,p,name in phase_pairs:
+              entries += [(s,f'f{s} — P{p} start',name),(e,f'f{e} — P{p} end',name)]
+          pw,ph=360,436
+          canvas=Image.new('RGB',(4*pw,58+3*ph),'white'); draw=ImageDraw.Draw(canvas)
+          draw.text((18,14),'phases — boundary frames selected from animation.json',font=title,fill='black')
+          for k,(fr,heading,role) in enumerate(entries):
+              canvas.paste(panel(fr,heading,role,pw,358),((k%4)*pw,58+(k//4)*ph))
+          canvas.save(f'{base}/phases.png')
+
+          keyposes=[
+              (0,'loop start / reference'),
+              (94,'leftmost pelvis — first sway'),
+              (128,'highest pelvis — raised transition'),
+              (182,'lowest pelvis — second sway'),
+              (238,'right/back pelvis extreme — return apex'),
+          ]
+          pw=360
+          canvas=Image.new('RGB',(5*pw,515),'white'); draw=ImageDraw.Draw(canvas)
+          draw.text((18,14),'key poses — track extrema, not GIF-inferred frame numbers',font=title,fill='black')
+          for k,(fr,role) in enumerate(keyposes):
+              x,y,z=hips[fr]
+              text=f'{role} | hips X {x:+.4f}, Y {y:+.4f}, Z {z:+.4f}'
+              canvas.paste(panel(fr,f'f{fr}',text,pw,358),(k*pw,60))
+          canvas.save(f'{base}/key-poses.png')
+
+          def weight_panel(fr,role,w=330):
+              gif.seek(fr)
+              im=gif.convert('RGB').resize((291,291),Image.Resampling.NEAREST)
+              c=Image.new('RGB',(w,365),'white'); c.paste(im,((w-291)//2,0))
+              d=ImageDraw.Draw(c); x,y,z=hips[fr]
+              d.text((10,298),f'f{fr} — {role}',font=label,fill='black')
+              d.text((10,326),f'X {x:+.4f} | forward {-y:+.4f} | Z {z:+.4f}',font=small,fill='black')
+              return c
+
+          wt=[0,94,128,163,182,238,250]
+          roles={0:'start',94:'leftmost',128:'highest',163:'forwardmost',182:'lowest',238:'right/back max',250:'loop closure'}
+          cw_total=1550; tw=330; th=365
+          canvas=Image.new('RGB',(cw_total,60+2*th+430),'white'); draw=ImageDraw.Draw(canvas)
+          draw.text((18,14),'weight transfer evidence — pelvis trajectory; support foot intentionally not asserted',font=title,fill='black')
+          for k,fr in enumerate(wt):
+              canvas.paste(weight_panel(fr,roles[fr],tw),((k%4)*tw,60+(k//4)*th))
+
+          chart_x0=90; chart_y0=60+2*th+65; chart_w=700; chart_h=300
+          draw.text((chart_x0,chart_y0-38),'hips path from animation.json: X (right+) vs forward (-Y)',font=label,fill='black')
+          xs=[p[0] for p in hips]; fwds=[-p[1] for p in hips]
+          xmin,xmax=min(xs),max(xs); ymin,ymax=min(fwds),max(fwds)
+          padx=(xmax-xmin)*0.12; pady=(ymax-ymin)*0.12
+          xmin-=padx; xmax+=padx; ymin-=pady; ymax+=pady
+          def mappt(x,y):
+              return (chart_x0+(x-xmin)/(xmax-xmin)*chart_w,
+                      chart_y0+chart_h-(y-ymin)/(ymax-ymin)*chart_h)
+          draw.rectangle((chart_x0,chart_y0,chart_x0+chart_w,chart_y0+chart_h),outline='black',width=2)
+          draw.line([mappt(x,y) for x,y in zip(xs,fwds)],fill='black',width=3)
+          for fr in [94,128,163,182,238]:
+              px,py=mappt(xs[fr],fwds[fr]); r=6
+              draw.ellipse((px-r,py-r,px+r,py+r),fill='white',outline='black',width=2)
+              ox=8 if px < chart_x0+chart_w-80 else -48; oy=-22 if py>chart_y0+25 else 8
+              draw.text((px+ox,py+oy),f'f{fr}',font=tiny,fill='black')
+          px,py=mappt(xs[0],fwds[0]); r=7
+          draw.ellipse((px-r,py-r,px+r,py+r),fill='white',outline='black',width=2)
+          draw.text((px-30,py-28),'f0=f250',font=tiny,fill='black')
+          draw.text((chart_x0+chart_w//2-55,chart_y0+chart_h+10),'X: left  ←  →  right',font=small,fill='black')
+          draw.text((chart_x0+chart_w+18,chart_y0+chart_h//2-10),'forward ↑',font=small,fill='black')
+          note_x=900; y=chart_y0+22
+          notes=[
+              'Extrema from animation.json',
+              f'leftmost: f94  X={hips[94][0]:+.6f}',
+              f'highest: f128  Z={hips[128][2]:+.6f}',
+              f'forwardmost: f163  -Y={-hips[163][1]:+.6f}',
+              f'lowest: f182  Z={hips[182][2]:+.6f}',
+              'right/back max: f238',
+              f'  X={hips[238][0]:+.6f}',
+              f'  Y={hips[238][1]:+.6f}',
+              'f250 equals f0 across all motion tracks','',
+              'Interpretation limit',
+              'Pelvis motion supports a slow sway / weight-shift description.',
+              'No support foot or load force is inferred from these tracks.',
+          ]
+          for line in notes:
+              draw.text((note_x,y),line,font=small,fill='black'); y+=24
+          canvas.save(f'{base}/weight-transfer.png')
+
+          def delta(joint,frame):
+              obj=anim['hips'] if joint=='Hips' else anim['joints'][joint]
+              return qangle(obj['rotations'],frame)
+          mechanics=[
+              (54,f'right upper/lower arm early peak | Δ≈{delta("RightUpperArm",54):.2f}° from f0'),
+              (96,f'hips first-window rotation extreme | Δ={delta("Hips",96):.3f}°'),
+              (123,f'spine + left shoulder follow | Δ={delta("Spine",123):.3f}° / {delta("LeftShoulder",123):.3f}°'),
+              (131,f'head first follow-through | Δ={delta("Head",131):.3f}°'),
+              (182,f'pelvis vertical low | Z={hips[182][2]:+.6f}'),
+              (194,f'chest + neck second follow-through | Δ={delta("Chest",194):.3f}° / {delta("Neck",194):.3f}°'),
+              (198,f'head second follow-through | Δ={delta("Head",198):.3f}° from f0'),
+          ]
+          pw,ph=390,460
+          canvas=Image.new('RGB',(4*pw,60+2*ph),'white'); draw=ImageDraw.Draw(canvas)
+          draw.text((18,14),'body mechanics — staggered peak timing measured from animation.json',font=title,fill='black')
+          for k,(fr,role) in enumerate(mechanics):
+              canvas.paste(panel(fr,f'f{fr}',role,pw,358),((k%4)*pw,60+(k//4)*ph))
+          summary=Image.new('RGB',(pw,ph),'white'); sd=ImageDraw.Draw(summary)
+          sd.text((14,15),'Observed timing',font=label,fill='black')
+          lines=['first sway:','R arm → hips →','spine/L shoulder → head','',
+                 'second sway:','pelvis low → chest/neck → head','',
+                 'Interpretation:','staggered coordination,','not a claimed causal chain.']
+          y=52
+          for line in lines:
+              sd.text((14,y),line,font=small,fill='black'); y+=25
+          canvas.paste(summary,(3*pw,60+ph))
+          canvas.save(f'{base}/body-mechanics.png')
+          PY
+
+      - name: Commit temporary evidence only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "synclab-automation-system"
+          git config user.email "207300498+synclab-automation-system@users.noreply.github.com"
+          git rm .github/workflows/idle-evidence-generate.yml
+          git add sample/humanoid_motion/mixamo/idle/phases.png \
+                  sample/humanoid_motion/mixamo/idle/key-poses.png \
+                  sample/humanoid_motion/mixamo/idle/weight-transfer.png \
+                  sample/humanoid_motion/mixamo/idle/body-mechanics.png
+          git commit -m "docs: add evidence for Mixamo idle metadata review"
+          git push origin HEAD:metadata-evidence/idle-pr17
+
+      - name: Upload exact evidence for verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: idle-evidence-exact
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            sample/humanoid_motion/mixamo/idle/phases.png
+            sample/humanoid_motion/mixamo/idle/key-poses.png
+            sample/humanoid_motion/mixamo/idle/weight-transfer.png
+            sample/humanoid_motion/mixamo/idle/body-mechanics.png
