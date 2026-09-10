@@ -43,7 +43,6 @@ jobs:
 
           font_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
           bold_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
-          font = ImageFont.truetype(font_path, 24)
           small = ImageFont.truetype(font_path, 19)
           bold = ImageFont.truetype(bold_path, 25)
           title_font = ImageFont.truetype(bold_path, 31)
@@ -98,7 +97,6 @@ jobs:
               label_h=62,
           )
 
-          # Weight-transfer evidence: exact source frames plus pelvis X/Z curves.
           selected = [0, 10, 23, 35, 40]
           hip = data['hips']['translations']
           panel = 280
@@ -151,7 +149,7 @@ jobs:
 
           make_grid(
               base / 'body-mechanics.png',
-              'walking — lower/upper-body coordination evidence',
+              'walking — body coordination evidence',
               [
                   (9, 'thân trên xoay cực trị A'),
                   (11, 'sải chân A đạt cực trị'),
@@ -163,13 +161,13 @@ jobs:
               label_h=62,
           )
 
-          # Add a concise selection rationale to the body-mechanics image itself.
           bm = Image.open(base / 'body-mechanics.png').convert('RGB')
-          footer = 66
+          footer = 88
           out = Image.new('RGB', (bm.width, bm.height + footer), 'white')
           out.paste(bm, (0, 0))
           d2 = ImageDraw.Draw(out)
-          d2.text((14, bm.height + 8), 'animation.json selection: chest/shoulder reversal ≈ f9↔f29; opposite upper-leg stride extrema ≈ f11↔f30.', fill='black', font=small)
+          d2.text((14, bm.height + 8), 'animation.json: chest/shoulder reversal ≈ f9↔f29;', fill='black', font=small)
+          d2.text((14, bm.height + 38), 'opposite upper-leg stride extrema ≈ f11↔f30.', fill='black', font=small)
           save_png(out, base / 'body-mechanics.png')
           PY
       - name: Commit evidence only
@@ -182,5 +180,5 @@ jobs:
             sample/humanoid_motion/mixamo/walking/key-poses.png \
             sample/humanoid_motion/mixamo/walking/weight-transfer.png \
             sample/humanoid_motion/mixamo/walking/body-mechanics.png
-          git commit -m 'review: add walking metadata evidence'
+          git commit -m 'review: refresh walking metadata evidence'
           git push origin HEAD:metadata-review/mixamo-walking
