@@ -1,0 +1,101 @@
+name: sad-idle-right-leg-check
+
+on:
+  push:
+    branches:
+      - metadata-evidence/sad-idle
+    paths:
+      - .github/workflows/sad-idle-right-leg-check.yml
+
+permissions:
+  contents: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 8
+
+      - name: Verify trusted source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:sample/humanoid_motion/mixamo/sad-idle/animation.json)" = "09d7400deee3cbadb711c677625fabc4639b0193"
+          test "$(git rev-parse HEAD:sample/humanoid_motion/mixamo/sad-idle/preview.gif)" = "163e1783c4153aed19205f4b13fdfe125720cfb9"
+
+      - name: Install Pillow
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Analyze right leg and create diagnostic contact sheet
+        shell: bash
+        run: |
+          python - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          import json, math
+
+          base='sample/humanoid_motion/mixamo/sad-idle'
+          with open(f'{base}/animation.json',encoding='utf-8') as f:
+              anim=json.load(f)
+          gif=Image.open(f'{base}/preview.gif')
+          n=anim['frameCount']
+          assert n == 85 and gif.n_frames == 85
+
+          def qdist(a,b):
+              dot=abs(sum(x*y for x,y in zip(a,b)))
+              dot=max(-1.0,min(1.0,dot))
+              return math.degrees(2*math.acos(dot))
+
+          joints=['RightUpperLeg','RightLowerLeg','RightFoot','RightToe']
+          for joint in joints:
+              tr=anim['joints'][joint]['rotations']
+              from0=[qdist(tr[0],q) for q in tr]
+              step=[0.0]+[qdist(tr[i-1],tr[i]) for i in range(1,n)]
+              peak=max(range(n-1),key=lambda i:from0[i])
+              fast=max(range(1,n-1),key=lambda i:step[i])
+              top_pose=sorted(range(n-1),key=lambda i:from0[i],reverse=True)[:8]
+              top_step=sorted(range(1,n-1),key=lambda i:step[i],reverse=True)[:8]
+              print(f'{joint}: posePeak=f{peak} deltaFromF0={from0[peak]:.6f}deg; velocityPeak=f{fast} step={step[fast]:.6f}deg/frame')
+              print('  topPose=' + ', '.join(f'f{i}:{from0[i]:.3f}' for i in top_pose))
+              print('  topStep=' + ', '.join(f'f{i}:{step[i]:.3f}' for i in top_step))
+
+          frames=[32,36,40,44,48,50,52,54,56,60,64,68]
+          font_path='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+          title=ImageFont.truetype(font_path,26)
+          label=ImageFont.truetype(font_path,18)
+          small=ImageFont.truetype(font_path,14)
+          cols=6; pw=300; ph=345
+          canvas=Image.new('RGB',(cols*pw,58+2*ph),'white')
+          d=ImageDraw.Draw(canvas)
+          d.text((16,14),'sad-idle right-leg diagnostic — frames selected after track analysis',font=title,fill='black')
+          ru=anim['joints']['RightUpperLeg']['rotations']
+          rl=anim['joints']['RightLowerLeg']['rotations']
+          rf=anim['joints']['RightFoot']['rotations']
+          for k,fr in enumerate(frames):
+              gif.seek(fr)
+              im=gif.convert('RGB').resize((270,270),Image.Resampling.NEAREST)
+              x=(k%cols)*pw; y=58+(k//cols)*ph
+              canvas.paste(im,(x+15,y))
+              d.text((x+10,y+276),f'f{fr}',font=label,fill='black')
+              txt=f'RUL {qdist(ru[0],ru[fr]):.1f}° | RLL {qdist(rl[0],rl[fr]):.1f}° | Foot {qdist(rf[0],rf[fr]):.1f}°'
+              d.text((x+10,y+305),txt,font=small,fill='black')
+          canvas.save('/tmp/right-leg-check.png')
+          PY
+
+      - name: Upload diagnostic artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sad-idle-right-leg-check
+          retention-days: 1
+          path: /tmp/right-leg-check.png
+
+      - name: Remove helper workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "synclab-automation-system"
+          git config user.email "207300498+synclab-automation-system@users.noreply.github.com"
+          git rm .github/workflows/sad-idle-right-leg-check.yml
+          git commit -m "chore: remove sad-idle right-leg diagnostic workflow"
+          git push origin HEAD:metadata-evidence/sad-idle
