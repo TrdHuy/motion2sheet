@@ -21,7 +21,7 @@ jobs:
       - name: Build exact-frame contact sheet
         run: |
           python - <<'PY'
-          from PIL import Image, ImageDraw, ImageFont
+          from PIL import Image, ImageDraw
           from pathlib import Path
 
           src = Path('sample/humanoid_motion/mixamo/sword-and-shield-run-1/preview.gif')
@@ -48,6 +48,9 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: sword-shield-run-1-all-frames
-          path: /tmp/all-frames.png
+          name: sword-shield-run-1-source-review
+          path: |
+            /tmp/all-frames.png
+            sample/humanoid_motion/mixamo/sword-and-shield-run-1/preview.gif
+            sample/humanoid_motion/mixamo/sword-and-shield-run-1/animation.json
           if-no-files-found: error
