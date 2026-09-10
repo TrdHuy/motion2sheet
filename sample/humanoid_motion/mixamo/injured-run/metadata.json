@@ -1,0 +1,61 @@
+{
+  "intent": "Looped injured/limping locomotion with an asymmetrical rhythm and a guarded upper-body posture rather than a neutral, symmetrical run cycle.",
+  "phases": [
+    {
+      "startFrame": 0,
+      "endFrame": 4,
+      "label": "rise from the low stance at the start of the loop"
+    },
+    {
+      "startFrame": 5,
+      "endFrame": 9,
+      "label": "open the stride and shift the pelvis toward +X"
+    },
+    {
+      "startFrame": 10,
+      "endFrame": 14,
+      "label": "reverse the transfer direction and descend"
+    },
+    {
+      "startFrame": 15,
+      "endFrame": 19,
+      "label": "recover from the lowest compression and return toward the loop-start pose"
+    }
+  ],
+  "keyPoses": [
+    {
+      "frame": 0,
+      "role": "loop start / low guarded stance"
+    },
+    {
+      "frame": 5,
+      "role": "pelvis rise peak / preparation peak"
+    },
+    {
+      "frame": 10,
+      "role": "strongest pelvis shift toward +X / open stride"
+    },
+    {
+      "frame": 15,
+      "role": "lowest pelvis / recoil compression"
+    },
+    {
+      "frame": 19,
+      "role": "loop closure / near return to the opening pose"
+    }
+  ],
+  "weightTransfer": "The pelvis rises from f0 to f5, shifts laterally toward +X and reaches its maximum around f10, descends to its lowest point around f15, then returns near its initial lateral position and height by f19. Support-foot identity and the injured side are not asserted.",
+  "bodyMechanics": "The pelvis establishes the primary rhythm through rise → lateral shift → drop/compression → return. Chest and shoulder rotation change through the cycle, while the arms counterbalance the torso, producing an asymmetrical and guarded running silhouette.",
+  "referenceUse": {
+    "recommended": [
+      "looped injured/limping locomotion",
+      "asymmetrical run cadence with pelvis rise, lateral shift, and drop/compression",
+      "guarded upper-body mechanics and arm counterbalance in injured locomotion"
+    ],
+    "notRecommendedAsPrimary": [
+      "neutral / symmetrical run cycle",
+      "exact support-foot or foot-contact timing",
+      "identifying the exact injured side"
+    ]
+  }
+}
