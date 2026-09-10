@@ -1,0 +1,333 @@
+name: sad-idle-evidence-generate
+
+on:
+  push:
+    branches:
+      - metadata-evidence/sad-idle
+    paths:
+      - .github/workflows/sad-idle-evidence-generate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact parent and trusted blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "bc3adebd68d6a699a371c874bcfb773ef59515e9"
+          test "$(git rev-parse HEAD:sample/humanoid_motion/mixamo/sad-idle/animation.json)" = "09d7400deee3cbadb711c677625fabc4639b0193"
+          test "$(git rev-parse HEAD:sample/humanoid_motion/mixamo/sad-idle/preview.gif)" = "163e1783c4153aed19205f4b13fdfe125720cfb9"
+
+      - name: Install image dependency
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Generate evidence from exact tracks
+        shell: bash
+        run: |
+          python - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          import json, math
+
+          base = 'sample/humanoid_motion/mixamo/sad-idle'
+          with open(f'{base}/animation.json', encoding='utf-8') as fh:
+              anim = json.load(fh)
+          gif = Image.open(f'{base}/preview.gif')
+
+          n = anim['frameCount']
+          assert n == 85
+          assert anim['fps'] == 30.0
+          assert abs(anim['durationSeconds'] - 2.8) < 1e-6
+          assert anim['loop'] is True
+          assert gif.n_frames == n
+          hips = anim['hips']['translations']
+
+          # Exact loop closure across every exported motion track.
+          assert anim['root']['translations'][0] == anim['root']['translations'][-1]
+          assert anim['root']['rotations'][0] == anim['root']['rotations'][-1]
+          assert anim['hips']['translations'][0] == anim['hips']['translations'][-1]
+          assert anim['hips']['rotations'][0] == anim['hips']['rotations'][-1]
+          for obj in anim['joints'].values():
+              assert obj['rotations'][0] == obj['rotations'][-1]
+
+          def qangle(track, frame):
+              q0, q = track[0], track[frame]
+              dot = abs(sum(a*b for a,b in zip(q0,q)))
+              dot = max(-1.0, min(1.0, dot))
+              return math.degrees(2.0 * math.acos(dot))
+
+          def signed_root_yaw(frame):
+              q = anim['root']['rotations'][frame]
+              # Root rotations for this clip are pure canonical Z yaw.
+              assert abs(q[1]) < 1e-12 and abs(q[2]) < 1e-12
+              return math.degrees(2.0 * math.atan2(q[3], q[0]))
+
+          def argmin_axis(axis, start=0, end=None):
+              end = n if end is None else end
+              return min(range(start, end), key=lambda i: hips[i][axis])
+
+          def argmax_axis(axis, start=0, end=None):
+              end = n if end is None else end
+              return max(range(start, end), key=lambda i: hips[i][axis])
+
+          # Motion-derived event candidates. Endpoint f84 duplicates f0 and is excluded
+          # from extrema searches so the seam cannot become a false phase event.
+          search_end = n - 1
+          f_turn = max(range(search_end), key=lambda i: abs(signed_root_yaw(i)))
+          f_xmax = argmax_axis(0, 0, search_end)
+          f_high = argmax_axis(2, f_xmax + 1, search_end)
+          f_late_low = argmin_axis(2, f_high + 1, search_end)
+          f_end = n - 1
+
+          assert f_turn == 16
+          assert f_xmax == 38
+          assert f_turn < f_xmax < f_high < f_late_low < f_end
+
+          selected_joints = [
+              'Hips', 'Spine', 'Chest', 'Neck', 'Head',
+              'LeftShoulder', 'RightShoulder',
+              'LeftUpperArm', 'RightUpperArm',
+              'LeftLowerArm', 'RightLowerArm',
+              'LeftUpperLeg', 'RightUpperLeg',
+          ]
+
+          def track_for(joint):
+              return anim['hips']['rotations'] if joint == 'Hips' else anim['joints'][joint]['rotations']
+
+          joint_peaks = {
+              joint: max(range(search_end), key=lambda i, j=joint: qangle(track_for(j), i))
+              for joint in selected_joints
+          }
+          joint_peak_angles = {
+              joint: qangle(track_for(joint), joint_peaks[joint])
+              for joint in selected_joints
+          }
+
+          summary = {
+              'frameCount': n,
+              'fps': anim['fps'],
+              'durationSeconds': anim['durationSeconds'],
+              'phaseEvents': {
+                  'rootYawExtreme': f_turn,
+                  'hipsXMaximum': f_xmax,
+                  'hipsHighestAfterXMax': f_high,
+                  'hipsLateLowAfterHigh': f_late_low,
+                  'loopClosure': f_end,
+              },
+              'hips': {
+                  'xMinFrame': argmin_axis(0,0,search_end),
+                  'xMaxFrame': argmax_axis(0,0,search_end),
+                  'yMinFrame': argmin_axis(1,0,search_end),
+                  'yMaxFrame': argmax_axis(1,0,search_end),
+                  'zMinFrame': argmin_axis(2,0,search_end),
+                  'zMaxFrame': argmax_axis(2,0,search_end),
+              },
+              'rootYawDegrees': {
+                  'minFrame': min(range(search_end), key=signed_root_yaw),
+                  'min': min(signed_root_yaw(i) for i in range(search_end)),
+                  'maxFrame': max(range(search_end), key=signed_root_yaw),
+                  'max': max(signed_root_yaw(i) for i in range(search_end)),
+              },
+              'jointPeakFramesFromF0': joint_peaks,
+              'jointPeakDegreesFromF0': {k: round(v,6) for k,v in joint_peak_angles.items()},
+          }
+          print('METRICS_JSON=' + json.dumps(summary, sort_keys=True))
+          for fr in sorted(set([0, f_turn, f_xmax, f_high, f_late_low, f_end])):
+              print(f'FRAME {fr}: hips={hips[fr]} rootYaw={signed_root_yaw(fr):+.6f}')
+
+          font_path='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+          title=ImageFont.truetype(font_path,26)
+          label=ImageFont.truetype(font_path,18)
+          small=ImageFont.truetype(font_path,15)
+          tiny=ImageFont.truetype(font_path,13)
+
+          def wrap(draw,text,font,max_width):
+              words=text.split(); lines=[]; cur=''
+              for word in words:
+                  trial=(cur+' '+word).strip()
+                  if draw.textbbox((0,0),trial,font=font)[2] <= max_width:
+                      cur=trial
+                  else:
+                      if cur: lines.append(cur)
+                      cur=word
+              if cur: lines.append(cur)
+              return lines
+
+          def frame_image(i, scale=1.55):
+              gif.seek(i)
+              im=gif.convert('RGB')
+              return im.resize((round(im.width*scale),round(im.height*scale)),Image.Resampling.NEAREST)
+
+          def panel(frame, heading, role=None, width=370, image_h=350):
+              im=frame_image(frame)
+              canvas=Image.new('RGB',(width,image_h+92),'white')
+              canvas.paste(im,((width-im.width)//2,0))
+              draw=ImageDraw.Draw(canvas)
+              draw.text((10,image_h+5),heading,font=label,fill='black')
+              if role:
+                  y=image_h+31
+                  for line in wrap(draw,role,small,width-20)[:3]:
+                      draw.text((10,y),line,font=small,fill='black'); y+=19
+              return canvas
+
+          # Phase evidence: each boundary is tied to a measured change in the canonical tracks.
+          phase_pairs=[
+              (0, f_turn, 1, 'turn / sway builds to root-yaw extreme'),
+              (f_turn+1, f_xmax, 2, 'pelvis continues lateral sweep after yaw apex'),
+              (f_xmax+1, f_high, 3, 'pelvis reverses lateral travel and rises'),
+              (f_high+1, f_late_low, 4, 'secondary downward settle'),
+              (f_late_low+1, f_end, 5, 'return to exact loop seam'),
+          ]
+          entries=[]
+          for s,e,p,name in phase_pairs:
+              entries += [(s,f'f{s} — P{p} start',name),(e,f'f{e} — P{p} end',name)]
+          pw,ph=370,442
+          canvas=Image.new('RGB',(5*pw,58+2*ph),'white'); draw=ImageDraw.Draw(canvas)
+          draw.text((18,14),'sad-idle phases — boundaries selected from canonical motion events',font=title,fill='black')
+          for k,(fr,heading,role) in enumerate(entries):
+              canvas.paste(panel(fr,heading,role,pw,350),((k%5)*pw,58+(k//5)*ph))
+          canvas.save(f'{base}/phases.png')
+
+          keyposes=[
+              (0,'loop start / reference'),
+              (f_turn,'maximum canonical body yaw'),
+              (f_xmax,'maximum +X pelvis excursion'),
+              (f_high,'highest pelvis after lateral apex'),
+              (f_late_low,'secondary late pelvis low'),
+              (f_end,'exact loop closure = f0'),
+          ]
+          pw=370
+          canvas=Image.new('RGB',(3*pw,58+2*470),'white'); draw=ImageDraw.Draw(canvas)
+          draw.text((18,14),'sad-idle key poses — exact frame labels from animation.json',font=title,fill='black')
+          for k,(fr,role) in enumerate(keyposes):
+              x,y,z=hips[fr]
+              text=f'{role} | hips X {x:+.4f}, Y {y:+.4f}, Z {z:+.4f} | root yaw {signed_root_yaw(fr):+.2f}°'
+              canvas.paste(panel(fr,f'f{fr}',text,pw,350),((k%3)*pw,58+(k//3)*470))
+          canvas.save(f'{base}/key-poses.png')
+
+          # Weight-transfer evidence: pelvis trajectory only. No support-foot/load-force claim.
+          wt=[0, f_turn, f_xmax, f_high, f_late_low, f_end]
+          roles={
+              0:'start', f_turn:'yaw apex', f_xmax:'+X pelvis apex',
+              f_high:'high rebound', f_late_low:'late low', f_end:'loop closure'
+          }
+          tw,th=340,370
+          canvas=Image.new('RGB',(3*tw,58+2*th+430),'white'); draw=ImageDraw.Draw(canvas)
+          draw.text((18,14),'weight-transfer evidence — pelvis path only; support side intentionally unassigned',font=title,fill='black')
+          for k,fr in enumerate(wt):
+              gif.seek(fr)
+              im=gif.convert('RGB').resize((286,286),Image.Resampling.NEAREST)
+              x0=(k%3)*tw; y0=58+(k//3)*th
+              canvas.paste(im,(x0+(tw-286)//2,y0))
+              x,y,z=hips[fr]
+              draw.text((x0+10,y0+294),f'f{fr} — {roles[fr]}',font=label,fill='black')
+              draw.text((x0+10,y0+322),f'X {x:+.4f} | forward {-y:+.4f} | Z {z:+.4f}',font=small,fill='black')
+              draw.text((x0+10,y0+343),f'root yaw {signed_root_yaw(fr):+.2f}°',font=small,fill='black')
+
+          chart_x0=75; chart_y0=58+2*th+60; chart_w=560; chart_h=280
+          draw.text((chart_x0,chart_y0-34),'hips path: X (right+) vs forward (-Y)',font=label,fill='black')
+          xs=[p[0] for p in hips]; fwds=[-p[1] for p in hips]
+          xmin,xmax=min(xs),max(xs); ymin,ymax=min(fwds),max(fwds)
+          padx=max((xmax-xmin)*0.12,1e-6); pady=max((ymax-ymin)*0.12,1e-6)
+          xmin-=padx; xmax+=padx; ymin-=pady; ymax+=pady
+          def mappt(x,y):
+              return (chart_x0+(x-xmin)/(xmax-xmin)*chart_w,
+                      chart_y0+chart_h-(y-ymin)/(ymax-ymin)*chart_h)
+          draw.rectangle((chart_x0,chart_y0,chart_x0+chart_w,chart_y0+chart_h),outline='black',width=2)
+          draw.line([mappt(x,y) for x,y in zip(xs,fwds)],fill='black',width=3)
+          for fr in [f_turn,f_xmax,f_high,f_late_low]:
+              px,py=mappt(xs[fr],fwds[fr]); r=6
+              draw.ellipse((px-r,py-r,px+r,py+r),fill='white',outline='black',width=2)
+              draw.text((px+8,py-20),f'f{fr}',font=tiny,fill='black')
+          px,py=mappt(xs[0],fwds[0]); r=7
+          draw.ellipse((px-r,py-r,px+r,py+r),fill='white',outline='black',width=2)
+          draw.text((px+8,py+5),'f0=f84',font=tiny,fill='black')
+
+          z_x0=700; z_y0=chart_y0; z_w=260; z_h=280
+          draw.text((z_x0,z_y0-34),'hips Z over time',font=label,fill='black')
+          zs=[p[2] for p in hips]
+          zmin,zmax=min(zs),max(zs); zpad=max((zmax-zmin)*0.12,1e-6)
+          zmin-=zpad; zmax+=zpad
+          def mapz(i,z):
+              return (z_x0+i/(n-1)*z_w, z_y0+z_h-(z-zmin)/(zmax-zmin)*z_h)
+          draw.rectangle((z_x0,z_y0,z_x0+z_w,z_y0+z_h),outline='black',width=2)
+          draw.line([mapz(i,z) for i,z in enumerate(zs)],fill='black',width=3)
+          for fr in [f_xmax,f_high,f_late_low]:
+              px,py=mapz(fr,zs[fr]); r=5
+              draw.ellipse((px-r,py-r,px+r,py+r),fill='white',outline='black',width=2)
+              draw.text((px+5,py-18),f'f{fr}',font=tiny,fill='black')
+          canvas.save(f'{base}/weight-transfer.png')
+
+          # Body-mechanics evidence: measured timing of major rotational departures from f0.
+          mechanics_joints=['Head','Chest','Hips','LeftUpperArm','RightUpperArm','LeftLowerArm','RightLowerArm']
+          events=[]
+          for joint in mechanics_joints:
+              fr=joint_peaks[joint]
+              events.append((fr,joint,joint_peak_angles[joint]))
+          events=sorted(events)
+          # Keep every distinct event frame, merging labels that share a frame.
+          merged=[]
+          for fr,joint,deg in events:
+              if merged and merged[-1][0] == fr:
+                  merged[-1][1].append((joint,deg))
+              else:
+                  merged.append([fr,[(joint,deg)]])
+          merged=merged[:7]
+
+          pw,ph=390,458
+          rows=2; cols=4
+          canvas=Image.new('RGB',(cols*pw,58+rows*ph),'white'); draw=ImageDraw.Draw(canvas)
+          draw.text((18,14),'body mechanics — peak pose departure timing measured from f0',font=title,fill='black')
+          for k,(fr,items) in enumerate(merged):
+              desc='; '.join(f'{joint} Δ{deg:.1f}°' for joint,deg in items)
+              canvas.paste(panel(fr,f'f{fr}',desc,pw,350),((k%cols)*pw,58+(k//cols)*ph))
+          summary_panel=Image.new('RGB',(pw,ph),'white'); sd=ImageDraw.Draw(summary_panel)
+          sd.text((14,15),'Measured coordination',font=label,fill='black')
+          lines=[
+              f'root yaw extreme: f{f_turn}',
+              f'pelvis +X extreme: f{f_xmax}',
+              f'pelvis high rebound: f{f_high}',
+              f'late pelvis low: f{f_late_low}',
+              '',
+              'Upper-body rotational peaks',
+          ] + [f'{joint}: f{joint_peaks[joint]} ({joint_peak_angles[joint]:.1f}°)' for joint in mechanics_joints]
+          y=50
+          for line in lines:
+              sd.text((14,y),line,font=small,fill='black'); y+=23
+          canvas.paste(summary_panel,(3*pw,58+ph))
+          canvas.save(f'{base}/body-mechanics.png')
+          PY
+
+      - name: Commit temporary evidence only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "synclab-automation-system"
+          git config user.email "207300498+synclab-automation-system@users.noreply.github.com"
+          git rm .github/workflows/sad-idle-evidence-generate.yml
+          git add sample/humanoid_motion/mixamo/sad-idle/phases.png \
+                  sample/humanoid_motion/mixamo/sad-idle/key-poses.png \
+                  sample/humanoid_motion/mixamo/sad-idle/weight-transfer.png \
+                  sample/humanoid_motion/mixamo/sad-idle/body-mechanics.png
+          git commit -m "docs: add evidence for Mixamo sad-idle metadata review"
+          git push origin HEAD:metadata-evidence/sad-idle
+
+      - name: Upload exact evidence for verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: sad-idle-evidence-exact
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            sample/humanoid_motion/mixamo/sad-idle/phases.png
+            sample/humanoid_motion/mixamo/sad-idle/key-poses.png
+            sample/humanoid_motion/mixamo/sad-idle/weight-transfer.png
+            sample/humanoid_motion/mixamo/sad-idle/body-mechanics.png
