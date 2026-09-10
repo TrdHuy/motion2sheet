@@ -1,0 +1,81 @@
+name: Temporary generate run review evidence
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/tmp-generate-run-evidence.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  generate-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Install image dependencies
+        run: python -m pip install --disable-pip-version-check pillow scipy
+      - name: Generate evidence from trusted run sources
+        shell: bash
+        run: |
+          python - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          from scipy.spatial.transform import Rotation as R
+          import json, math
+          from pathlib import Path
+          base=Path('sample/humanoid_motion/mixamo/run')
+          data=json.load(open(base/'animation.json'))
+          im=Image.open(base/'preview.gif')
+          assert data['frameCount']==20 and im.n_frames==20
+          frames=[]
+          for i in range(im.n_frames):
+              im.seek(i); frames.append(im.convert('RGB').copy())
+          font_path='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+          bold_path='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+          def font(sz,bold=False): return ImageFont.truetype(bold_path if bold else font_path,sz)
+          crop=(68,82,158,202); scale=3
+          fw=(crop[2]-crop[0])*scale; fh=(crop[3]-crop[1])*scale
+          def panel(idx,title,details,width,height):
+              card=Image.new('RGB',(width,height),'white'); d=ImageDraw.Draw(card)
+              fr=frames[idx].crop(crop).resize((fw,fh),Image.Resampling.NEAREST)
+              x=(width-fw)//2; y=45; card.paste(fr,(x,y))
+              d.rectangle([0,0,width-1,height-1],outline='black',width=2)
+              d.text((14,10),f'f{idx}',font=font(24,True),fill='black')
+              ty=y+fh+12; d.text((14,ty),title,font=font(18,True),fill='black'); ty+=28
+              for line in details:
+                  d.text((14,ty),line,font=font(15),fill='black'); ty+=22
+              return card
+          def grid(title,panels,cols,path,subtitle):
+              gap=18; margin=28; title_h=80
+              pw=max(p.width for p in panels); ph=max(p.height for p in panels); rows=math.ceil(len(panels)/cols)
+              sheet=Image.new('RGB',(margin*2+cols*pw+(cols-1)*gap,title_h+margin+rows*ph+(rows-1)*gap+margin),'white')
+              d=ImageDraw.Draw(sheet); d.text((margin,16),title,font=font(28,True),fill='black'); d.text((margin,50),subtitle,font=font(15),fill='black')
+              y0=title_h+margin
+              for k,p in enumerate(panels):
+                  sheet.paste(p,(margin+(k%cols)*(pw+gap),y0+(k//cols)*(ph+gap)))
+              sheet.save(path,optimize=True)
+          phases=[(0,'P1 start',['left knee drive begins']),(4,'P1 end',['left knee high / right leg down']),(5,'P2 start',['left leg starts lowering']),(9,'P2 end',['leg exchange advances']),(10,'P3 start',['right knee drive builds']),(14,'P3 end',['right knee high / left leg down']),(15,'P4 start',['right leg starts lowering']),(19,'P4 end',['returns to loop seam'])]
+          grid('run — phase boundary evidence',[panel(i,t,d,360,510) for i,t,d in phases],4,base/'phases.png','Only frames used to define phase boundaries are shown.')
+          keys=[(4,'stride extreme A',['left knee drive','right leg down/extended']),(8,'leg exchange A',['hips/legs near mid-exchange']),(13,'stride extreme B',['right knee drive','left leg down/extended']),(18,'leg exchange B',['return exchange before seam'])]
+          grid('run — key pose evidence',[panel(i,t,d,420,525) for i,t,d in keys],2,base/'key-poses.png','Selected poses mark the two stride extremes and the two exchange states.')
+          hx=[v[0] for v in data['hips']['translations']]
+          wt=[(4,'first down-leg configuration',[f'hips local X = {hx[4]:+.3f}','right leg down / left knee up']),(13,'opposite down-leg configuration',[f'hips local X = {hx[13]:+.3f}','left leg down / right knee up']),(19,'loop return',[f'hips local X = {hx[19]:+.3f}','returns near starting lateral X'])]
+          grid('run — weight transfer evidence',[panel(i,t,d,430,535) for i,t,d in wt],3,base/'weight-transfer.png','Pelvis X comes from animation.json (+X = character-right); no foot-contact flag is asserted.')
+          q=data['joints']['Chest']['rotations']
+          xyzw=[[v[1],v[2],v[3],v[0]] for v in q]
+          rz=R.from_quat(xyzw).as_euler('xyz',degrees=True)[:,2]
+          bm=[(4,'left knee-drive extreme',[f'Chest local Rz = {rz[4]:+.1f}°','arm carriage state A']),(8,'exchange state',[f'Chest local Rz = {rz[8]:+.1f}°','arm carriage passes through exchange']),(13,'right knee-drive extreme',[f'Chest local Rz = {rz[13]:+.1f}°','arm carriage state B'])]
+          grid('run — body mechanics evidence',[panel(i,t,d,450,535) for i,t,d in bm],3,base/'body-mechanics.png','Chest local rotation reverses across the two stride extremes; frame poses show the coupled arm/leg change.')
+          PY
+      - name: Commit evidence to PR branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add sample/humanoid_motion/mixamo/run/phases.png \
+                  sample/humanoid_motion/mixamo/run/key-poses.png \
+                  sample/humanoid_motion/mixamo/run/weight-transfer.png \
+                  sample/humanoid_motion/mixamo/run/body-mechanics.png
+          git commit -m 'docs: add run metadata review evidence'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
