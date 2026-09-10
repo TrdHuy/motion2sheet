@@ -1,0 +1,28 @@
+{
+  "intent": "Idle thở tại chỗ, lặp kín, với sway nhẹ toàn thân và nhịp pelvis lên–xuống; không có locomotion.",
+  "phases": [
+    "f0–f103: sway từ gần loop center sang cực -X, kết thúc ở tư thế pelvis thấp hơn.",
+    "f104–f172: cross từ -X sang +X; pelvis đi qua điểm cao nhất tại f148 rồi hạ vào cực +X.",
+    "f173–f244: sway ngược từ +X về -X, kết thúc ở cực -X thứ hai.",
+    "f245–f298: trở từ -X về loop center và đóng lại tư thế bắt đầu."
+  ],
+  "keyPoses": [
+    "f0: loop-start neutral, pelvis gần center.",
+    "f103: cực sway -X đầu tiên.",
+    "f148: pelvis cao nhất trong lúc cross qua center.",
+    "f172: cực sway +X.",
+    "f244: cực sway -X thứ hai."
+  ],
+  "weightTransfer": "Pelvis chuyển trọng lượng theo phương ngang theo chuỗi -X → +X → -X → center. Evidence đủ để xác nhận lateral weight shift, nhưng không đủ chắc để gán một chân trụ cụ thể nên không annotate support foot.",
+  "bodyMechanics": "Trong cung f103→f172, pelvis/lower body chuyển thấp → nâng lên → đạt cao nhất → hạ xuống khi đi ngang từ -X sang +X; torso, head và hai tay thả lỏng điều chỉnh liên tục cùng nhịp sway. Chuyển động vẫn tại chỗ, không xuất hiện bước locomotion.",
+  "referenceUse": {
+    "recommended": [
+      "breathing idle tại chỗ có lateral body sway rõ;",
+      "relaxed/low-energy humanoid idle cần secondary motion toàn thân."
+    ],
+    "notPrimary": [
+      "neutral idle gần như đứng yên, pelvis dịch chuyển tối thiểu;",
+      "locomotion hoặc step-cycle mechanics."
+    ]
+  }
+}
