@@ -1,0 +1,55 @@
+{
+  "intent": "A looped crouched walk with alternating steps while the body stays low and forward, accompanied by compact arm motion.",
+  "phases": [
+    {
+      "startFrame": 0,
+      "endFrame": 7,
+      "description": "leg A swing → placement"
+    },
+    {
+      "startFrame": 8,
+      "endFrame": 15,
+      "description": "leg B lift → swing-through"
+    },
+    {
+      "startFrame": 16,
+      "endFrame": 23,
+      "description": "leg B swing → placement"
+    },
+    {
+      "startFrame": 24,
+      "endFrame": 31,
+      "description": "leg A lift → swing-through to loop seam"
+    }
+  ],
+  "keyPoses": [
+    {
+      "frame": 4,
+      "role": "leg A placement"
+    },
+    {
+      "frame": 12,
+      "role": "leg B swing"
+    },
+    {
+      "frame": 20,
+      "role": "leg B placement"
+    },
+    {
+      "frame": 28,
+      "role": "leg A swing"
+    }
+  ],
+  "weightTransfer": "Pelvis shifts laterally toward +X/right into mid-cycle, then returns toward its starting lateral position by the loop seam. Support-leg identity is intentionally not asserted.",
+  "bodyMechanics": "Sustained hip/knee flexion and forward torso lean keep the body low; compact low arms accompany opposed root/chest yaw changes across the cycle.",
+  "referenceUse": {
+    "recommended": [
+      "crouched / low-profile locomotion cadence",
+      "alternating leg placement and lateral pelvis transfer in a sustained crouch",
+      "compact upper-body and arm mechanics for crouched walking"
+    ],
+    "notRecommendedAsPrimary": [
+      "upright walk/run posture"
+    ]
+  }
+}
