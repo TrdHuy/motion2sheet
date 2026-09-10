@@ -1,0 +1,25 @@
+name: Metadata Evidence Source Export
+
+on:
+  push:
+    branches:
+      - metadata-evidence/sword-and-shield-run
+
+jobs:
+  export-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch commit
+        uses: actions/checkout@v4
+      - name: Stage trusted review source
+        run: |
+          mkdir -p review-source
+          cp sample/humanoid_motion/mixamo/sword-and-shield-run/animation.json review-source/animation.json
+          cp sample/humanoid_motion/mixamo/sword-and-shield-run/preview.gif review-source/preview.gif
+      - name: Upload trusted review source
+        uses: actions/upload-artifact@v4
+        with:
+          name: sword-and-shield-run-review-source
+          path: review-source/
+          if-no-files-found: error
+          retention-days: 1
