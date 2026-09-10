@@ -1,0 +1,149 @@
+name: sad-idle-evidence-polish
+
+on:
+  push:
+    branches:
+      - metadata-evidence/sad-idle
+    paths:
+      - .github/workflows/sad-idle-evidence-polish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  polish-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 8
+
+      - name: Verify trusted source and existing evidence scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor bc3adebd68d6a699a371c874bcfb773ef59515e9 HEAD
+          test "$(git rev-parse HEAD:sample/humanoid_motion/mixamo/sad-idle/animation.json)" = "09d7400deee3cbadb711c677625fabc4639b0193"
+          test "$(git rev-parse HEAD:sample/humanoid_motion/mixamo/sad-idle/preview.gif)" = "163e1783c4153aed19205f4b13fdfe125720cfb9"
+          test -s sample/humanoid_motion/mixamo/sad-idle/weight-transfer.png
+          test -s sample/humanoid_motion/mixamo/sad-idle/body-mechanics.png
+
+      - run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Regenerate only presentation-corrected evidence
+        shell: bash
+        run: |
+          python - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          import json, math
+
+          base='sample/humanoid_motion/mixamo/sad-idle'
+          anim=json.load(open(f'{base}/animation.json',encoding='utf-8'))
+          gif=Image.open(f'{base}/preview.gif')
+          n=anim['frameCount']; hips=anim['hips']['translations']
+          assert n==85 and gif.n_frames==85
+
+          def qangle(track,frame):
+              q0,q=track[0],track[frame]
+              dot=max(-1.0,min(1.0,abs(sum(a*b for a,b in zip(q0,q)))))
+              return math.degrees(2*math.acos(dot))
+          def yaw(i):
+              q=anim['root']['rotations'][i]
+              return math.degrees(2*math.atan2(q[3],q[0]))
+          def amin(axis,start=0,end=84): return min(range(start,end),key=lambda i:hips[i][axis])
+          def amax(axis,start=0,end=84): return max(range(start,end),key=lambda i:hips[i][axis])
+
+          fturn=max(range(84),key=lambda i:abs(yaw(i)))
+          fx=amax(0); fhigh=amax(2,fx+1); flow=amin(2,fhigh+1); fend=84
+          assert (fturn,fx,fhigh,flow,fend)==(16,38,56,68,84)
+
+          font='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+          title=ImageFont.truetype(font,22)
+          label=ImageFont.truetype(font,18)
+          small=ImageFont.truetype(font,15)
+          tiny=ImageFont.truetype(font,13)
+
+          # weight-transfer.png — same source frames/data, title resized so it is fully visible.
+          wt=[0,fturn,fx,fhigh,flow,fend]
+          roles={0:'start',fturn:'yaw apex',fx:'+X pelvis apex',fhigh:'high rebound',flow:'late low',fend:'loop endpoint'}
+          tw,th=340,370
+          canvas=Image.new('RGB',(3*tw,58+2*th+430),'white'); d=ImageDraw.Draw(canvas)
+          d.text((18,14),'weight-transfer evidence — pelvis path only; support side intentionally unassigned',font=title,fill='black')
+          for k,fr in enumerate(wt):
+              gif.seek(fr); im=gif.convert('RGB').resize((286,286),Image.Resampling.NEAREST)
+              x0=(k%3)*tw; y0=58+(k//3)*th; canvas.paste(im,(x0+(tw-286)//2,y0))
+              x,y,z=hips[fr]
+              d.text((x0+10,y0+294),f'f{fr} — {roles[fr]}',font=label,fill='black')
+              d.text((x0+10,y0+322),f'X {x:+.4f} | forward {-y:+.4f} | Z {z:+.4f}',font=small,fill='black')
+              d.text((x0+10,y0+343),f'root yaw {yaw(fr):+.2f}°',font=small,fill='black')
+          cx,cy,cw,ch=75,58+2*th+60,560,280
+          d.text((cx,cy-34),'hips path: X (right+) vs forward (-Y)',font=label,fill='black')
+          xs=[p[0] for p in hips]; fw=[-p[1] for p in hips]
+          xmin,xmax=min(xs),max(xs); ymin,ymax=min(fw),max(fw)
+          px=max((xmax-xmin)*.12,1e-6); py=max((ymax-ymin)*.12,1e-6)
+          xmin-=px;xmax+=px;ymin-=py;ymax+=py
+          def mp(x,y): return (cx+(x-xmin)/(xmax-xmin)*cw,cy+ch-(y-ymin)/(ymax-ymin)*ch)
+          d.rectangle((cx,cy,cx+cw,cy+ch),outline='black',width=2); d.line([mp(x,y) for x,y in zip(xs,fw)],fill='black',width=3)
+          for fr in [fturn,fx,fhigh,flow]:
+              x,y=mp(xs[fr],fw[fr]); r=6; d.ellipse((x-r,y-r,x+r,y+r),fill='white',outline='black',width=2); d.text((x+8,y-20),f'f{fr}',font=tiny,fill='black')
+          x,y=mp(xs[0],fw[0]); r=7; d.ellipse((x-r,y-r,x+r,y+r),fill='white',outline='black',width=2); d.text((x+8,y+5),'hips f0=f84',font=tiny,fill='black')
+          zx,zy,zw,zh=700,cy,260,280; zs=[p[2] for p in hips]
+          d.text((zx,zy-34),'hips Z over time',font=label,fill='black'); zmin,zmax=min(zs),max(zs); zp=max((zmax-zmin)*.12,1e-6); zmin-=zp;zmax+=zp
+          def mz(i,z): return (zx+i/(n-1)*zw,zy+zh-(z-zmin)/(zmax-zmin)*zh)
+          d.rectangle((zx,zy,zx+zw,zy+zh),outline='black',width=2); d.line([mz(i,z) for i,z in enumerate(zs)],fill='black',width=3)
+          for fr in [fx,fhigh,flow]:
+              x,y=mz(fr,zs[fr]); r=5; d.ellipse((x-r,y-r,x+r,y+r),fill='white',outline='black',width=2); d.text((x+5,y-18),f'f{fr}',font=tiny,fill='black')
+          canvas.save(f'{base}/weight-transfer.png')
+
+          # body-mechanics.png — preserve measured events; show seam residual with six decimals.
+          selected=['Hips','Spine','Chest','Neck','Head','LeftShoulder','RightShoulder','LeftUpperArm','RightUpperArm','LeftLowerArm','RightLowerArm','LeftUpperLeg','RightUpperLeg']
+          def track(j): return anim['hips']['rotations'] if j=='Hips' else anim['joints'][j]['rotations']
+          peaks={j:max(range(84),key=lambda i,j=j:qangle(track(j),i)) for j in selected}
+          pang={j:qangle(track(j),peaks[j]) for j in selected}
+          closure={j:qangle(o['rotations'],84) for j,o in anim['joints'].items()}; maxj=max(closure,key=closure.get); maxgap=closure[maxj]
+          mechanics=['Head','Chest','Hips','LeftUpperArm','RightUpperArm','LeftLowerArm','RightLowerArm']
+          events=sorted((peaks[j],j,pang[j]) for j in mechanics); merged=[]
+          for fr,j,deg in events:
+              if merged and merged[-1][0]==fr: merged[-1][1].append((j,deg))
+              else: merged.append([fr,[(j,deg)]])
+
+          def frame_image(i):
+              gif.seek(i); im=gif.convert('RGB'); return im.resize((347,347),Image.Resampling.NEAREST)
+          def wrap(draw,text,font,maxw):
+              out=[]; cur=''
+              for word in text.split():
+                  t=(cur+' '+word).strip()
+                  if draw.textbbox((0,0),t,font=font)[2]<=maxw: cur=t
+                  else:
+                      if cur: out.append(cur)
+                      cur=word
+              if cur: out.append(cur)
+              return out
+          def panel(fr,desc,w=390,h=350):
+              c=Image.new('RGB',(w,h+92),'white'); c.paste(frame_image(fr),((w-347)//2,0)); q=ImageDraw.Draw(c)
+              q.text((10,h+5),f'f{fr}',font=label,fill='black'); y=h+31
+              for line in wrap(q,desc,small,w-20)[:3]: q.text((10,y),line,font=small,fill='black'); y+=19
+              return c
+
+          pw,ph=390,458; canvas=Image.new('RGB',(4*pw,58+2*ph),'white'); d=ImageDraw.Draw(canvas)
+          d.text((18,14),'body mechanics — peak pose departure timing measured from f0',font=ImageFont.truetype(font,26),fill='black')
+          for k,(fr,items) in enumerate(merged[:7]):
+              desc='; '.join(f'{j} Δ{deg:.1f}°' for j,deg in items); canvas.paste(panel(fr,desc),((k%4)*pw,58+(k//4)*ph))
+          s=Image.new('RGB',(pw,ph),'white'); sd=ImageDraw.Draw(s); sd.text((14,15),'Measured coordination',font=label,fill='black')
+          lines=[f'root yaw extreme: f{fturn}',f'pelvis +X extreme: f{fx}',f'pelvis high rebound: f{fhigh}',f'late pelvis low: f{flow}','','Rotational departure peaks']+[f'{j}: f{peaks[j]} ({pang[j]:.1f}°)' for j in mechanics]+['',f'max joint endpoint gap: {maxj}',f'{maxgap:.6f}° vs f0']
+          y=50
+          for line in lines: sd.text((14,y),line,font=small,fill='black'); y+=23
+          canvas.paste(s,(3*pw,58+ph)); canvas.save(f'{base}/body-mechanics.png')
+          print(f'polished; max endpoint gap {maxj}={maxgap:.9f} deg')
+          PY
+
+      - name: Commit polished evidence and remove helper workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "synclab-automation-system"
+          git config user.email "207300498+synclab-automation-system@users.noreply.github.com"
+          git rm .github/workflows/sad-idle-evidence-polish.yml
+          git add sample/humanoid_motion/mixamo/sad-idle/weight-transfer.png sample/humanoid_motion/mixamo/sad-idle/body-mechanics.png
+          git commit -m "docs: polish sad-idle evidence labels"
+          git push origin HEAD:metadata-evidence/sad-idle
