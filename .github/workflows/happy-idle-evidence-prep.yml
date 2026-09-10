@@ -1,0 +1,81 @@
+name: Happy Idle Evidence Prep
+
+on:
+  push:
+    branches:
+      - metadata-evidence/happy-idle
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install image dependency
+        run: python -m pip install --disable-pip-version-check pillow
+      - name: Export source frames and analysis bundle
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageDraw
+          import json, shutil
+
+          src = Path('sample/humanoid_motion/mixamo/happy-idle')
+          out = Path('happy-idle-analysis')
+          frames_dir = out / 'frames'
+          frames_dir.mkdir(parents=True, exist_ok=True)
+
+          gif = Image.open(src / 'preview.gif')
+          frames = []
+          durations_ms = []
+          for i in range(getattr(gif, 'n_frames', 1)):
+              gif.seek(i)
+              rgba = gif.convert('RGBA')
+              frames.append(rgba.copy())
+              durations_ms.append(int(gif.info.get('duration', 0)))
+              rgba.save(frames_dir / f'g{i:03d}.png')
+
+          # Contact sheet labels GIF indices only. Animation frame labels are assigned
+          # later from animation.json after frame/time correspondence is verified.
+          thumb_w = 180
+          label_h = 24
+          cols = 8
+          rows = (len(frames) + cols - 1) // cols
+          cell_h = thumb_w + label_h
+          sheet = Image.new('RGB', (cols * thumb_w, rows * cell_h), 'white')
+          draw = ImageDraw.Draw(sheet)
+          for i, frame in enumerate(frames):
+              rgb = Image.new('RGB', frame.size, 'white')
+              if frame.mode == 'RGBA':
+                  rgb.paste(frame, mask=frame.getchannel('A'))
+              else:
+                  rgb.paste(frame.convert('RGB'))
+              rgb.thumbnail((thumb_w, thumb_w))
+              x = (i % cols) * thumb_w + (thumb_w - rgb.width) // 2
+              y0 = (i // cols) * cell_h
+              y = y0 + (thumb_w - rgb.height) // 2
+              sheet.paste(rgb, (x, y))
+              draw.text(((i % cols) * thumb_w + 6, y0 + thumb_w + 4), f'g{i}', fill='black')
+          sheet.save(out / 'contact-sheet.png')
+
+          info = {
+              'gifFrameCount': len(frames),
+              'gifDurationsMs': durations_ms,
+              'gifTotalDurationMs': sum(durations_ms),
+              'gifSize': list(frames[0].size) if frames else None,
+          }
+          (out / 'gif-info.json').write_text(json.dumps(info, indent=2), encoding='utf-8')
+          shutil.copy2(src / 'animation.json', out / 'animation.json')
+          shutil.copy2(src / 'preview.gif', out / 'preview.gif')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: happy-idle-analysis
+          path: happy-idle-analysis
+          if-no-files-found: error
+          retention-days: 1
