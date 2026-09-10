@@ -78,6 +78,13 @@ jobs:
           else
             bash tests/motion/humanoid_motion/ci/run_smoke.sh "$ROOT"
           fi
+      - name: Stage walker-walk source for evidence analysis
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROOT/evidence-source/walker-walk"
+          cp sample/humanoid_motion/mixamo/walker-walk/animation.json "$ROOT/evidence-source/walker-walk/animation.json"
+          cp sample/humanoid_motion/mixamo/walker-walk/preview.gif "$ROOT/evidence-source/walker-walk/preview.gif"
       - name: Upload consolidated Humanoid Motion proof
         if: always()
         uses: actions/upload-artifact@v4
