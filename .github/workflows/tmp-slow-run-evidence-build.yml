@@ -1,0 +1,227 @@
+name: tmp slow-run evidence build
+
+on:
+  push:
+    branches:
+      - metadata-evidence/slow-run
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: metadata-evidence/slow-run
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Pillow
+        run: python -m pip install --quiet pillow
+      - name: Build evidence from trusted source
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, math
+          from pathlib import Path
+          from PIL import Image, ImageDraw, ImageFont, ImageSequence
+
+          src = Path('sample/humanoid_motion/mixamo/slow-run')
+          out = src
+          data = json.loads((src / 'animation.json').read_text())
+          frame_count = int(data['frameCount'])
+          fps = float(data['fps'])
+          if frame_count != 23 or abs(fps - 30.0) > 1e-9:
+              raise RuntimeError(f'unexpected trusted timing: frameCount={frame_count}, fps={fps}')
+
+          gif = Image.open(src / 'preview.gif')
+          gif_frames = [fr.convert('RGB').copy() for fr in ImageSequence.Iterator(gif)]
+          if len(gif_frames) != frame_count:
+              raise RuntimeError(f'cannot index-align preview: gif={len(gif_frames)} animation={frame_count}')
+          # One encoded GIF image exists for every canonical animation frame.
+          # Use direct index alignment fN -> GIF image N; do not resample by GIF duration.
+
+          hips = data['hips']
+          hips_t = hips.get('translations') or hips.get('positions')
+          if not hips_t or len(hips_t) != frame_count:
+              raise RuntimeError('trusted hips translation channel missing')
+
+          def q_angle_deg(a, b):
+              dot = abs(sum(float(x)*float(y) for x, y in zip(a, b)))
+              dot = min(1.0, max(-1.0, dot))
+              return math.degrees(2.0 * math.acos(dot))
+
+          def rots(name):
+              if name == 'hips':
+                  return data['hips']['rotations']
+              return data['joints'][name]['rotations']
+
+          def metrics(name):
+              r = rots(name)
+              rel = [q_angle_deg(r[0], q) for q in r]
+              step = [0.0] + [q_angle_deg(r[i-1], r[i]) for i in range(1, frame_count)]
+              return {
+                  'rel': rel,
+                  'step': step,
+                  'max_rel_f': max(range(frame_count), key=lambda i: rel[i]),
+                  'max_rel': max(rel),
+                  'max_step_f': max(range(frame_count), key=lambda i: step[i]),
+                  'max_step': max(step),
+              }
+
+          m = {n: metrics(n) for n in [
+              'hips','Spine','Chest','LeftShoulder','RightShoulder',
+              'LeftUpperArm','RightUpperArm','LeftHand','RightHand',
+              'LeftUpperLeg','RightUpperLeg','LeftLowerLeg','RightLowerLeg'
+          ]}
+
+          # Data assertions used by the reviewed labels.
+          expected_rel = {
+              'hips':15,'Spine':15,'Chest':15,'LeftUpperArm':15,'RightUpperArm':15,
+              'LeftShoulder':16,'RightShoulder':16,'LeftUpperLeg':16,'RightLowerLeg':16,
+              'RightUpperLeg':5,'LeftLowerLeg':5,
+          }
+          for name, frame in expected_rel.items():
+              if m[name]['max_rel_f'] != frame:
+                  raise RuntimeError(f'{name} max relative rotation moved: {m[name]["max_rel_f"]} != {frame}')
+          if m['Chest']['max_step_f'] != 13 or m['Spine']['max_step_f'] != 14:
+              raise RuntimeError('torso transition extrema moved')
+
+          xs = [float(v[0]) for v in hips_t]
+          zs = [float(v[2]) for v in hips_t]
+          if min(range(frame_count), key=lambda i: xs[i]) != 11:
+              raise RuntimeError('pelvis leftmost frame moved')
+          if max(range(frame_count), key=lambda i: xs[i]) != 20:
+              raise RuntimeError('pelvis rightmost frame moved')
+          if max(range(frame_count), key=lambda i: zs[i]) != 5:
+              raise RuntimeError('first/highest pelvis frame moved')
+          if min(range(frame_count), key=lambda i: zs[i]) != 20:
+              raise RuntimeError('lowest pelvis frame moved')
+
+          font_path='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+          bold_path='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+          def F(size,bold=False):
+              return ImageFont.truetype(bold_path if bold else font_path,size)
+
+          BG=(245,245,245); PANEL=(18,18,18); TEXT=(20,20,20); WHITE=(245,245,245); MUTED=(95,95,95)
+          RED=(186,42,42); BLUE=(40,90,165); GREEN=(35,120,75); ORANGE=(205,115,25)
+
+          def frame_crop(f, size=(250,340)):
+              return gif_frames[f].crop((36,18,188,224)).resize(size, Image.Resampling.NEAREST)
+
+          def card(draw, canvas, x,y,w,h,f,title,subtitle=None,accent=None,title_size=20,sub_size=15):
+              draw.rounded_rectangle((x,y,x+w,y+h),radius=18,fill=PANEL)
+              im=frame_crop(f,(w-20,h-92))
+              canvas.paste(im,(x+10,y+10))
+              draw.text((x+14,y+h-76),f'f{f}',font=F(28,True),fill=WHITE)
+              draw.text((x+76,y+h-74),title,font=F(title_size,True),fill=WHITE)
+              if subtitle:
+                  draw.text((x+14,y+h-40),subtitle,font=F(sub_size),fill=(210,210,210))
+              if accent:
+                  draw.rectangle((x,y,x+7,y+h),fill=accent)
+
+          def header(canvas,title,subtitle=None):
+              d=ImageDraw.Draw(canvas)
+              d.text((50,28),title,font=F(34,True),fill=TEXT)
+              if subtitle:
+                  d.text((50,75),subtitle,font=F(18),fill=MUTED)
+
+          # phases.png: exactly the eight boundary frames used by four phases.
+          phase_frames=[(0,'Start A'),(5,'End A'),(6,'Start B'),(11,'End B'),(12,'Start C'),(16,'End C'),(17,'Start D'),(22,'End D / loop')]
+          can=Image.new('RGB',(1600,1060),BG); dr=ImageDraw.Draw(can)
+          header(can,'phases.png — slow-run','Frame indices from animation.json (30 fps, 23 frames); images use direct fN -> GIF frame N alignment.')
+          cw,ch=355,390; xgrid=[50,430,810,1190]; ygrid=[145,560]
+          for i,(f,t) in enumerate(phase_frames):
+              card(dr,can,xgrid[i%4],ygrid[i//4],cw,ch,f,t,accent=[BLUE,GREEN,ORANGE,RED][i//2%4])
+          phase_lines=[('f0–f5: stride A + pelvis rise',BLUE),('f6–f11: recovery + pelvis lower',GREEN),('f12–f16: stride B + pelvis rise',ORANGE),('f17–f22: recovery + loop return',RED)]
+          xpos=[50,410,790,1160]
+          for (s,c),x in zip(phase_lines,xpos):
+              dr.text((x,970),s,font=F(17,True),fill=c)
+          can.save(out/'phases.png')
+
+          # key-poses.png
+          keyposes=[
+              (0,'Loop baseline','open / close cycle'),
+              (5,'Stride extreme A','first pelvis high'),
+              (11,'Mid-cycle','leftmost pelvis'),
+              (16,'Stride extreme B','opposite leg cluster peaks'),
+              (20,'Low/right pelvis','lowest + rightmost pelvis'),
+          ]
+          can=Image.new('RGB',(1650,630),BG); dr=ImageDraw.Draw(can)
+          header(can,'key-poses.png — slow-run','Only functionally distinct poses retained for review.')
+          for i,(f,t,s) in enumerate(keyposes):
+              card(dr,can,35+i*323,145,300,430,f,t,s,accent=[BLUE,ORANGE,GREEN,BLUE,RED][i],title_size=17,sub_size=14)
+          can.save(out/'key-poses.png')
+
+          # weight-transfer.png: visual frames + exact pelvis X/Z curves. No support-foot assertion.
+          wframes=[0,5,11,16,20,22]
+          can=Image.new('RGB',(1700,1030),BG); dr=ImageDraw.Draw(can)
+          header(can,'weight-transfer.png — slow-run','No planted/support side asserted; evidence uses pelvis translation from animation.json only.')
+          roles={0:'baseline',5:'high A',11:'leftmost',16:'high B',20:'low/right',22:'loop return'}
+          for i,f in enumerate(wframes):
+              v=hips_t[f]
+              card(dr,can,40+i*275,145,250,380,f,roles[f],f'X {v[0]:+.3f} | Z {v[2]:+.3f}',accent=BLUE if f<12 else ORANGE,title_size=19,sub_size=14)
+          dr.text((50,555),'Pelvis X (+X = right):',font=F(22,True),fill=TEXT)
+          dr.text((315,555),'f0 → f5 → f11 (leftmost) → f16 → f20 (rightmost) → f22',font=F(20),fill=TEXT)
+          dr.rounded_rectangle((80,640,1620,940),radius=18,fill=(255,255,255),outline=(190,190,190),width=2)
+          def lineplot(vals,ytop,ybottom,label,color):
+              vmin,vmax=min(vals),max(vals); pad=(vmax-vmin)*0.08 or 0.01; vmin-=pad; vmax+=pad
+              xL,xR=145,1580
+              dr.line((xL,ybottom,xR,ybottom),fill=(170,170,170),width=2)
+              pts=[]
+              for f,v in enumerate(vals):
+                  x=xL+(xR-xL)*f/(len(vals)-1); y=ybottom-(ybottom-ytop)*(v-vmin)/(vmax-vmin); pts.append((x,y))
+              dr.line(pts,fill=color,width=4)
+              for f in wframes:
+                  x,y=pts[f]; dr.ellipse((x-6,y-6,x+6,y+6),fill=color,outline=(255,255,255),width=2); dr.text((x-12,y-28),f'f{f}',font=F(14,True),fill=color)
+              dr.text((90,ytop-3),label,font=F(18,True),fill=color)
+              dr.text((xR+10,ybottom-10),'frame',font=F(14),fill=MUTED)
+          lineplot(xs,675,770,'X lateral',BLUE)
+          lineplot(zs,825,920,'Z vertical',ORANGE)
+          can.save(out/'weight-transfer.png')
+
+          # body-mechanics.png: broad coordination only; no unsupported strict proximal-to-distal chain.
+          bframes=[
+              (5,'Stride A','leg cluster A extreme'),
+              (11,'Mid-cycle','leg configuration swaps'),
+              (13,'Chest change','max Δrot / frame'),
+              (15,'Trunk/arms apex','max deviation vs f0'),
+              (16,'Stride B + follow','shoulders/hands + leg peak'),
+          ]
+          can=Image.new('RGB',(1680,770),BG); dr=ImageDraw.Draw(can)
+          header(can,'body-mechanics.png — slow-run','Alternating leg cycle + trunk/arm rotation; no strict proximal→distal chain asserted when extrema cluster at f15–f16.')
+          for i,(f,t,s) in enumerate(bframes):
+              card(dr,can,35+i*326,145,305,455,f,t,s,accent=[ORANGE,GREEN,BLUE,RED,ORANGE][i],title_size=17,sub_size=14)
+          dr.rounded_rectangle((45,625,1635,735),radius=15,fill=(255,255,255),outline=(190,190,190),width=2)
+          dr.text((65,642),'Rotation data:',font=F(18,True),fill=TEXT)
+          dr.text((230,642),f'Chest max step f13 ({m["Chest"]["max_step"]:.2f}°) → Spine max step f14 ({m["Spine"]["max_step"]:.2f}°) → hips/spine/chest + upper arms max deviation at f15.',font=F(16),fill=TEXT)
+          dr.text((230,682),'Shoulders max deviation at f16; LeftUpperLeg + RightLowerLeg max deviation at f16. Arms reverse with the opposite half-stride.',font=F(16),fill=TEXT)
+          can.save(out/'body-mechanics.png')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slow-run-evidence-final
+          path: |
+            sample/humanoid_motion/mixamo/slow-run/phases.png
+            sample/humanoid_motion/mixamo/slow-run/key-poses.png
+            sample/humanoid_motion/mixamo/slow-run/weight-transfer.png
+            sample/humanoid_motion/mixamo/slow-run/body-mechanics.png
+          if-no-files-found: error
+          retention-days: 1
+      - name: Commit evidence
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add sample/humanoid_motion/mixamo/slow-run/phases.png \
+                  sample/humanoid_motion/mixamo/slow-run/key-poses.png \
+                  sample/humanoid_motion/mixamo/slow-run/weight-transfer.png \
+                  sample/humanoid_motion/mixamo/slow-run/body-mechanics.png
+          if git diff --cached --quiet; then
+            echo 'Evidence already matches; no commit needed.'
+            exit 0
+          fi
+          git commit -m 'docs: add slow-run metadata evidence'
+          git push origin HEAD:metadata-evidence/slow-run
