@@ -1,0 +1,71 @@
+{
+  "intent": "In-place melee combo composed of two consecutive strikes: overhead anticipation/wind-up → first strike → recoil/reload → second strike opening laterally → recovery to the initial stance.",
+  "phases": [
+    {
+      "startFrame": 0,
+      "endFrame": 44,
+      "description": "Anticipation: from the initial stance, both hands gather and rise into an overhead wind-up."
+    },
+    {
+      "startFrame": 45,
+      "endFrame": 64,
+      "description": "First strike: both hands sweep down from overhead and across the body."
+    },
+    {
+      "startFrame": 65,
+      "endFrame": 78,
+      "description": "Recoil/reload: the torso moves back/leans and lowers toward the f73 region before reloading."
+    },
+    {
+      "startFrame": 79,
+      "endFrame": 93,
+      "description": "Second strike: the torso rotates open and the arms extend laterally toward a wide extension."
+    },
+    {
+      "startFrame": 94,
+      "endFrame": 140,
+      "description": "Recovery: follow-through, then the torso and arms return near the f0 stance to close the loop."
+    }
+  ],
+  "keyPoses": [
+    {
+      "frame": 0,
+      "role": "ready stance / combo start"
+    },
+    {
+      "frame": 44,
+      "role": "overhead wind-up"
+    },
+    {
+      "frame": 63,
+      "role": "first-strike extension"
+    },
+    {
+      "frame": 73,
+      "role": "recoil/reload nadir",
+      "description": "Hips Z reaches an approximate minimum of -0.233."
+    },
+    {
+      "frame": 93,
+      "role": "second-strike wide extension"
+    }
+  ],
+  "weightTransfer": "The pelvis is used as a proxy for weight transfer. During the first strike, the pelvis shifts strongly along +X from f46 (X=-0.468) to f56 (X=+0.413). During the second strike, the pelvis moves from f79 (X=+0.123, Y=+0.104) to f94 (X=-0.110, Y=-0.177), reversing toward -X and advancing forward along the canonical -Y axis. No support/planted foot is assigned.",
+  "bodyMechanics": "During the second strike, hips/chest rotation increases strongly at f84; distal movement of the right hand peaks later at f89-f91; the right shoulder continues follow-through to f93. The observed coordination is core rotation → right-hand/arm extension → shoulder follow-through.",
+  "referenceUse": {
+    "recommended": [
+      "standing two-hit melee combo timing",
+      "anticipation → strike → recoil/reload → second strike → recovery",
+      "pelvis/core-driven upper-body attack coordination"
+    ],
+    "notRecommendedAsPrimary": [
+      "weapon-specific grip or blade path",
+      "exact hit/contact timing",
+      "support/planted-foot identification"
+    ]
+  },
+  "notes": [
+    "An exact impact/contact frame is not identified because preview.gif has no target/contact event.",
+    "No support/planted foot is assigned because the source does not provide sufficient contact/force event evidence to determine the support side."
+  ]
+}
