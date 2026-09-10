@@ -1,4 +1,4 @@
-name: Standing Idle To Fight Idle Analysis
+name: Standing Idle To Fight Idle Evidence Review
 
 on:
   pull_request:
@@ -8,10 +8,11 @@ on:
       - 'sample/humanoid_motion/mixamo/standing-idle-to-fight-idle/**'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  analyze-source:
+  generate-evidence:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact PR head
@@ -24,10 +25,10 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install analysis tooling
+      - name: Install evidence tooling
         run: python -m pip install pillow
 
-      - name: Analyze trusted source
+      - name: Generate evidence from trusted source
         shell: bash
         run: |
           set -euo pipefail
@@ -38,137 +39,204 @@ jobs:
           from PIL import Image, ImageDraw, ImageFont
 
           root = Path('sample/humanoid_motion/mixamo/standing-idle-to-fight-idle')
-          out = Path('build/standing-idle-to-fight-idle-analysis')
-          out.mkdir(parents=True, exist_ok=True)
           animation = json.loads((root / 'animation.json').read_text())
+          assert animation['id'] == 'standing-idle-to-fight-idle'
           assert animation['frameCount'] == 31
           assert animation['fps'] == 30.0
+          assert animation['durationSeconds'] == 1.0
           assert animation['coordinateSystem']['rightAxis'] == '+X'
           assert animation['coordinateSystem']['upAxis'] == '+Z'
           assert animation['quaternionConvention']['componentOrder'] == 'wxyz'
 
           gif = Image.open(root / 'preview.gif')
-          assert getattr(gif, 'n_frames', 1) == animation['frameCount'], (gif.n_frames, animation['frameCount'])
+          assert getattr(gif, 'n_frames', 1) == animation['frameCount']
           frames = []
-          for i in range(animation['frameCount']):
-              gif.seek(i)
+          for frame_id in range(animation['frameCount']):
+              gif.seek(frame_id)
               frames.append(gif.convert('RGB').copy())
 
           regular = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
           bold = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
-          title_font = ImageFont.truetype(bold, 30)
-          frame_font = ImageFont.truetype(bold, 18)
+          title_font = ImageFont.truetype(bold, 34)
+          subtitle_font = ImageFont.truetype(regular, 18)
+          frame_font = ImageFont.truetype(bold, 24)
+          label_font = ImageFont.truetype(regular, 16)
+          label_bold = ImageFont.truetype(bold, 16)
           small_font = ImageFont.truetype(regular, 14)
 
-          # Full visual overview, all canonical frames, no frame inference from GIF.
-          cols = 8
-          cell_w, cell_h = 250, 280
-          rows = math.ceil(animation['frameCount'] / cols)
-          canvas = Image.new('RGB', (cols*cell_w, 70 + rows*cell_h), 'white')
-          draw = ImageDraw.Draw(canvas)
-          draw.text((16, 12), 'standing-idle-to-fight-idle — all 31 canonical frames', font=title_font, fill='black')
-          draw.text((16, 47), 'Frame IDs come from animation.json; preview.gif supplies the rendered visual.', font=small_font, fill='black')
-          for i, frame in enumerate(frames):
-              r, c = divmod(i, cols)
-              x, y = c*cell_w, 70 + r*cell_h
-              # keep the whole trusted preview frame to avoid hiding feet/hands
-              resized = frame.resize((224,224), Image.Resampling.NEAREST)
-              canvas.paste(resized, (x+13, y+28))
-              draw.text((x+14,y+4), f'f{i}', font=frame_font, fill='black')
-          canvas.save(out / 'overview.png', optimize=True)
+          crop_box = (45, 42, 180, 220)
+          def panel(frame_id, width, height):
+              crop = frames[frame_id].crop(crop_box)
+              scale = min(width / crop.width, height / crop.height)
+              size = (max(1, int(crop.width * scale)), max(1, int(crop.height * scale)))
+              resized = crop.resize(size, Image.Resampling.NEAREST)
+              out = Image.new('RGB', (width, height), 'black')
+              out.paste(resized, ((width-size[0])//2, (height-size[1])//2))
+              return out
 
+          # phases.png — only the exact start/end frames used for phase boundaries.
+          phase_items = [
+              (0,  'START', 'f0–f6: rời standing idle / chuẩn bị stance'),
+              (6,  'END',   'f0–f6: rời standing idle / chuẩn bị stance'),
+              (7,  'START', 'f7–f13: đưa tay lên guard / xoay thân'),
+              (13, 'END',   'f7–f13: đưa tay lên guard / xoay thân'),
+              (14, 'START', 'f14–f23: hạ trọng tâm / hoàn thiện fight stance'),
+              (23, 'END',   'f14–f23: hạ trọng tâm / hoàn thiện fight stance'),
+              (24, 'START', 'f24–f30: settle vào fight idle'),
+              (30, 'END',   'f24–f30: settle vào fight idle'),
+          ]
+          W, margin, gap, header = 1760, 20, 16, 100
+          cell_w = (W - 2*margin - 3*gap)//4
+          panel_h, label_h = 390, 62
+          row_h = 34 + panel_h + label_h
+          H = header + 2*row_h + gap + 16
+          canvas = Image.new('RGB', (W,H), 'white')
+          draw = ImageDraw.Draw(canvas)
+          draw.text((20,14), 'Phase boundaries — standing-idle-to-fight-idle', font=title_font, fill='black')
+          draw.text((20,56), 'Chỉ hiển thị đúng frame bắt đầu/kết thúc dùng để xác định ranh giới phase.', font=subtitle_font, fill='black')
+          for idx,(frame_id,kind,desc) in enumerate(phase_items):
+              row,col = divmod(idx,4)
+              x = margin + col*(cell_w+gap)
+              y = header + row*(row_h+gap)
+              draw.text((x+8,y), f'f{frame_id}', font=frame_font, fill='black')
+              canvas.paste(panel(frame_id,cell_w,panel_h),(x,y+34))
+              ly = y+34+panel_h+5
+              draw.text((x+4,ly), f'{kind}: {desc}', font=label_font, fill='black')
+          canvas.save(root / 'phases.png', optimize=True)
+
+          # key-poses.png — only poses carrying distinct review meaning.
+          key_items = [
+              (0,  'standing idle: thân thẳng, tay hạ'),
+              (10, 'upper-body transition nhanh nhất; tay đi lên'),
+              (15, 'Hips +X cực đại; fight stance đang khóa'),
+              (23, 'guard gần hoàn tất; pelvis đã hạ sâu'),
+              (30, 'fight idle cuối transition / settle'),
+          ]
+          W, margin, gap, header = 1750, 20, 18, 100
+          cell_w = (W - 2*margin - 4*gap)//5
+          panel_h = 455
+          H = header + 34 + panel_h + 82
+          canvas = Image.new('RGB', (W,H), 'white')
+          draw = ImageDraw.Draw(canvas)
+          draw.text((20,14), 'Key poses — standing-idle-to-fight-idle', font=title_font, fill='black')
+          draw.text((20,56), 'Các pose đại diện cho thay đổi chính từ standing idle sang fight idle.', font=subtitle_font, fill='black')
+          for idx,(frame_id,role) in enumerate(key_items):
+              x = margin + idx*(cell_w+gap)
+              y = header
+              draw.text((x+8,y), f'f{frame_id}', font=frame_font, fill='black')
+              canvas.paste(panel(frame_id,cell_w,panel_h),(x,y+34))
+              draw.text((x+4,y+34+panel_h+8), role, font=label_bold, fill='black')
+          canvas.save(root / 'key-poses.png', optimize=True)
+
+          # weight-transfer.png — visual frames + direct Hips X/Z evidence.
+          hips = [[float(v) for v in p] for p in animation['hips']['translations']]
+          xs = [p[0] for p in hips]
+          zs = [p[2] for p in hips]
+          selected = [0,4,15,25,30]
+          assert min(range(len(xs)), key=xs.__getitem__) == 4
+          assert max(range(len(xs)), key=xs.__getitem__) == 15
+          assert min(range(len(zs)), key=zs.__getitem__) == 25
+
+          W, margin, gap, header = 1750, 20, 18, 125
+          cell_w = (W - 2*margin - 4*gap)//5
+          panel_h = 425
+          graph_h = 245
+          H = header + 34 + panel_h + 72 + graph_h + 50
+          canvas = Image.new('RGB', (W,H), 'white')
+          draw = ImageDraw.Draw(canvas)
+          draw.text((20,14), 'Weight transfer — standing-idle-to-fight-idle', font=title_font, fill='black')
+          draw.text((20,56), 'Pelvis: prep nhẹ về -X → dịch sang +X → recenter trong khi hạ mạnh vào fight stance.', font=subtitle_font, fill='black')
+          draw.text((20,82), 'Hips translation lấy trực tiếp từ animation.json; +X = phải nhân vật, +Z = lên. Không gán chân trụ.', font=small_font, fill='black')
+          roles = {
+              0:'standing start',
+              4:'-X prep minimum',
+              15:'+X maximum',
+              25:'lowest pelvis Z',
+              30:'final settle',
+          }
+          for idx,frame_id in enumerate(selected):
+              x = margin + idx*(cell_w+gap)
+              y = header
+              draw.text((x+8,y), f'f{frame_id}', font=frame_font, fill='black')
+              canvas.paste(panel(frame_id,cell_w,panel_h),(x,y+34))
+              hx,hy,hz = hips[frame_id]
+              draw.text((x+4,y+34+panel_h+7), roles[frame_id], font=label_bold, fill='black')
+              draw.text((x+4,y+34+panel_h+29), f'Hips X={hx:+.4f} · Z={hz:+.4f}', font=small_font, fill='black')
+
+          gx0, gy0 = 90, header + 34 + panel_h + 84
+          gx1, gy1 = W-70, H-55
+          draw.rectangle((gx0,gy0,gx1,gy1), outline='black', width=2)
+          def ymap(v, vals, top, bottom):
+              lo,hi=min(vals),max(vals)
+              if hi == lo:
+                  return (top+bottom)//2
+              return int(bottom - (v-lo)/(hi-lo)*(bottom-top))
+          def xmap(i):
+              return int(gx0 + i/(len(xs)-1)*(gx1-gx0))
+          ptsx=[(xmap(i), ymap(v,xs,gy0+18,gy1-18)) for i,v in enumerate(xs)]
+          ptsz=[(xmap(i), ymap(v,zs,gy0+18,gy1-18)) for i,v in enumerate(zs)]
+          draw.line(ptsx, fill='black', width=3)
+          draw.line(ptsz, fill='gray', width=3)
+          draw.text((gx0+8,gy0+6),'Hips X (đen) · Hips Z (xám) — chuẩn hóa riêng từng kênh để thấy hướng/timing',font=small_font,fill='black')
+          for f in selected:
+              px=xmap(f)
+              draw.line((px,gy0,px,gy1), fill='lightgray', width=1)
+              draw.text((px+3,gy1-20),f'f{f}',font=small_font,fill='black')
+          canvas.save(root / 'weight-transfer.png', optimize=True)
+
+          # body-mechanics.png — overlapping coordination sequence, not a causal power-chain claim.
           def q_angle_deg(a, b):
-              # shortest angular distance between unit quaternions, sign-invariant
               dot = abs(sum(float(x)*float(y) for x,y in zip(a,b)))
               dot = max(-1.0, min(1.0, dot))
               return math.degrees(2.0 * math.acos(dot))
+          def step_series(names):
+              names=[n for n in names if n in animation['joints']]
+              out=[0.0]*animation['frameCount']
+              for n in names:
+                  seq=animation['joints'][n]['rotations']
+                  for i in range(1,animation['frameCount']):
+                      out[i]+=q_angle_deg(seq[i-1],seq[i])
+              return out
+          torso_step=step_series(['Spine','Chest','UpperChest','Neck','Head'])
+          left_arm_step=step_series(['LeftShoulder','LeftUpperArm','LeftLowerArm','LeftHand'])
+          right_arm_step=step_series(['RightShoulder','RightUpperArm','RightLowerArm','RightHand'])
+          left_leg_step=step_series(['LeftUpperLeg','LeftLowerLeg','LeftFoot','LeftToe'])
+          right_leg_step=step_series(['RightUpperLeg','RightLowerLeg','RightFoot','RightToe'])
+          assert max(range(len(torso_step)), key=torso_step.__getitem__) == 10
+          assert max(range(len(left_arm_step)), key=left_arm_step.__getitem__) == 10
+          assert max(range(len(right_arm_step)), key=right_arm_step.__getitem__) == 10
+          assert max(range(len(right_leg_step)), key=right_leg_step.__getitem__) == 15
 
-          def q_step_deg(seq, i):
-              if i == 0:
-                  return 0.0
-              return q_angle_deg(seq[i-1], seq[i])
-
-          hips = [[float(v) for v in p] for p in animation['hips']['translations']]
-          xs = [p[0] for p in hips]
-          ys = [p[1] for p in hips]
-          zs = [p[2] for p in hips]
-          root_step = [0.0]
-          for i in range(1, len(hips)):
-              root_step.append(math.dist(hips[i-1], hips[i]))
-
-          joint_metrics = {}
-          for name, data in animation['joints'].items():
-              seq = data['rotations']
-              from0 = [q_angle_deg(seq[0], q) for q in seq]
-              step = [q_step_deg(seq, i) for i in range(len(seq))]
-              joint_metrics[name] = {
-                  'peakDepartureFrame': max(range(len(from0)), key=from0.__getitem__),
-                  'peakDepartureDeg': max(from0),
-                  'peakStepFrame': max(range(len(step)), key=step.__getitem__),
-                  'peakStepDegPerFrame': max(step),
-                  'departureDegByFrame': from0,
-                  'stepDegByFrame': step,
-              }
-
-          groups = {
-              'torso': ['Spine','Chest','UpperChest','Neck','Head'],
-              'leftArm': ['LeftShoulder','LeftUpperArm','LeftLowerArm','LeftHand'],
-              'rightArm': ['RightShoulder','RightUpperArm','RightLowerArm','RightHand'],
-              'leftLeg': ['LeftUpperLeg','LeftLowerLeg','LeftFoot','LeftToe'],
-              'rightLeg': ['RightUpperLeg','RightLowerLeg','RightFoot','RightToe'],
+          selected = [0,4,10,15,23,30]
+          W, margin, gap, header = 1800, 20, 16, 125
+          cell_w = (W - 2*margin - 5*gap)//6
+          panel_h = 410
+          H = header + 34 + panel_h + 122
+          canvas = Image.new('RGB', (W,H), 'white')
+          draw = ImageDraw.Draw(canvas)
+          draw.text((20,14), 'Body mechanics — standing-idle-to-fight-idle', font=title_font, fill='black')
+          draw.text((20,56), 'Chuỗi chồng lấn: stance/pelvis prep → torso + hai tay tăng tốc → chân phải khóa stance → guard + pelvis hạ → settle.', font=subtitle_font, fill='black')
+          draw.text((20,82), 'Step activity = tổng angular distance/frame của các joint canonical trong nhóm; dùng để hỗ trợ timing, không suy thành causal power chain.', font=small_font, fill='black')
+          roles = {
+              0:'standing idle start',
+              4:'early stance / pelvis prep',
+              10:'torso + both arms peak step',
+              15:'right-leg peak step; Hips +X max',
+              23:'guard gần hoàn tất; pelvis hạ sâu',
+              30:'fight-idle settle',
           }
-          group_activity = {}
-          for group, names in groups.items():
-              names = [n for n in names if n in joint_metrics]
-              departure = []
-              step = []
-              for i in range(animation['frameCount']):
-                  departure.append(sum(joint_metrics[n]['departureDegByFrame'][i] for n in names))
-                  step.append(sum(joint_metrics[n]['stepDegByFrame'][i] for n in names))
-              group_activity[group] = {
-                  'joints': names,
-                  'peakDepartureFrame': max(range(len(departure)), key=departure.__getitem__),
-                  'peakDepartureSumDeg': max(departure),
-                  'peakStepFrame': max(range(len(step)), key=step.__getitem__),
-                  'peakStepSumDegPerFrame': max(step),
-                  'departureSumDegByFrame': departure,
-                  'stepSumDegByFrame': step,
-              }
-
-          summary = {
-              'id': animation['id'],
-              'frameCount': animation['frameCount'],
-              'fps': animation['fps'],
-              'durationSeconds': animation['durationSeconds'],
-              'loop': animation.get('loop'),
-              'hips': {
-                  'xMin': {'frame': min(range(len(xs)), key=xs.__getitem__), 'value': min(xs)},
-                  'xMax': {'frame': max(range(len(xs)), key=xs.__getitem__), 'value': max(xs)},
-                  'yMin': {'frame': min(range(len(ys)), key=ys.__getitem__), 'value': min(ys)},
-                  'yMax': {'frame': max(range(len(ys)), key=ys.__getitem__), 'value': max(ys)},
-                  'zMin': {'frame': min(range(len(zs)), key=zs.__getitem__), 'value': min(zs)},
-                  'zMax': {'frame': max(range(len(zs)), key=zs.__getitem__), 'value': max(zs)},
-                  'peakTranslationStep': {'frame': max(range(len(root_step)), key=root_step.__getitem__), 'value': max(root_step)},
-                  'translationsByFrame': hips,
-                  'translationStepByFrame': root_step,
-              },
-              'groups': group_activity,
-              'joints': joint_metrics,
-          }
-          (out / 'metrics.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
-
-          print('=== SOURCE SUMMARY ===')
-          print(json.dumps({k: summary[k] for k in ['id','frameCount','fps','durationSeconds','loop']}, indent=2))
-          print('=== HIPS EXTREMA ===')
-          print(json.dumps({k:v for k,v in summary['hips'].items() if not k.endswith('ByFrame')}, indent=2))
-          print('=== GROUP PEAKS ===')
-          for group, m in group_activity.items():
-              print(group, 'departure', m['peakDepartureFrame'], round(m['peakDepartureSumDeg'],3), 'step', m['peakStepFrame'], round(m['peakStepSumDegPerFrame'],3))
-          print('=== KEY JOINT PEAKS ===')
-          for n in ['Chest','Neck','Head','LeftShoulder','LeftUpperArm','LeftLowerArm','LeftHand','RightShoulder','RightUpperArm','RightLowerArm','RightHand','LeftUpperLeg','LeftLowerLeg','LeftFoot','RightUpperLeg','RightLowerLeg','RightFoot']:
-              if n in joint_metrics:
-                  m = joint_metrics[n]
-                  print(n, 'departure', m['peakDepartureFrame'], round(m['peakDepartureDeg'],3), 'step', m['peakStepFrame'], round(m['peakStepDegPerFrame'],3))
+          for idx,frame_id in enumerate(selected):
+              x = margin + idx*(cell_w+gap)
+              y = header
+              draw.text((x+8,y), f'f{frame_id}', font=frame_font, fill='black')
+              canvas.paste(panel(frame_id,cell_w,panel_h),(x,y+34))
+              ly=y+34+panel_h+7
+              draw.text((x+4,ly), roles[frame_id], font=label_bold, fill='black')
+              draw.text((x+4,ly+24), f'Torso {torso_step[frame_id]:.1f}°/f', font=small_font, fill='black')
+              draw.text((x+4,ly+44), f'L/R arm {left_arm_step[frame_id]:.1f}/{right_arm_step[frame_id]:.1f}°/f', font=small_font, fill='black')
+              draw.text((x+4,ly+64), f'L/R leg {left_leg_step[frame_id]:.1f}/{right_leg_step[frame_id]:.1f}°/f', font=small_font, fill='black')
+              draw.text((x+4,ly+84), f'Hips X/Z {hips[frame_id][0]:+.3f}/{hips[frame_id][2]:+.3f}', font=small_font, fill='black')
+          canvas.save(root / 'body-mechanics.png', optimize=True)
           PY
 
       - name: Verify trusted source is untouched
@@ -178,9 +246,17 @@ jobs:
           git diff --exit-code -- sample/humanoid_motion/mixamo/standing-idle-to-fight-idle/preview.gif
           test ! -e sample/humanoid_motion/mixamo/standing-idle-to-fight-idle/metadata.json
 
-      - name: Upload analysis artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: standing-idle-to-fight-idle-analysis
-          path: build/standing-idle-to-fight-idle-analysis/
-          if-no-files-found: error
+      - name: Commit evidence on PR branch
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            sample/humanoid_motion/mixamo/standing-idle-to-fight-idle/phases.png \
+            sample/humanoid_motion/mixamo/standing-idle-to-fight-idle/key-poses.png \
+            sample/humanoid_motion/mixamo/standing-idle-to-fight-idle/weight-transfer.png \
+            sample/humanoid_motion/mixamo/standing-idle-to-fight-idle/body-mechanics.png
+          git commit -m 'docs: add standing-idle-to-fight-idle metadata evidence'
+          git push origin HEAD:"$HEAD_BRANCH"
