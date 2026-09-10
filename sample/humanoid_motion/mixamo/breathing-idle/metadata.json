@@ -1,28 +1,28 @@
 {
-  "intent": "Idle thở tại chỗ, lặp kín, với sway nhẹ toàn thân và nhịp pelvis lên–xuống; không có locomotion.",
+  "intent": "In-place breathing idle, seamlessly looping, with subtle full-body sway and an up-and-down pelvis rhythm; no locomotion.",
   "phases": [
-    "f0–f103: sway từ gần loop center sang cực -X, kết thúc ở tư thế pelvis thấp hơn.",
-    "f104–f172: cross từ -X sang +X; pelvis đi qua điểm cao nhất tại f148 rồi hạ vào cực +X.",
-    "f173–f244: sway ngược từ +X về -X, kết thúc ở cực -X thứ hai.",
-    "f245–f298: trở từ -X về loop center và đóng lại tư thế bắt đầu."
+    "f0–f103: sway from near the loop center toward the -X extreme, ending with the pelvis in a lower position.",
+    "f104–f172: cross from -X to +X; the pelvis passes through its highest point at f148, then lowers into the +X extreme.",
+    "f173–f244: reverse sway from +X back to -X, ending at the second -X extreme.",
+    "f245–f298: return from -X to the loop center and close back into the starting pose."
   ],
   "keyPoses": [
-    "f0: loop-start neutral, pelvis gần center.",
-    "f103: cực sway -X đầu tiên.",
-    "f148: pelvis cao nhất trong lúc cross qua center.",
-    "f172: cực sway +X.",
-    "f244: cực sway -X thứ hai."
+    "f0: loop-start neutral, pelvis near center.",
+    "f103: first -X sway extreme.",
+    "f148: highest pelvis point while crossing through center.",
+    "f172: +X sway extreme.",
+    "f244: second -X sway extreme."
   ],
-  "weightTransfer": "Pelvis chuyển trọng lượng theo phương ngang theo chuỗi -X → +X → -X → center. Evidence đủ để xác nhận lateral weight shift, nhưng không đủ chắc để gán một chân trụ cụ thể nên không annotate support foot.",
-  "bodyMechanics": "Trong cung f103→f172, pelvis/lower body chuyển thấp → nâng lên → đạt cao nhất → hạ xuống khi đi ngang từ -X sang +X; torso, head và hai tay thả lỏng điều chỉnh liên tục cùng nhịp sway. Chuyển động vẫn tại chỗ, không xuất hiện bước locomotion.",
+  "weightTransfer": "The pelvis shifts weight laterally in the sequence -X → +X → -X → center. The evidence is sufficient to confirm lateral weight shift, but not strong enough to assign a specific supporting leg, so no support foot is annotated.",
+  "bodyMechanics": "Across the f103→f172 arc, the pelvis/lower body moves low → rises → reaches its highest point → lowers while moving laterally from -X to +X; the torso, head, and both relaxed arms adjust continuously with the sway rhythm. The motion remains in place, with no locomotion steps.",
   "referenceUse": {
     "recommended": [
-      "breathing idle tại chỗ có lateral body sway rõ;",
-      "relaxed/low-energy humanoid idle cần secondary motion toàn thân."
+      "in-place breathing idle with clear lateral body sway;",
+      "relaxed/low-energy humanoid idle requiring full-body secondary motion."
     ],
     "notPrimary": [
-      "neutral idle gần như đứng yên, pelvis dịch chuyển tối thiểu;",
-      "locomotion hoặc step-cycle mechanics."
+      "nearly static neutral idle with minimal pelvis displacement;",
+      "locomotion or step-cycle mechanics."
     ]
   }
 }
