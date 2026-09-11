@@ -12,5 +12,6 @@ def test_public_motion_cli_registers_core_and_humanoid_commands():
         "export-humanoid-animation",
         "verify-humanoid-animation-fidelity",
         "render-humanoid-animation",
+        "generate-humanoid-animation",
     }
     assert expected.issubset(choices)
