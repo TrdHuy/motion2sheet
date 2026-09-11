@@ -1,0 +1,57 @@
+{
+  "intent": "Looping in-place walk cycle: the two legs alternately lift and move forward, the contralateral arms coordinate with the rhythm, the pelvis shifts laterally and bobs vertically, and the final pose closes back to the starting pose.",
+  "phases": [
+    {
+      "frames": "f0-f8",
+      "description": "First half-step: one leg lifts and moves forward while the opposite arm moves with the same rhythm."
+    },
+    {
+      "frames": "f9-f16",
+      "description": "That leg gradually lowers; the pelvis passes through a local low region around f10, then rises toward the half-cycle point."
+    },
+    {
+      "frames": "f17-f24",
+      "description": "Second half-step: the opposite leg lifts and moves forward while contralateral arm coordination switches for the second half of the cycle."
+    },
+    {
+      "frames": "f25-f31",
+      "description": "The opposite leg gradually lowers; the pelvis passes through its lowest point at f25, then rises and recenters to close back to f0."
+    }
+  ],
+  "keyPoses": [
+    {
+      "frame": "f0",
+      "role": "Start of the cycle; an intermediate pose between the two half-steps."
+    },
+    {
+      "frame": "f8",
+      "role": "Clear swing pose for the first half-step: one foot is lifted and the opposite arm is forward."
+    },
+    {
+      "frame": "f17",
+      "role": "Half-cycle point: Hips Z is at its highest and the two legs are drawn closer together beneath the body."
+    },
+    {
+      "frame": "f24",
+      "role": "Clear opposite swing pose: the other foot is lifted and the opposite arm is forward."
+    },
+    {
+      "frame": "f31",
+      "role": "Cycle closure: the rendered image is pixel-identical to f0, and the Hips return to almost exactly their starting position."
+    }
+  ],
+  "weightTransfer": "The pelvis shifts from a slight -X extreme at f4 to a +X extreme at f20, then recenters near its starting point at f31. Along Z, the pelvis has a local low region at f10, reaches its highest point at f17, reaches its lowest point at f25, and then rises again. A definite support or weight-bearing foot is not assigned because the source has no contact or force data.",
+  "bodyMechanics": "The coordination is cyclic rather than a one-way power chain: the legs swing alternately, the contralateral arms switch across the two half-cycles, the pelvis shifts laterally and bobs vertically, and the torso/head rotate slightly with the rhythm. f8 and f24 show the two opposite swing poses; f10 and f25 are the two low pelvis regions; f17 is the half-cycle point with the highest Hips Z; and f31 closes back to f0.",
+  "referenceUse": {
+    "recommended": [
+      "Closed looping in-place walk cycle.",
+      "Alternating leg motion coordinated with the contralateral arms.",
+      "Lateral shift and vertical bobbing of the pelvis across the two half-steps.",
+      "Checking cycle closure back to the starting pose."
+    ],
+    "notRecommendedAsPrimary": [
+      "Forward root-motion distance or speed.",
+      "Exact ground-contact timing, support foot, or weight-bearing force."
+    ]
+  }
+}

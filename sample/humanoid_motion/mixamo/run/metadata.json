@@ -1,0 +1,73 @@
+{
+  "intent": "Looping run cycle with alternating knee drive and leg recovery, with reciprocal arm swing synchronized to the running rhythm.",
+  "phases": [
+    {
+      "name": "left-knee-drive",
+      "startFrame": 0,
+      "endFrame": 4,
+      "description": "Left knee drive builds while the right leg extends downward."
+    },
+    {
+      "name": "left-leg-lowering-and-exchange",
+      "startFrame": 5,
+      "endFrame": 9,
+      "description": "The left leg begins lowering while the right leg advances through the exchange state."
+    },
+    {
+      "name": "right-knee-drive",
+      "startFrame": 10,
+      "endFrame": 14,
+      "description": "Right knee drive builds while the left leg extends downward."
+    },
+    {
+      "name": "right-leg-lowering-and-loop-return",
+      "startFrame": 15,
+      "endFrame": 19,
+      "description": "The right leg lowers while the left leg recovers toward the loop seam."
+    }
+  ],
+  "keyPoses": [
+    {
+      "frame": 4,
+      "role": "first stride extreme",
+      "description": "Left knee high, with the right leg extended downward."
+    },
+    {
+      "frame": 8,
+      "role": "first leg exchange",
+      "description": "First leg-exchange state."
+    },
+    {
+      "frame": 13,
+      "role": "opposite stride extreme",
+      "description": "Right knee high, with the left leg extended downward."
+    },
+    {
+      "frame": 18,
+      "role": "return leg exchange",
+      "description": "Leg-exchange state returning near the loop seam."
+    }
+  ],
+  "weightTransfer": {
+    "description": "The pelvis shifts laterally toward +X from around f4 to f13, then returns near its initial X position by f19, while the lower extended leg alternates from the right side to the left side.",
+    "contactCaveat": "Exact foot-contact frames are not asserted because animation.json has no explicit foot-contact channel; this interpretation relies on pelvis motion and visible leg configuration."
+  },
+  "bodyMechanics": {
+    "description": "Between the two knee-drive extremes, upper-body twist reverses and the arm-swing state switches sides correspondingly. f8 is the intermediate exchange state.",
+    "coordinationFocus": [
+      "knee-drive and leg-recovery rhythm",
+      "upper-body rotation",
+      "arm swing opposing leg motion"
+    ]
+  },
+  "referenceUse": {
+    "recommended": [
+      "timing of a looping run cycle",
+      "alternating knee-drive and leg-recovery rhythm",
+      "upper-body and arm coordination between stride extremes"
+    ],
+    "notRecommended": [
+      "exact frame-by-frame foot-contact timing"
+    ]
+  }
+}
