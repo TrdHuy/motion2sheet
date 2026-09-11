@@ -1287,3 +1287,32 @@ Task chỉ hoàn thành khi:
 - `git status` được kiểm tra cuối;
 - không phá thay đổi ngoài phạm vi task;
 - không commit/push nếu user chưa yêu cầu.
+
+---
+
+## SDAR progress reporting
+
+Khi skill được chạy bởi SDAR, runtime cung cấp executable `sdar-notify` trên
+`PATH` (đồng thời export đường dẫn tuyệt đối qua `$SDAR_NOTIFY`).
+Hãy dùng helper này để báo thay đổi trạng thái; không tự viết HTTP envelope hoặc
+tự quản lý token, event ID, sequence hay retry.
+
+Các step observability là:
+
+`understand-intent`, `discover-references`, `design-mechanics`,
+`author-key-poses`, `review-key-poses`, `author-full-motion`,
+`review-full-motion`, `refine`, `validate`, `finalize`.
+
+Ví dụ:
+
+```bash
+sdar-notify skill-start discover-references --iteration 1
+sdar-notify skill-complete discover-references --iteration 1 --summary "Reviewed candidate references"
+sdar-notify iteration-start 2 --reason "Refining from visual evidence"
+sdar-notify evidence-created path/to/pose_sheet.png --iteration 2
+sdar-notify complete --animation final/animation.json --metadata final/metadata.json --preview final/preview.gif
+```
+
+Nếu một step không cần thiết, dùng `skill-skip` và nêu lý do. Event reporting
+phục vụ observability; chất lượng animation vẫn do workflow chuyên môn trong
+skill này quyết định.

@@ -1,19 +1,19 @@
-"""AI-provider-independent orchestration for Humanoid Motion generation."""
+"""Skill-Driven Agent Runtime for supervised Humanoid Motion authoring."""
 
-from .contracts import (
-    GenerationExhaustedError,
-    GenerationRequest,
-    GenerationResult,
-    HarnessError,
-    ProviderError,
-)
-from .orchestrator import AnimationGenerationOrchestrator
+from .contracts import GenerationRequest, GenerationResult, HarnessError, ProviderError
 
 __all__ = [
     "AnimationGenerationOrchestrator",
-    "GenerationExhaustedError",
     "GenerationRequest",
     "GenerationResult",
     "HarnessError",
     "ProviderError",
 ]
+
+
+def __getattr__(name: str):
+    if name == "AnimationGenerationOrchestrator":
+        from .orchestrator import AnimationGenerationOrchestrator
+
+        return AnimationGenerationOrchestrator
+    raise AttributeError(name)

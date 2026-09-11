@@ -1,112 +1,119 @@
 from __future__ import annotations
 
+import io
 import json
-import subprocess
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from motion2sheet.motion.harness_anim_generator.contracts import (
+    AgentRunRequest,
     ProviderError,
-    ProviderRequest,
+    SkillManifest,
+    SkillStep,
 )
 from motion2sheet.motion.harness_anim_generator.providers.codex_cli import CodexCLIProvider
 
 
-def _request(tmp_path: Path) -> ProviderRequest:
-    image = tmp_path / "sheet.png"
-    image.write_bytes(b"png")
-    return ProviderRequest(
-        operation="review",
-        instruction="Return a review",
-        context={"prompt": "heavy attack"},
-        response_schema={"type": "object"},
-        attachments=(image,),
+class InputCapture:
+    def __init__(self):
+        self.value = ""
+        self.closed = False
+
+    def write(self, value):
+        self.value += value
+
+    def close(self):
+        self.closed = True
+
+
+class FakeProcess:
+    def __init__(self, stdout="", stderr="", code=0):
+        self.pid = 99
+        self.stdin = InputCapture()
+        self.stdout = io.StringIO(stdout)
+        self.stderr = io.StringIO(stderr)
+        self.code = code
+        self.terminated = False
+
+    def poll(self):
+        return self.code
+
+    def wait(self, timeout=None):
+        return self.code
+
+    def terminate(self):
+        self.terminated = True
+
+
+def request(tmp_path: Path) -> AgentRunRequest:
+    workspace = tmp_path / "agent"
+    notify = workspace / ".sdar/bin/sdar-notify"
+    notify.parent.mkdir(parents=True)
+    notify.touch()
+    return AgentRunRequest(
+        run_id="run-1",
+        prompt="exact prompt",
+        skill_text="# FULL SKILL\nEvery line is authoritative.\n",
+        skill_manifest=SkillManifest("skill", 1, (SkillStep("one", "One"),)),
+        repository=tmp_path,
+        workspace=workspace,
+        history={"prior": "history"},
+        event_url="http://127.0.0.1:1234/runs/run-1/events",
+        event_token="secret-token",
+        notify_command=notify,
     )
 
 
-def test_codex_cli_builds_command_passes_request_and_parses_jsonl(tmp_path, monkeypatch):
+def test_codex_provider_launches_agent_session_with_full_runtime_context(tmp_path):
     observed = {}
-    payload = {"pass": True, "issues": []}
+    process = FakeProcess(
+        stdout=json.dumps(
+            {"type": "item.completed", "item": {"type": "command_execution", "command": "x"}}
+        )
+        + "\n"
+    )
 
-    def fake_run(command, **kwargs):
+    def popen(command, **kwargs):
         observed["command"] = command
         observed["kwargs"] = kwargs
-        schema_path = Path(command[command.index("--output-schema") + 1])
-        assert json.loads(schema_path.read_text()) == {"type": "object"}
-        stdout = "\n".join(
-            [
-                json.dumps({"type": "thread.started", "thread_id": "thread"}),
-                json.dumps(
-                    {
-                        "type": "item.completed",
-                        "item": {"type": "agent_message", "text": json.dumps(payload)},
-                    }
-                ),
-                json.dumps({"type": "turn.completed"}),
-            ]
-        )
-        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+        return process
 
-    monkeypatch.setattr(
-        "motion2sheet.motion.harness_anim_generator.providers.codex_cli.subprocess.run",
-        fake_run,
-    )
-    response = CodexCLIProvider(repo_root=tmp_path).generate(_request(tmp_path))
-    assert response.payload == payload
-    assert observed["command"][:2] == [
-        "codex",
-        "exec",
-    ]
-    assert "--image" in observed["command"]
-    image_index = observed["command"].index("--image")
-    assert observed["command"][image_index + 2] == "--ephemeral"
-    assert observed["command"][-1] == "-"
-    request_input = json.loads(observed["kwargs"]["input"])
-    assert request_input["context"]["prompt"] == "heavy attack"
-    assert observed["kwargs"]["cwd"] == tmp_path.resolve()
-    assert observed["kwargs"]["capture_output"] is True
+    run_request = request(tmp_path)
+    session = CodexCLIProvider(repo_root=tmp_path, popen_factory=popen).start(run_request)
+    assert observed["command"][:2] == ["codex", "exec"]
+    assert "--json" in observed["command"]
+    assert "--ignore-user-config" in observed["command"]
+    assert "workspace-write" in observed["command"]
+    assert "sandbox_workspace_write.network_access=true" in observed["command"]
+    assert "shell_environment_policy.inherit=all" in observed["command"]
+    assert "shell_environment_policy.ignore_default_excludes=true" in observed["command"]
+    environment = observed["kwargs"]["env"]
+    assert environment["HARNESS_RUN_ID"] == "run-1"
+    assert environment["HARNESS_EVENT_URL"] == run_request.event_url
+    assert environment["HARNESS_TOKEN"] == "secret-token"
+    assert environment["SDAR_NOTIFY"] == str(run_request.notify_command)
+    assert run_request.skill_text in process.stdin.value
+    assert "exact prompt" in process.stdin.value
+    assert '"prior": "history"' in process.stdin.value
+    event = session.next_event(timeout=1)
+    assert event is not None and event.event_type == "command.completed"
 
 
-def test_codex_cli_nonzero_exit_is_provider_error(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "motion2sheet.motion.harness_anim_generator.providers.codex_cli.subprocess.run",
-        lambda *args, **kwargs: SimpleNamespace(returncode=7, stdout="", stderr="auth failed"),
-    )
-    with pytest.raises(ProviderError, match="code 7.*auth failed"):
-        CodexCLIProvider(repo_root=tmp_path).generate(_request(tmp_path))
+def test_codex_provider_streams_malformed_json_as_warning(tmp_path):
+    process = FakeProcess(stdout="not-json\n")
+    provider = CodexCLIProvider(repo_root=tmp_path, popen_factory=lambda *a, **k: process)
+    session = provider.start(request(tmp_path))
+    event = session.next_event(timeout=1)
+    assert event is not None
+    assert event.event_type == "agent.warning"
+    assert event.raw == "not-json"
 
 
-@pytest.mark.parametrize(
-    "stdout, message",
-    [
-        ("not-json", "malformed JSONL"),
-        (json.dumps({"type": "turn.completed"}), "completed agent message"),
-        (
-            json.dumps(
-                {"type": "item.completed", "item": {"type": "agent_message", "text": "nope"}}
-            ),
-            "final message is not valid JSON",
-        ),
-    ],
-)
-def test_codex_cli_malformed_output_fails_clearly(tmp_path, monkeypatch, stdout, message):
-    monkeypatch.setattr(
-        "motion2sheet.motion.harness_anim_generator.providers.codex_cli.subprocess.run",
-        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=stdout, stderr=""),
-    )
-    with pytest.raises(ProviderError, match=message):
-        CodexCLIProvider(repo_root=tmp_path).generate(_request(tmp_path))
+def test_codex_provider_reports_missing_executable(tmp_path):
+    def missing(*_args, **_kwargs):
+        raise FileNotFoundError("codex")
 
-
-def test_codex_cli_timeout_is_provider_error(tmp_path, monkeypatch):
-    def timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired("codex", 1)
-
-    monkeypatch.setattr(
-        "motion2sheet.motion.harness_anim_generator.providers.codex_cli.subprocess.run",
-        timeout,
-    )
-    with pytest.raises(ProviderError, match="timed out"):
-        CodexCLIProvider(repo_root=tmp_path, timeout_seconds=1).generate(_request(tmp_path))
+    provider = CodexCLIProvider(repo_root=tmp_path, popen_factory=missing)
+    with pytest.raises(ProviderError, match="executable not found"):
+        provider.start(request(tmp_path))

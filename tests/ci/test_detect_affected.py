@@ -251,6 +251,14 @@ def test_harness_change_selects_only_harness_unit():
     assert targets == {"motion-harness-anim-generator-unit"}
 
 
+def test_harness_default_skill_change_selects_only_harness_unit():
+    components, targets = resolve(
+        "skills/humanoid-motion-local-authoring/SKILL.md"
+    )
+    assert components == {"motion-harness-anim-generator"}
+    assert targets == {"motion-harness-anim-generator-unit"}
+
+
 def test_harness_test_change_selects_only_harness_unit():
     components, targets = resolve(
         "tests/motion/harness_anim_generator/test_orchestrator.py"
