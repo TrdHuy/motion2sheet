@@ -181,19 +181,32 @@ def initial_run_state(
 
 
 class RunState:
-    def __init__(self, value: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        value: dict[str, Any],
+        *,
+        idle_seconds: float = 15.0,
+        stalled_seconds: float = 60.0,
+    ) -> None:
+        if idle_seconds < 0 or stalled_seconds <= idle_seconds:
+            raise ValueError("liveness thresholds must satisfy 0 <= idle < stalled")
         self._value = value
         self._lock = threading.Lock()
+        self._idle_seconds = idle_seconds
+        self._stalled_seconds = stalled_seconds
         self._last_activity_monotonic = time.monotonic()
 
     def apply(self, event: RuntimeEvent, registry: ArtifactRegistry) -> list[str]:
         warnings: list[str] = []
         with self._lock:
             value = self._value
-            value["lastActivity"] = event.received_at
-            self._last_activity_monotonic = time.monotonic()
             kind = event.event_type
             payload = dict(event.payload)
+            if kind != "runtime.liveness.changed":
+                value["lastActivity"] = event.received_at
+                self._last_activity_monotonic = time.monotonic()
+                if value["processAlive"] and value["status"] not in {"completed", "failed"}:
+                    value["agentAliveState"] = "running"
             if kind == "run.started" and event.source == "harness":
                 value["status"] = "running"
             elif kind == "runtime.process.started" and event.source == "harness":
@@ -203,6 +216,10 @@ class RunState:
             elif kind == "runtime.process.exited" and event.source == "harness":
                 value["processAlive"] = False
                 value["exitCode"] = payload.get("exitCode")
+            elif kind == "runtime.liveness.changed" and event.source == "harness":
+                state = payload.get("state")
+                if state in {"starting", "running", "idle", "possibly_stalled"}:
+                    value["agentAliveState"] = state
             elif kind == "agent.started" and event.source == "agent_push":
                 value["status"] = "running"
                 value["agentAliveState"] = "running"
@@ -311,18 +328,26 @@ class RunState:
                 pass
         return []
 
+    def desired_liveness(self, *, process_alive: bool) -> str | None:
+        """Return the observable liveness state without mutating persisted state."""
+
+        with self._lock:
+            if self._value["status"] in {"completed", "failed"} or not process_alive:
+                return None
+            idle_for = time.monotonic() - self._last_activity_monotonic
+            if idle_for >= self._stalled_seconds:
+                return "possibly_stalled"
+            if idle_for >= self._idle_seconds:
+                return "idle"
+            return "running"
+
+    def current_liveness(self) -> str:
+        with self._lock:
+            return str(self._value["agentAliveState"])
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
-            value = deepcopy(self._value)
-            if value["status"] not in {"completed", "failed"} and value["processAlive"]:
-                idle_for = time.monotonic() - self._last_activity_monotonic
-                if idle_for >= 60:
-                    value["agentAliveState"] = "possibly_stalled"
-                elif idle_for >= 15:
-                    value["agentAliveState"] = "idle"
-                else:
-                    value["agentAliveState"] = "running"
-            return value
+            return deepcopy(self._value)
 
 
 class EventProcessor:

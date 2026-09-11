@@ -20,7 +20,7 @@ from .providers.base import AgentProvider, AgentSession
 from .redaction import SecretRedactor, write_json
 from .report.server import ReportServer, materialize_static_report
 from .report.store import ProcessedEventStore
-from .session import ProviderEventPump
+from .session import LivenessTicker, ProviderEventPump
 from .skill import DEFAULT_SKILL, load_skill
 from .workspace import RunWorkspace, create_workspace, preflight_output
 
@@ -35,6 +35,7 @@ class ActiveRun:
         output: Path,
         session: AgentSession,
         pump: ProviderEventPump,
+        liveness: LivenessTicker,
         bus: RunEventBus,
         processor: EventProcessor,
         state: RunState,
@@ -48,6 +49,7 @@ class ActiveRun:
         self.output = output
         self.session = session
         self.pump = pump
+        self.liveness = liveness
         self.bus = bus
         self.processor = processor
         self.state = state
@@ -68,6 +70,7 @@ class ActiveRun:
         result: GenerationResult | None = None
         try:
             exit_result = self.session.wait()
+            self.liveness.stop()
             if not self.pump.join():
                 raise HarnessError("provider event streams did not close after process exit")
             self.bus.submit_harness(
@@ -109,6 +112,7 @@ class ActiveRun:
             self.bus.submit_harness("run.failed", {"message": self.redactor.text(str(exc))})
             self.processor.drain()
         finally:
+            self.liveness.stop()
             self.redactor.scrub_tree(self.workspace.root)
             self.processor.stop()
             materialize_static_report(
@@ -184,6 +188,9 @@ class AnimationGenerationOrchestrator:
         workspace_root: Path,
         skill_directory: Path | None = None,
         processing_hook=None,
+        liveness_idle_seconds: float = 15.0,
+        liveness_stalled_seconds: float = 60.0,
+        liveness_tick_seconds: float = 1.0,
     ) -> None:
         self.provider = provider
         self.repo_root = Path(repo_root).resolve()
@@ -194,6 +201,9 @@ class AnimationGenerationOrchestrator:
             else (self.repo_root / DEFAULT_SKILL).resolve()
         )
         self.processing_hook = processing_hook
+        self.liveness_idle_seconds = liveness_idle_seconds
+        self.liveness_stalled_seconds = liveness_stalled_seconds
+        self.liveness_tick_seconds = liveness_tick_seconds
 
     def start(self, request: GenerationRequest) -> ActiveRun:
         # All configuration and resume validation happens before launching an agent.
@@ -213,7 +223,9 @@ class AnimationGenerationOrchestrator:
                 prompt=request.prompt,
                 provider=request.provider,
                 manifest=skill.manifest,
-            )
+            ),
+            idle_seconds=self.liveness_idle_seconds,
+            stalled_seconds=self.liveness_stalled_seconds,
         )
         registry = ArtifactRegistry(
             agent_workspace=workspace.agent,
@@ -293,6 +305,13 @@ class AnimationGenerationOrchestrator:
         )
         pump = ProviderEventPump(session, bus.submit_provider)
         pump.start()
+        liveness = LivenessTicker(
+            session,
+            state,
+            bus.submit_harness,
+            interval_seconds=self.liveness_tick_seconds,
+        )
+        liveness.start()
         # Let the initial lifecycle events reach the report before returning to the CLI.
         deadline = time.monotonic() + 1
         while state.snapshot()["status"] == "starting" and time.monotonic() < deadline:
@@ -304,6 +323,7 @@ class AnimationGenerationOrchestrator:
             output=output,
             session=session,
             pump=pump,
+            liveness=liveness,
             bus=bus,
             processor=processor,
             state=state,

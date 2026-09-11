@@ -175,3 +175,52 @@ def test_agent_and_provider_sequences_have_independent_provenance(repo_with_skil
     assert orders == sorted(orders)
     release.set()
     active.wait()
+
+
+def test_liveness_transitions_reach_report_without_new_agent_events(repo_with_skill, tmp_path):
+    release = threading.Event()
+
+    def behavior(request, session):
+        client_for(request).send("agent.started")
+        release.wait(5)
+        client_for(request).send(
+            "agent.completed", payload={"outputs": create_outputs(request.workspace)}
+        )
+        session.finish(0)
+
+    runtime = AnimationGenerationOrchestrator(
+        provider=FakeAgentProvider(behavior),
+        repo_root=repo_with_skill,
+        workspace_root=tmp_path / "runs",
+        liveness_idle_seconds=0.05,
+        liveness_stalled_seconds=0.12,
+        liveness_tick_seconds=0.01,
+    )
+    active = runtime.start(
+        GenerationRequest("attack", "fake", tmp_path / "out", open_report=False)
+    )
+
+    observed = []
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        with urllib.request.urlopen(active.report_url + "snapshot", timeout=2) as response:
+            snapshot = json.loads(response.read())["state"]
+        alive = snapshot["agentAliveState"]
+        if not observed or observed[-1] != alive:
+            observed.append(alive)
+        if alive == "possibly_stalled":
+            break
+        time.sleep(0.01)
+
+    assert "idle" in observed
+    assert observed[-1] == "possibly_stalled"
+    liveness_events = [
+        item for item in active.store.snapshot() if item["type"] == "runtime.liveness.changed"
+    ]
+    assert [item["payload"]["state"] for item in liveness_events] == [
+        "idle",
+        "possibly_stalled",
+    ]
+    assert all(item["source"] == "harness" for item in liveness_events)
+    release.set()
+    active.wait()

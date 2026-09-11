@@ -71,7 +71,17 @@ The runtime provides `sdar-notify` so the agent reports semantic intent without
 constructing HTTP envelopes. The helper supplies IDs, timestamps, sequence,
 authorization, and retry/backoff. `HARNESS_RUN_ID`, `HARNESS_EVENT_URL`,
 `HARNESS_TOKEN`, and `SDAR_NOTIFY` are available to commands run by the agent.
-The token remains in memory/environment and all disk/report sinks redact an
+The runtime instruction requires the agent to bracket its self-selected
+iterations and applicable manifest steps with the corresponding start,
+complete, or skip notifications, then declare final output paths. This is a
+telemetry protocol, not a domain workflow or quality gate.
+
+Codex runs with the current run's agent directory as its working directory and
+only writable workspace. The repository and imported resume history remain
+read-only context. Agent shell commands receive an explicit runtime allowlist
+rather than unrelated host credentials; provider credentials needed by the
+parent Codex process are not automatically inherited by those commands. The
+per-run token remains in memory/environment and all disk/report sinks redact an
 accidental echo.
 
 Skill steps are tracked per iteration as `not_started`, `in_progress`,
@@ -97,7 +107,10 @@ resume is a new execution.
 The CLI prints the realtime report URL immediately. The page receives the same
 processed event stream through Server-Sent Events and shows run/liveness,
 skill progress, current and previous iterations, activity, artifacts, and
-evidence. Once the server stops, `report/index.html` remains reviewable.
+evidence. A generic harness ticker emits `runtime.liveness.changed` through the
+same FIFO pipeline when an otherwise silent live process becomes idle or
+possibly stalled, so the report remains event-driven without polling the
+agent. Once the server stops, `report/index.html` remains reviewable.
 
 ## Local usage
 

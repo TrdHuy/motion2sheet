@@ -12,6 +12,27 @@ from typing import Any, Callable
 from ..contracts import AgentExit, AgentRunRequest, ProviderError, ProviderEvent
 
 
+_SHELL_ENVIRONMENT_ALLOWLIST = (
+    "PATH",
+    "PYTHONPATH",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "TMPDIR",
+    "HARNESS_RUN_ID",
+    "HARNESS_EVENT_URL",
+    "HARNESS_TOKEN",
+    "HARNESS_EVENT_STATE",
+    "SDAR_NOTIFY",
+)
+
+
+def _shell_environment_filters() -> str:
+    entries = ",".join(f'{name}="include"' for name in _SHELL_ENVIRONMENT_ALLOWLIST)
+    return f"shell_environment_policy.filters={{{entries}}}"
+
+
 def _provider_event(line: str, stream: str) -> ProviderEvent:
     line = line.rstrip("\n")
     if stream == "stderr":
@@ -127,11 +148,15 @@ class CodexCLIProvider:
             "-c",
             "sandbox_workspace_write.network_access=true",
             "-c",
+            "sandbox_workspace_write.writable_roots=[]",
+            "-c",
+            "sandbox_workspace_write.exclude_slash_tmp=true",
+            "-c",
             "shell_environment_policy.inherit=all",
             "-c",
-            "shell_environment_policy.ignore_default_excludes=true",
+            _shell_environment_filters(),
             "-C",
-            str(request.repository),
+            str(request.workspace),
             "-",
         ]
 
@@ -143,8 +168,24 @@ class CodexCLIProvider:
             "You are the domain-owning animation authoring agent in a Skill-Driven Agent Runtime.\n"
             "Use repository tools and motion2sheet directly. The harness only observes runtime events; "
             "it does not choose references, validate, render, review, refine, or create metadata.\n"
-            f"Report semantic progress with the helper at {request.notify_command}. "
-            "You must send the final completion declaration with that helper.\n\n"
+            f"Use the SDAR event helper at {request.notify_command}.\n\n"
+            "SDAR REPORTING PROTOCOL (telemetry, not domain decision-making)\n"
+            "=============================================================\n"
+            "You own the number and purpose of iterations. For every iteration you choose to run:\n"
+            "  sdar-notify iteration-start <n> --reason \"...\"\n"
+            "Before executing each applicable manifest step:\n"
+            "  sdar-notify skill-start <step-id> --iteration <n>\n"
+            "After completing that step:\n"
+            "  sdar-notify skill-complete <step-id> --iteration <n> --summary \"...\"\n"
+            "If you intentionally do not perform a manifest step:\n"
+            "  sdar-notify skill-skip <step-id> --iteration <n> --reason \"...\"\n"
+            "Close each iteration with:\n"
+            "  sdar-notify iteration-complete <n> --summary \"...\"\n"
+            "Report artifacts and evidence with artifact-created/evidence-created as appropriate.\n"
+            "After your work is complete, declare the three final workspace files with:\n"
+            "  sdar-notify complete --animation <path> --metadata <path> --preview <path>\n"
+            "Reporting is required for observability, but the harness does not use skill coverage "
+            "to judge animation correctness.\n\n"
             "ANIMATION AUTHORING SKILL (workflow authority; follow in full)\n"
             "=============================================================\n"
             f"{request.skill_text}\n\n"
@@ -160,10 +201,15 @@ class CodexCLIProvider:
             "RUNTIME OUTPUT LOCATION\n"
             "=======================\n"
             f"Create all run-owned files inside: {request.workspace}\n"
+            f"The repository at {request.repository} is read-only context. Do not modify it.\n"
+            "Previous run history and any paths it references are read-only.\n"
             "Do not put final outputs in the public output directory; declare their workspace paths.\n"
         )
 
     def start(self, request: AgentRunRequest) -> CodexAgentSession:
+        request.workspace.mkdir(parents=True, exist_ok=True)
+        temporary = request.workspace / ".tmp"
+        temporary.mkdir(parents=True, exist_ok=True)
         environment = os.environ.copy()
         environment.update(
             {
@@ -173,13 +219,14 @@ class CodexCLIProvider:
                 "HARNESS_EVENT_STATE": str(request.workspace / ".sdar" / "sequence"),
                 "SDAR_NOTIFY": str(request.notify_command),
                 "PATH": f"{request.notify_command.parent}{os.pathsep}{environment.get('PATH', '')}",
-                "PYTHONPATH": f"{request.repository}{os.pathsep}{environment.get('PYTHONPATH', '')}",
+                "PYTHONPATH": str(request.repository),
+                "TMPDIR": str(temporary),
             }
         )
         try:
             process = self.popen_factory(
                 self._command(request),
-                cwd=request.repository,
+                cwd=request.workspace,
                 env=environment,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
