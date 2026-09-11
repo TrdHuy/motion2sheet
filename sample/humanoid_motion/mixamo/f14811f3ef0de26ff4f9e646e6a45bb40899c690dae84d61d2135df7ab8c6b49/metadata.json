@@ -1,0 +1,71 @@
+{
+  "name": "run-look-back",
+  "intent": "Looping in-place run with a pronounced look-back: the head begins turning behind first, the body follows while the running stride continues, then the head and body return to the initial heading to close the loop.",
+  "phases": [
+    {
+      "name": "baseline-run",
+      "startFrame": 0,
+      "endFrame": 4,
+      "description": "Baseline running before the pronounced look-back begins."
+    },
+    {
+      "name": "head-led-look-back",
+      "startFrame": 5,
+      "endFrame": 27,
+      "description": "The head leads the look-back, building toward the strongest backward gaze."
+    },
+    {
+      "name": "carried-backward-gaze",
+      "startFrame": 28,
+      "endFrame": 43,
+      "description": "The backward gaze is maintained while the root/body continues turning."
+    },
+    {
+      "name": "unwind-and-loop-return",
+      "startFrame": 44,
+      "endFrame": 67,
+      "description": "The head and body unwind and restore the initial heading to return to the loop start."
+    }
+  ],
+  "keyPoses": [
+    {
+      "frame": 0,
+      "role": "baseline run"
+    },
+    {
+      "frame": 8,
+      "role": "head-led look-back before major root turn"
+    },
+    {
+      "frame": 27,
+      "role": "strongest backward gaze"
+    },
+    {
+      "frame": 43,
+      "role": "maximum root/body turn"
+    },
+    {
+      "frame": 60,
+      "role": "forward gaze while body/root is still unwinding"
+    }
+  ],
+  "weightTransfer": {
+    "description": "Weight alternates across successive ground contacts throughout the turn; the pelvis lowers during loading phases and rises between contacts.",
+    "contactCaveat": "Anatomical left/right support side is intentionally not assigned because the rotating rendered view supports the alternating load/rise pattern more strongly than a side-specific support label."
+  },
+  "bodyMechanics": {
+    "description": "The head initiates the look-back before the root; the root/body follows while the head maintains the backward gaze. During the return, the head counter-rotates toward forward before the root completes restoration of the initial heading.",
+    "orientationCaveat": "The reviewed orientation annotations use Z-axis twist components from the source quaternions only to compare relative turn timing between the head and root; they do not represent full Euler body orientation."
+  },
+  "referenceUse": {
+    "recommended": [
+      "run locomotion with a head-led look-back",
+      "timing between gaze, body follow-through, and recovery while the running stride continues"
+    ],
+    "notRecommendedAsPrimary": [
+      "world-space travel distance",
+      "world-space travel speed",
+      "world-space travel path"
+    ]
+  }
+}

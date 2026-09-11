@@ -1,0 +1,76 @@
+{
+  "name": "zombie-run",
+  "intent": "In-place zombie run cycle with a slightly hunched torso, knees kept bent, and alternating leg lifts and lowers; both arms remain loose and swing asymmetrically, creating an uneven running rhythm.",
+  "phases": [
+    {
+      "name": "rise-and-first-leg-lift",
+      "startFrame": 0,
+      "endFrame": 5,
+      "description": "The body rises and the first leg moves into a lifted step; the hips reach their peak along the Z axis at f5."
+    },
+    {
+      "name": "lower-and-mid-cycle-compression",
+      "startFrame": 6,
+      "endFrame": 12,
+      "description": "The body lowers and compresses through the middle of the cycle; the hips reach their lowest position along the Z axis at f12."
+    },
+    {
+      "name": "second-rise-with-opposite-leg",
+      "startFrame": 13,
+      "endFrame": 17,
+      "description": "The body rises a second time with the opposite leg; the second lift peak occurs at f17."
+    },
+    {
+      "name": "second-lower-and-loop-return",
+      "startFrame": 18,
+      "endFrame": 24,
+      "description": "The body lowers and compresses a second time, then returns to the loop-start pose; f24 is near f0."
+    }
+  ],
+  "keyPoses": [
+    {
+      "frame": 0,
+      "role": "compression-loop-start",
+      "description": "Compressed loop-start pose."
+    },
+    {
+      "frame": 5,
+      "role": "first-step-peak",
+      "description": "Peak of the first step; one leg is lifted and the hips are highest along the Z axis."
+    },
+    {
+      "frame": 12,
+      "role": "mid-cycle-compression",
+      "description": "Mid-cycle compression; the hips are lowest along the Z axis."
+    },
+    {
+      "frame": 17,
+      "role": "opposite-leg-step-peak",
+      "description": "Peak step with the opposite leg."
+    },
+    {
+      "frame": 22,
+      "role": "second-compression-before-loop-return",
+      "description": "Second compression before returning to the start of the loop."
+    }
+  ],
+  "weightTransfer": {
+    "description": "The hips shift along +X from the start of the loop to a maximum around f14, then return near the initial position by f24; at the same time, there are two rise-compression pulses along Z. The two legs alternate lifting across the two half-steps.",
+    "contactCaveat": "The evidence is not sufficient to assign the exact support leg or the exact timing of ground contact."
+  },
+  "bodyMechanics": {
+    "description": "The coordination sequence is compression → first leg lifts as the hips rise → mid-cycle compression → opposite leg lifts → return to the loop. The upper torso and shoulders sway across the two half-steps; both arms swing loosely and change configuration correspondingly."
+  },
+  "referenceUse": {
+    "recommended": [
+      "stylized zombie run",
+      "hunched and uneven run cycle",
+      "loose asymmetric arm swing"
+    ],
+    "notRecommended": [
+      "neutral or athletic run",
+      "symmetric gait",
+      "exact foot-to-ground contact timing"
+    ]
+  }
+}
