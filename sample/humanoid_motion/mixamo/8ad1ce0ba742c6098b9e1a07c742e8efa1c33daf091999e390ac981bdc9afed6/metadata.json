@@ -1,0 +1,29 @@
+{
+  "name": "breathing-idle",
+  "intent": "In-place breathing idle, seamlessly looping, with subtle full-body sway and an up-and-down pelvis rhythm; no locomotion.",
+  "phases": [
+    "f0–f103: sway from near the loop center toward the -X extreme, ending with the pelvis in a lower position.",
+    "f104–f172: cross from -X to +X; the pelvis passes through its highest point at f148, then lowers into the +X extreme.",
+    "f173–f244: reverse sway from +X back to -X, ending at the second -X extreme.",
+    "f245–f298: return from -X to the loop center and close back into the starting pose."
+  ],
+  "keyPoses": [
+    "f0: loop-start neutral, pelvis near center.",
+    "f103: first -X sway extreme.",
+    "f148: highest pelvis point while crossing through center.",
+    "f172: +X sway extreme.",
+    "f244: second -X sway extreme."
+  ],
+  "weightTransfer": "The pelvis shifts weight laterally in the sequence -X → +X → -X → center. The evidence is sufficient to confirm lateral weight shift, but not strong enough to assign a specific supporting leg, so no support foot is annotated.",
+  "bodyMechanics": "Across the f103→f172 arc, the pelvis/lower body moves low → rises → reaches its highest point → lowers while moving laterally from -X to +X; the torso, head, and both relaxed arms adjust continuously with the sway rhythm. The motion remains in place, with no locomotion steps.",
+  "referenceUse": {
+    "recommended": [
+      "in-place breathing idle with clear lateral body sway;",
+      "relaxed/low-energy humanoid idle requiring full-body secondary motion."
+    ],
+    "notPrimary": [
+      "nearly static neutral idle with minimal pelvis displacement;",
+      "locomotion or step-cycle mechanics."
+    ]
+  }
+}

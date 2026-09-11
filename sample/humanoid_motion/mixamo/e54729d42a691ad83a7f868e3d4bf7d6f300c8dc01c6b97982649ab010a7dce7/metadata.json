@@ -1,0 +1,76 @@
+{
+  "name": "walker-walk",
+  "intent": "An in-place looping walk cycle with alternating left and right steps; the legs have clear lift and swing phases, the root and torso rotate with the rhythm, while both arms remain bent in front of the torso and move slowly instead of showing a clear opposite-phase arm swing like a natural walk.",
+  "phases": [
+    {
+      "startFrame": 0,
+      "endFrame": 8,
+      "description": "Continue the left-leg swing across the cycle seam and settle the left step."
+    },
+    {
+      "startFrame": 9,
+      "endFrame": 44,
+      "description": "Transfer weight and prepare for the right step."
+    },
+    {
+      "startFrame": 45,
+      "endFrame": 57,
+      "description": "Lift and swing the right leg."
+    },
+    {
+      "startFrame": 58,
+      "endFrame": 66,
+      "description": "Extend and lower the right leg, then settle the right step."
+    },
+    {
+      "startFrame": 67,
+      "endFrame": 99,
+      "description": "Transfer weight and prepare for the left step."
+    },
+    {
+      "startFrame": 100,
+      "endFrame": 111,
+      "description": "Lift and swing the left leg, continuing across the cycle seam back to f0."
+    }
+  ],
+  "keyPoses": [
+    {
+      "frame": 8,
+      "role": "Left step settles."
+    },
+    {
+      "frame": 42,
+      "role": "Root reaches an extreme rotation; preparation for the right step."
+    },
+    {
+      "frame": 57,
+      "role": "Peak of the right-leg flexion and swing phase."
+    },
+    {
+      "frame": 66,
+      "role": "Right step settles."
+    },
+    {
+      "frame": 95,
+      "role": "Preparation for the left step."
+    },
+    {
+      "frame": 108,
+      "role": "Peak of the left-leg flexion and swing phase."
+    }
+  ],
+  "weightTransfer": "The pelvis/hips shift laterally through the cycle: X increases from +0.0206 at f8 to a maximum of +0.0688 at f53 while the right leg is swinging, then decreases through +0.0457 at f66 and reaches +0.0015 at f108 while the left leg is swinging; Y and Z both lower at f66. Hip translation is used only as an indirect indicator of weight transfer, and no support-leg label is assigned.",
+  "bodyMechanics": "During the right step, the root reaches an extreme rotation around f42. Across f32, f44, f57, f66, f80, and f95, both arms keep the elbows bent and remain in front of or near the front of the torso; their motion is asymmetric but does not produce a phase where one arm moves forward while the other clearly swings backward as in a natural walking arm swing. The right leg enters its swing phase at f51, the foot and lower leg reach their extrema at f56-f57, the hips, spine, and chest show strong flexion at f62, and the pelvis lowers as the right step settles at f66.",
+  "referenceUse": {
+    "recommended": [
+      "In-place walk cycles with alternating left and right steps.",
+      "Humanoid walking timing from preparation to leg swing to step settlement.",
+      "Walking motion with both arms bent and held in front of the torso with slow, stiff arm movement."
+    ],
+    "notRecommended": [
+      "Natural walking with a clear opposite-phase arm swing.",
+      "Locomotion with forward root translation in world space.",
+      "Physically precise ground contact, foot locking, or support-leg identification."
+    ]
+  }
+}

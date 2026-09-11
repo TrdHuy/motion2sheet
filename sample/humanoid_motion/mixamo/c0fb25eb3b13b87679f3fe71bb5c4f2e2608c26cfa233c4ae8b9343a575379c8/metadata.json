@@ -1,0 +1,89 @@
+{
+  "name": "walking-2",
+  "intent": "Looping in-place walk cycle with pelvis sway and rise-fall, torso rotation, arm swing, and two legs coordinated out of phase. The left leg has a distinct timing pattern: the left upper leg reaches its orientation excursion early, the left foot reaches its excursion immediately after, and the left lower leg has a later large orientation change.",
+  "phases": [
+    {
+      "name": "left-leg-opening-and-pelvis-drop",
+      "startFrame": 0,
+      "endFrame": 12,
+      "description": "The pelvis lowers gradually; the left leg opens from the start-of-cycle pose, and the left upper leg continues changing orientation until it reaches its largest orientation difference from f0 at f12."
+    },
+    {
+      "name": "left-foot-extreme-and-torso-rotation",
+      "startFrame": 13,
+      "endFrame": 27,
+      "description": "The left foot reaches its largest orientation difference from f0 at f13; the left upper leg then rotates back toward its initial orientation, the pelvis passes through its maximum lateral -X offset at f21, and the torso reaches its rotation-extreme region around f26-f27."
+    },
+    {
+      "name": "late-left-lower-leg-swing-and-right-leg-opening",
+      "startFrame": 28,
+      "endFrame": 40,
+      "description": "The left upper leg is already near its initial orientation while the left lower leg continues swinging; the left lower leg reaches its largest orientation difference from f0 at f30 and then decreases. The right leg opens later, with the right upper leg reaching its largest orientation difference at f40."
+    },
+    {
+      "name": "leg-recovery-and-loop-return",
+      "startFrame": 41,
+      "endFrame": 49,
+      "description": "The right leg recovers strongly while the left leg continues returning. By f49, the left upper leg, left lower leg, and left foot are close to matching their f0 orientations again, closing the cycle."
+    }
+  ],
+  "keyPoses": [
+    {
+      "frame": 0,
+      "role": "loop-boundary-left-leg-open",
+      "description": "Start/end cycle marker with the left leg opened."
+    },
+    {
+      "frame": 9,
+      "role": "pelvis-lowest",
+      "description": "The pelvis is at its lowest level."
+    },
+    {
+      "frame": 13,
+      "role": "left-foot-maximum-orientation-difference",
+      "description": "The left foot reaches its largest orientation difference from f0."
+    },
+    {
+      "frame": 27,
+      "role": "torso-rotation-extreme-region",
+      "description": "The torso is in its rotation-extreme region."
+    },
+    {
+      "frame": 30,
+      "role": "left-lower-leg-maximum-orientation-difference",
+      "description": "The left lower leg reaches its largest orientation difference from f0."
+    },
+    {
+      "frame": 40,
+      "role": "right-upper-leg-maximum-orientation-difference",
+      "description": "The right upper leg reaches its largest orientation difference from f0."
+    }
+  ],
+  "weightTransfer": {
+    "description": "The pelvis shifts laterally from +X at f0 to its maximum -X offset at f21 and then returns to +X by f49, while also lowering to its minimum level around f9.",
+    "contactCaveat": "Do not infer that the left leg is the weight-bearing leg from left-leg position or motion alone. The source has no foot-contact or force data, the front-view preview is insufficient to prove exact contact, and Humanoid Motion v1 does not store source foot-joint position authority."
+  },
+  "bodyMechanics": {
+    "description": "Pelvis sway and rise-fall occur alongside an out-of-phase left-leg sequence: the left upper leg reaches its extreme first at f12, the left foot follows immediately at f13, and the left lower leg reaches a later extreme at f30. The torso reaches its rotation-extreme region around f26-f27, while the right upper leg reaches its later extreme at f40. The coordination is therefore overlapping rather than a rigid pelvis-to-knee-to-foot sequence.",
+    "coordinationFocus": [
+      "out-of-phase coordination between the left upper leg, left lower leg, and left foot",
+      "pelvis sway and rise-fall",
+      "torso rotation overlapping the left-leg sequence",
+      "later right-upper-leg excursion"
+    ]
+  },
+  "referenceUse": {
+    "recommended": [
+      "in-place walking with out-of-phase two-leg coordination",
+      "left upper-leg, lower-leg, and foot timing coordination",
+      "pelvis sway and rise-fall coordinated with torso rotation and arm swing"
+    ],
+    "notRecommended": [
+      "exact support-leg identification or exact heel-strike and toe-off timing",
+      "world-space travel trajectory or forward speed"
+    ]
+  },
+  "notes": [
+    "Left-leg identity is taken from the LeftUpperLeg, LeftLowerLeg, and LeftFoot tracks in animation.json rather than inferred from the left or right side of the image."
+  ]
+}

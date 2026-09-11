@@ -1,0 +1,69 @@
+{
+  "name": "catwalk-walk",
+  "intent": "A stylized looping catwalk locomotion: the character walks outward with pronounced hip sway, performs a broad presentation U-turn into a rear-facing return walk, then executes a tight pivot back to front and settles into the opening pose.",
+  "phases": [
+    {
+      "startFrame": 0,
+      "endFrame": 148,
+      "label": "outbound catwalk"
+    },
+    {
+      "startFrame": 149,
+      "endFrame": 240,
+      "label": "presentation U-turn to rear"
+    },
+    {
+      "startFrame": 241,
+      "endFrame": 370,
+      "label": "rear-facing return catwalk"
+    },
+    {
+      "startFrame": 371,
+      "endFrame": 418,
+      "label": "fast pivot back to front"
+    },
+    {
+      "startFrame": 419,
+      "endFrame": 454,
+      "label": "settle / loop closure"
+    }
+  ],
+  "keyPoses": [
+    {
+      "frame": 0,
+      "role": "opening hand-on-hip stance"
+    },
+    {
+      "frame": 129,
+      "role": "catwalk step with a lateral hip-sway accent"
+    },
+    {
+      "frame": 192,
+      "role": "held presentation pose during the U-turn"
+    },
+    {
+      "frame": 240,
+      "role": "turn completion into rear-facing orientation"
+    },
+    {
+      "frame": 405,
+      "role": "front-facing alignment during the fast pivot"
+    },
+    {
+      "frame": 454,
+      "role": "loop closure with the opening pose restored"
+    }
+  ],
+  "weightTransfer": "During the catwalk strides, the pelvis shifts laterally in an alternating pattern. Hips X is +0.467 MLL at f84, -0.436 MLL at f94, +0.602 MLL at f117, and -0.654 MLL at f129, showing alternating right/left pelvis displacement. Support-foot identity is not asserted because animation.json has no explicit foot-contact events.",
+  "bodyMechanics": "Catwalk strides combine lateral pelvis motion with alternating axial rotation of the spine and chest. The first direction change is a broad translated U-turn with a presentation hold (f149→f240: about 18.78 MLL of pelvis travel and +185.7° of heading change). The second is a tight near-in-place pivot before the front-facing settle (f371→f405: about 1.13 MLL of pelvis travel and +169.2° of heading change).",
+  "referenceUse": {
+    "recommended": [
+      "stylized catwalk/runway locomotion with pronounced hip sway",
+      "showcase direction-change choreography contrasting a broad U-turn with a tight pivot",
+      "looped locomotion that changes heading and returns to the opening pose"
+    ],
+    "notRecommendedAsPrimary": [
+      "neutral straight-line gameplay walk-cycle timing"
+    ]
+  }
+}

@@ -161,6 +161,30 @@ Exact URLs, asset IDs, SHA-256 values and byte sizes are recorded in
 `tests/motion/humanoid_motion/fixtures/release_assets.json`; CI downloads those
 fixed URLs and fails closed on any hash or size mismatch.
 
+## Reference sample identity
+
+Mixamo reference samples use semantic animation identity directories:
+
+```text
+sample/humanoid_motion/mixamo/<animation-hash>/
+  animation.json
+  preview.gif
+  metadata.json
+```
+
+`<animation-hash>` is the lowercase SHA-256 of a validated and normalized
+identity payload containing only `durationSeconds`, `fps`, `frameCount`,
+`root.rotations`, `hips.translations`, `hips.rotations`, and every
+`joints.<semantic>.rotations` track. The `schema`, `version`, source-derived
+`id`, `canonicalSkeleton`, `loop`, `coordinateSystem`,
+`quaternionConvention`, and reserved `root.translations` fields do not affect
+identity.
+
+The payload is serialized as UTF-8 compact JSON with recursively sorted object
+keys, no insignificant whitespace or trailing newline, non-ASCII characters
+preserved, and non-finite numbers rejected. Hashing the source JSON text or file
+bytes is not part of this contract.
+
 ## Canonical CI proof
 
 PR13 has one dedicated workflow:

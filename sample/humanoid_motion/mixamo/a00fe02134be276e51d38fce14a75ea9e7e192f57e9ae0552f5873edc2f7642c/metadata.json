@@ -1,0 +1,61 @@
+{
+  "name": "happy-idle",
+  "intent": "Expressive in-place idle loop with repeated light pelvis/leg bounce, broad side-to-side head and upper-body sway, and low relaxed arms.",
+  "phases": [
+    {
+      "startFrame": 0,
+      "endFrame": 20,
+      "label": "opening-side lean unwinds toward centered stance"
+    },
+    {
+      "startFrame": 21,
+      "endFrame": 48,
+      "label": "opposite-side sway builds to its visible peak"
+    },
+    {
+      "startFrame": 49,
+      "endFrame": 70,
+      "label": "peak releases and returns through centered stance"
+    },
+    {
+      "startFrame": 71,
+      "endFrame": 88,
+      "label": "opening-side lean rebuilds to close the loop"
+    }
+  ],
+  "keyPoses": [
+    {
+      "frame": 0,
+      "role": "opening lean / loop anchor"
+    },
+    {
+      "frame": 11,
+      "role": "highest pelvis bounce crest"
+    },
+    {
+      "frame": 48,
+      "role": "maximum visible head / upper-body lean"
+    },
+    {
+      "frame": 54,
+      "role": "deepest pelvis compression"
+    },
+    {
+      "frame": 88,
+      "role": "loop seam / opening pose restored"
+    }
+  ],
+  "weightTransfer": "Using the pelvis as a center-of-mass proxy, lateral motion shifts from -X/left at f32 (-0.0162 MLL) to +X/right at f53 (+0.0239 MLL), returns near center at f63 (+0.0030 MLL), and closes the loop near the opening lateral position at f88 (+0.0013 MLL). Support foot is not asserted.",
+  "bodyMechanics": "Rhythmic pelvis rise/fall is layered with slower lateral pelvis travel. Head/neck excursion is larger than chest motion while the arms remain low and relatively relaxed. Across f32 → f48 → f54 → f60, the large sway builds to the clearest visible head/upper-body lean, continues into the deepest pelvis compression, then recovers toward centered stance. This describes overlapping coordinated motion only; no fixed causal joint activation order is asserted.",
+  "referenceUse": {
+    "recommended": [
+      "expressive in-place idle timing",
+      "layered vertical bounce and lateral sway",
+      "pronounced head/upper-body sway with low relaxed arms"
+    ],
+    "notRecommendedAsPrimary": [
+      "neutral/minimal idle motion",
+      "support-foot/contact timing"
+    ]
+  }
+}

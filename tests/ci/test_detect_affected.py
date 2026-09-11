@@ -36,6 +36,14 @@ def test_component_change_runs_only_dependent_targets():
     assert not anim_e2e_targets(load_manifest(), targets)
 
 
+def test_humanoid_reference_change_runs_humanoid_unit_validation():
+    components, targets = resolve(
+        "sample/humanoid_motion/mixamo/abc/metadata.json"
+    )
+    assert "motion-humanoid-motion" in components
+    assert "motion-humanoid-motion-unit" in targets
+
+
 def test_vfx_effect_change_does_not_run_motion_or_anim():
     manifest = load_manifest()
     components, targets = resolve("motion2sheet/vfx2sheet/effects/splash/config.py", manifest=manifest)
