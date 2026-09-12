@@ -163,6 +163,7 @@ class CodexCLIProvider:
     @staticmethod
     def _prompt(request: AgentRunRequest) -> str:
         history = json.dumps(request.history, ensure_ascii=False, indent=2)
+        memory = json.dumps(request.memory, ensure_ascii=False, indent=2)
         manifest = json.dumps(request.skill_manifest.to_dict(), ensure_ascii=False, indent=2)
         return (
             "You are the domain-owning animation authoring agent in a Skill-Driven Agent Runtime.\n"
@@ -182,6 +183,10 @@ class CodexCLIProvider:
             "Close each iteration with:\n"
             "  sdar-notify iteration-complete <n> --summary \"...\"\n"
             "Report artifacts and evidence with artifact-created/evidence-created as appropriate.\n"
+            "If the skill asks you to preserve reusable learning and this run produced a durable, "
+            "evidence-backed lesson, write the structured proposal inside the run workspace and report:\n"
+            "  sdar-notify memory-update <path>\n"
+            "Do not create a memory proposal merely to satisfy telemetry.\n"
             "After your work is complete, declare the three final workspace files with:\n"
             "  sdar-notify complete --animation <path> --metadata <path> --preview <path>\n"
             "Reporting is required for observability, but the harness does not use skill coverage "
@@ -192,6 +197,11 @@ class CodexCLIProvider:
             "SKILL OBSERVABILITY MANIFEST\n"
             "============================\n"
             f"{manifest}\n\n"
+            "PROVIDER MEMORY (prior experience; weaker than current evidence and skill rules)\n"
+            "========================================================================\n"
+            "Use this provider-private memory as prior experience, not ground truth. Do not broadly "
+            "rediscover lessons already present unless the current task needs verification or contradicts them.\n"
+            f"{memory}\n\n"
             "PREVIOUS READ-ONLY HISTORY\n"
             "==========================\n"
             f"{history}\n\n"

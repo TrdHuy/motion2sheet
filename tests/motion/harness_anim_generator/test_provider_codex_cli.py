@@ -46,7 +46,7 @@ class FakeProcess:
         self.terminated = True
 
 
-def request(tmp_path: Path, *, history=None) -> AgentRunRequest:
+def request(tmp_path: Path, *, history=None, memory=None) -> AgentRunRequest:
     repository = tmp_path / "repo"
     repository.mkdir(exist_ok=True)
     workspace = tmp_path / "runs" / "current" / "agent"
@@ -60,6 +60,16 @@ def request(tmp_path: Path, *, history=None) -> AgentRunRequest:
         skill_manifest=SkillManifest("skill", 1, (SkillStep("one", "One"),)),
         repository=repository,
         workspace=workspace,
+        memory=(
+            memory
+            if memory is not None
+            else {
+                "skillId": "skill",
+                "skillVersion": 1,
+                "provider": "codex-cli",
+                "entries": [{"entry": {"statement": "private prior lesson"}}],
+            }
+        ),
         history=history or {"prior": "history"},
         event_url="http://127.0.0.1:1234/runs/run-1/events",
         event_token="secret-token",
@@ -126,6 +136,7 @@ def test_codex_provider_launches_agent_session_with_isolated_runtime_context(
     assert run_request.skill_text in process.stdin.value
     assert "exact prompt" in process.stdin.value
     assert '"prior": "history"' in process.stdin.value
+    assert '"statement": "private prior lesson"' in process.stdin.value
     event = session.next_event(timeout=1)
     assert event is not None and event.event_type == "command.completed"
 
@@ -139,10 +150,13 @@ def test_codex_prompt_requires_sdar_progress_protocol(tmp_path):
         "skill-start",
         "skill-complete",
         "skill-skip",
+        "memory-update <path>",
         "complete --animation <path> --metadata <path> --preview <path>",
     ):
         assert command in prompt
     assert run_request.skill_text in prompt
+    assert "PROVIDER MEMORY" in prompt
+    assert "private prior lesson" in prompt
 
 
 def test_resume_history_is_prompt_context_not_a_writable_root(tmp_path):

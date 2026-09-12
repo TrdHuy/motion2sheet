@@ -39,6 +39,7 @@ AGENT_EVENT_TYPES = frozenset(
         "artifact.updated",
         "artifact.read",
         "evidence.created",
+        "memory.proposed",
         "agent.completed",
         "agent.failed",
     }
@@ -176,6 +177,8 @@ def initial_run_state(
         "evidence": [],
         "warnings": [],
         "completion": None,
+        "memoryProposal": None,
+        "memoryPersistence": None,
         "failure": None,
     }
 
@@ -230,6 +233,19 @@ class RunState:
                 value["completion"] = payload
             elif kind == "agent.failed" and event.source == "agent_push":
                 value["failure"] = payload or {"message": "agent reported failure"}
+            elif kind == "memory.proposed" and event.source == "agent_push":
+                if value["memoryProposal"] is not None:
+                    warnings.append("multiple memory proposals reported; latest declaration retained")
+                value["memoryProposal"] = {
+                    "path": payload.get("path"),
+                    "receiveOrder": event.receive_order,
+                }
+            elif kind == "memory.persisted" and event.source == "harness":
+                value["memoryPersistence"] = {"status": "persisted", **payload}
+            elif kind == "memory.rejected" and event.source == "harness":
+                value["memoryPersistence"] = {"status": "rejected", **payload}
+                warning = str(payload.get("message") or "memory proposal rejected")
+                value["warnings"].append(warning)
             elif kind in {"run.completed", "run.failed"} and event.source == "harness":
                 value["status"] = kind.split(".", 1)[1]
                 value["agentAliveState"] = value["status"]
@@ -464,6 +480,8 @@ class EventProcessor:
             "evidence": state["evidence"],
             "warnings": state["warnings"],
             "completion": state["completion"],
+            "memoryProposal": state["memoryProposal"],
+            "memoryPersistence": state["memoryPersistence"],
         }
 
 
@@ -572,6 +590,8 @@ def _notification(argv: list[str] | None = None) -> int:
         item = sub.add_parser(name)
         item.add_argument("path")
         item.add_argument("--iteration", type=int)
+    memory = sub.add_parser("memory-update")
+    memory.add_argument("path")
     sub.add_parser("started")
     for name in ("log", "warning"):
         item = sub.add_parser(name)
@@ -599,6 +619,7 @@ def _notification(argv: list[str] | None = None) -> int:
         "artifact-updated": "artifact.updated",
         "artifact-read": "artifact.read",
         "evidence-created": "evidence.created",
+        "memory-update": "memory.proposed",
         "complete": "agent.completed",
         "fail": "agent.failed",
         "heartbeat": "agent.heartbeat",

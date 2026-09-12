@@ -1,6 +1,6 @@
 {
   "id": "humanoid-motion-local-authoring",
-  "version": 1,
+  "version": 2,
   "steps": [
     {"id": "understand-intent", "title": "Understand motion intent"},
     {"id": "discover-references", "title": "Discover references"},

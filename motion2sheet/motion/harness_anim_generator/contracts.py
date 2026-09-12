@@ -30,6 +30,10 @@ class OutputContractError(HarnessError):
     """The agent did not declare usable final files."""
 
 
+class MemorySecurityError(HarnessError):
+    """A provider-memory declaration crossed a runtime security boundary."""
+
+
 @dataclass(frozen=True)
 class GenerationRequest:
     prompt: str
@@ -101,6 +105,7 @@ class AgentRunRequest:
     skill_manifest: SkillManifest
     repository: Path
     workspace: Path
+    memory: JsonObject
     history: JsonObject
     event_url: str
     event_token: str = field(repr=False)

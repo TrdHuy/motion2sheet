@@ -12,10 +12,13 @@ from .contracts import (
     GenerationRequest,
     GenerationResult,
     HarnessError,
+    MemorySecurityError,
     OutputContractError,
+    SkillManifest,
 )
 from .events import EventProcessor, RunEventBus, RunState, initial_run_state
 from .history import load_resume_history
+from .memory import ProviderMemoryBank
 from .providers.base import AgentProvider, AgentSession
 from .redaction import SecretRedactor, write_json
 from .report.server import ReportServer, materialize_static_report
@@ -42,6 +45,8 @@ class ActiveRun:
         store: ProcessedEventStore,
         server: ReportServer,
         redactor: SecretRedactor,
+        memory_bank: ProviderMemoryBank,
+        skill_manifest: SkillManifest,
     ) -> None:
         self.request = request
         self.parent_run_id = parent_run_id
@@ -56,6 +61,8 @@ class ActiveRun:
         self.store = store
         self.server = server
         self.redactor = redactor
+        self.memory_bank = memory_bank
+        self.skill_manifest = skill_manifest
 
     @property
     def run_id(self) -> str:
@@ -97,6 +104,7 @@ class ActiveRun:
             if not isinstance(outputs, dict):
                 raise OutputContractError("agent.completed must declare an outputs object")
             archive = self._collect_outputs(outputs)
+            self._persist_memory(snapshot)
             published = self._publish(archive)
             self.bus.submit_harness("run.completed", {"output": str(self.output)})
             self.processor.drain()
@@ -134,6 +142,34 @@ class ActiveRun:
             raise failure
         assert result is not None
         return result
+
+    def _persist_memory(self, snapshot: dict[str, object]) -> None:
+        proposal = snapshot.get("memoryProposal")
+        if proposal is None:
+            return
+        declared = proposal.get("path") if isinstance(proposal, dict) else None
+        try:
+            if not isinstance(declared, str):
+                raise HarnessError("memory proposal must declare a path")
+            result = self.memory_bank.persist_proposal(
+                declared_path=declared,
+                agent_workspace=self.workspace.agent,
+                run_id=self.run_id,
+                manifest=self.skill_manifest,
+                provider=self.request.provider,
+                redactor=self.redactor,
+            )
+        except MemorySecurityError:
+            raise
+        except Exception as exc:
+            self.bus.submit_harness(
+                "memory.rejected", {"message": self.redactor.text(str(exc))}
+            )
+        else:
+            self.bus.submit_harness("memory.persisted", result)
+        self.processor.drain()
+        if self.processor.error is not None:
+            raise HarnessError(f"event processor failed: {self.processor.error}")
 
     def _collect_outputs(self, outputs: dict[str, object]) -> dict[str, Path]:
         names = {
@@ -197,6 +233,7 @@ class AnimationGenerationOrchestrator:
         liveness_idle_seconds: float = 15.0,
         liveness_stalled_seconds: float = 60.0,
         liveness_tick_seconds: float = 1.0,
+        memory_root: Path | None = None,
     ) -> None:
         self.provider = provider
         self.repo_root = Path(repo_root).resolve()
@@ -205,6 +242,12 @@ class AnimationGenerationOrchestrator:
         self.liveness_idle_seconds = liveness_idle_seconds
         self.liveness_stalled_seconds = liveness_stalled_seconds
         self.liveness_tick_seconds = liveness_tick_seconds
+        self.memory_root = (
+            Path(memory_root).resolve()
+            if memory_root is not None
+            else self.workspace_root.parent / "sdar-memory"
+        )
+        self.memory_bank = ProviderMemoryBank(self.memory_root)
 
     def start(self, request: GenerationRequest) -> ActiveRun:
         # All configuration and resume validation happens before launching an agent.
@@ -216,6 +259,7 @@ class AnimationGenerationOrchestrator:
         skill = load_skill(skill_directory)
         output = preflight_output(request.output)
         history = load_resume_history(self.workspace_root, request.resume_run_id)
+        memory = self.memory_bank.load(skill.manifest, request.provider)
         run_id = uuid.uuid4().hex
         token = secrets.token_urlsafe(32)
         redactor = SecretRedactor(token)
@@ -271,6 +315,7 @@ class AnimationGenerationOrchestrator:
                 "skill": str(skill.directory),
                 "skillManifest": skill.manifest.to_dict(),
                 "history": history,
+                "memory": memory,
             },
             redactor,
         )
@@ -284,6 +329,7 @@ class AnimationGenerationOrchestrator:
             skill_manifest=skill.manifest,
             repository=self.repo_root,
             workspace=workspace.agent,
+            memory=memory,
             history=history,
             event_url=server.event_url,
             event_token=token,
@@ -336,6 +382,8 @@ class AnimationGenerationOrchestrator:
             store=store,
             server=server,
             redactor=redactor,
+            memory_bank=self.memory_bank,
+            skill_manifest=skill.manifest,
         )
 
     def run(self, request: GenerationRequest) -> GenerationResult:

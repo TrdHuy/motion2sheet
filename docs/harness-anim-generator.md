@@ -10,9 +10,13 @@ The responsibility model is deliberately narrow:
   `skills/humanoid-motion-local-authoring/SKILL.md` is passed verbatim to the
   agent. Its neighboring `skill.json` lists observable workflow steps but is
   not an animation schema.
-- **Agent = domain owner.** The agent interprets intent, inspects the repo,
-  selects references, authors and reviews motion, invokes motion2sheet,
-  iterates, validates, and creates all final artifacts.
+- **Provider Memory = provider-private accumulated experience.** It contains
+  reusable, evidence-backed lessons proposed by that provider's agent lineage;
+  it is neither repository documentation nor workflow authority.
+- **Agent = domain owner.** The agent interprets intent, reads only the specific
+  repository inputs required by the skill, selects references, authors and
+  reviews motion, invokes motion2sheet, iterates, validates, and creates all
+  final artifacts and optional memory proposals.
 - **Harness / SDAR = runtime supervisor and event/history/artifact
   aggregator.** It launches the process, accepts events, tracks liveness,
   persists observations, and collects declared output files.
@@ -47,8 +51,9 @@ animation or metadata semantics and does not inspect the GIF for quality.
 ## Agent runtime and asynchronous events
 
 Providers implement `AgentProvider.start(AgentRunRequest) -> AgentSession`.
-The request contains the prompt, full skill text, skill manifest, optional
-read-only history, repository/workspace locations, and event ingress details.
+The request contains the prompt, full skill text, skill manifest,
+provider-scoped memory, optional read-only history, repository/workspace
+locations, and event ingress details.
 The Codex CLI provider launches non-interactive `codex exec --json` as a local
 agent; it does not request one immediate generated JSON response.
 
@@ -90,6 +95,38 @@ executed, but does not determine whether those steps were performed correctly.
 Missing, skipped, or unknown steps are diagnostic information and never an
 animation acceptance gate.
 
+## Provider-scoped Memory Bank
+
+Provider Memory preserves reusable experience learned across successful runs.
+It is isolated by exact skill ID and provider name under:
+
+```text
+build/sdar-memory/<skill-id>/<provider>/entries.jsonl
+```
+
+Cross-provider sharing is disabled by default: memory produced by `codex-cli`
+is never injected into another provider. A different skill receives a different
+bank. At run start the harness loads only the matching bank and passes it to the
+agent separately from resume history. Current task evidence and current selected
+references outrank skill rules, which in turn outrank provider memory; memory is
+prior experience, not ground truth.
+
+The agent—not the harness—decides whether the run produced a durable learning.
+It may write a bounded structured `memory-update.json` inside its current
+workspace and declare it with `sdar-notify memory-update <path>`. Every entry
+must contain a reusable statement, scope, reference locators, concrete evidence,
+and confidence. Repository command syntax, directory structure, schema/workflow
+documentation, and one-run noise belong in the skill or run history, not memory.
+No proposal is a valid outcome.
+
+After `agent.completed`, process exit zero, queue drain, and generic final-output
+validation, the harness generically validates and redacts the proposal, adds
+run/provider/skill provenance, rejects exact duplicates by stable hash, and
+appends new entries. It never reads renders or invents domain lessons. Malformed
+optional proposals become warnings without corrupting the bank or failing valid
+animation output; traversal and symlink escape are security failures. Proposal
+files are size/count/string bounded and the bank is append-only.
+
 ## History, paths, and reporting
 
 Run data is retained below `build/harness_anim_generator/<run-id>/`, including
@@ -102,7 +139,9 @@ are rejected for copy, snapshot, publish, and HTTP serving. An outside
 `--resume-run OLD_RUN_ID` creates a new run ID with `parentRunId=OLD_RUN_ID`.
 It imports the old run as read-only history and never mutates or appends an
 iteration to the old workspace. Iterations are versions inside one execution;
-resume is a new execution.
+resume is a new execution. Resume history is specific prior execution context;
+Provider Memory is long-lived experience. They remain separate inputs even when
+both are present.
 
 The CLI prints the realtime report URL immediately. The page receives the same
 processed event stream through Server-Sent Events and shows run/liveness,
@@ -154,7 +193,7 @@ motion2sheet generate-humanoid-animation \
 
 Automated tests use fake agent providers/sessions and fake HTTP push clients.
 They verify asynchronous ingestion, ordering, idempotency, liveness, history,
+provider/skill memory isolation, append-only deduplication, proposal security,
 redaction, path confinement, report/SSE behavior, terminal semantics, and
 generic output packaging. They never call Codex or another AI service, use
-credentials, run Blender, generate a demo animation, or judge animation
-quality.
+credentials, run Blender, generate a demo animation, or judge animation quality.

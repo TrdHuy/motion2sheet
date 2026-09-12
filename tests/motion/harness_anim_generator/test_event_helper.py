@@ -66,3 +66,27 @@ def test_notify_helper_maps_semantic_cli_to_generic_event(monkeypatch, tmp_path)
         "skill.step.completed",
         {"payload": {"step": "discover-references", "summary": "done"}, "iteration": 2},
     )
+
+
+def test_notify_helper_maps_memory_proposal(monkeypatch, tmp_path):
+    observed = {}
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def send(self, event_type, **kwargs):
+            observed["send"] = (event_type, kwargs)
+
+    monkeypatch.setattr(
+        "motion2sheet.motion.harness_anim_generator.events.EventClient", FakeClient
+    )
+    monkeypatch.setenv("HARNESS_RUN_ID", "run")
+    monkeypatch.setenv("HARNESS_EVENT_URL", "http://127.0.0.1/events")
+    monkeypatch.setenv("HARNESS_TOKEN", "token")
+    monkeypatch.setenv("HARNESS_EVENT_STATE", str(tmp_path / "sequence"))
+    assert _notification(["memory-update", "memory-update.json"]) == 0
+    assert observed["send"] == (
+        "memory.proposed",
+        {"payload": {"path": "memory-update.json"}, "iteration": None},
+    )

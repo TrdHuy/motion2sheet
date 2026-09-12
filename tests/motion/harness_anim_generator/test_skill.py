@@ -18,6 +18,7 @@ def test_committed_skill_and_observability_manifest_load():
     loaded = load_skill(SKILL)
     assert loaded.text == (SKILL / "SKILL.md").read_text(encoding="utf-8")
     assert loaded.manifest.id == "humanoid-motion-local-authoring"
+    assert loaded.manifest.version == 2
     assert [step.id for step in loaded.manifest.steps] == [
         "understand-intent",
         "discover-references",
@@ -30,6 +31,20 @@ def test_committed_skill_and_observability_manifest_load():
         "validate",
         "finalize",
     ]
+    assert "### Provider Memory" in loaded.text
+    assert "sdar-notify memory-update memory-update.json" in loaded.text
+    assert (
+        "current task evidence / current selected references > skill rules > provider memory"
+        in loaded.text
+    )
+
+
+def test_committed_skill_uses_targeted_read_only_repository_context():
+    text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    assert "chỉ current run agent workspace là write scope" in text
+    assert "Không chạy\n`git status`, branch discovery, `git diff`" in text
+    assert "repo-wide\n`grep`" in text
+    assert "Không sửa repository và không ghi vào run cũ" in text
 
 
 def test_full_committed_skill_is_passed_verbatim_to_provider(tmp_path):

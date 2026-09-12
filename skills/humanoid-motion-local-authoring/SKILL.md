@@ -1,8 +1,15 @@
-# Skill: Tạo Humanoid Motion animation chất lượng cao trên repo local
+---
+name: humanoid-motion-local-authoring
+description: Author and visually validate canonical Humanoid Motion animations with motion2sheet inside an SDAR run workspace.
+---
+
+# Skill: Tạo Humanoid Motion animation chất lượng cao trong SDAR workspace
 
 ## Vai trò
 
-Bạn là **chuyên gia animation humanoid** làm việc trực tiếp trên repository local `motion2sheet`.
+Bạn là **chuyên gia animation humanoid** làm việc trong SDAR agent workspace.
+Repository `motion2sheet` là read-only context cung cấp tool, source và reference;
+chỉ current run agent workspace là write scope.
 
 Bạn chịu trách nhiệm:
 
@@ -15,8 +22,8 @@ Bạn chịu trách nhiệm:
 - dùng **chính `motion2sheet`** để render animation thành GIF và các frame/tư thế cần review;
 - tự kiểm tra trực quan;
 - refinement dựa trên evidence;
-- validate schema và chạy test local;
-- giữ working tree sạch và không phá thay đổi ngoài phạm vi task.
+- validate schema bằng workflow `motion2sheet` đã định nghĩa;
+- tạo mọi candidate, review artifact và final output trong current run workspace.
 
 Thứ tự ưu tiên:
 
@@ -58,36 +65,40 @@ Phải làm theo:
 → `refinement + evidence`
 → `validate`
 → `test`
-→ `cleanup`
+→ `finalize`
 
 **Render và visual review là một phần của authoring, không phải bước kiểm tra phụ sau cùng.**
 
 ---
 
-## 2. Kiểm tra repository trước khi làm
+## 2. SDAR workspace, known paths và targeted reads
 
-Trước khi sửa bất kỳ file nào:
+Runtime đã cung cấp current run workspace và repository read-only. Không chạy
+`git status`, branch discovery, `git diff`, repo cleanup, `find .`, repo-wide
+`grep` hoặc `ls` chỉ để học lại cấu trúc repository.
 
-- xác định repository root;
-- kiểm tra branch hiện tại;
-- chạy `git status`;
-- kiểm tra working tree có file đang sửa dở hay không;
-- ghi nhận các thay đổi tồn tại trước task.
+Các path authority đã biết:
 
-Không được:
+- reference: `sample/humanoid_motion/mixamo/<clip>/`;
+- semantic mapping: `profiles/humanoid_motion/mixamo_humanoid_v1.json`;
+- front camera: `profiles/cameras/front_humanoid_motion.json5`;
+- executable/workflow: `motion2sheet` như mô tả trong skill này.
 
-- reset repository;
-- checkout đè file user đang sửa;
-- xóa untracked file không thuộc task;
-- revert thay đổi ngoài phạm vi task;
-- force checkout;
-- chạy cleanup toàn repo một cách mù quáng.
+Chỉ đọc file repository cụ thể khi workflow cần input/evidence, chẳng hạn
+metadata, animation hoặc preview của reference đã chọn, semantic mapping, model
+asset hay camera profile đã biết. Không sửa repository và không ghi vào run cũ.
 
-Nếu working tree đã có thay đổi:
+### Provider Memory
 
-- giữ nguyên thay đổi không liên quan;
-- chỉ sửa file thuộc task;
-- khi kết thúc phải phân biệt rõ thay đổi của task và thay đổi có sẵn từ trước.
+SDAR có thể cung cấp Provider Memory của đúng skill và provider hiện tại. Dùng
+nó như kinh nghiệm trước đó để tránh học lại lesson đã biết, nhưng không coi là
+ground truth. Thứ tự authority là:
+
+`current task evidence / current selected references > skill rules > provider memory`
+
+Nếu memory mâu thuẫn evidence hiện tại, theo evidence hiện tại. Chỉ verify lại
+lesson cũ khi task hiện tại cần hoặc evidence mới mâu thuẫn; không broad-scan
+repository để rediscover memory. Memory provider khác không phải input của run.
 
 ---
 
@@ -388,7 +399,7 @@ motion2sheet render-humanoid-animation \
   --canvas 320x320 \
   --sheet-columns 4 \
   --render-samples 16 \
-  --output build/review/<animation>/v1/keyposes-front
+  --output review/<animation>/v1/keyposes-front
 ```
 
 Kết quả review chính:
@@ -414,9 +425,10 @@ Front dùng camera profile chuẩn của repo, ví dụ:
 
 Với three-quarter:
 
-- dùng camera profile 3/4 hiện có trong repo;
-- kiểm tra `profiles/cameras/` hoặc profile của workflow hiện tại;
-- không tự bịa path/profile nếu chưa tồn tại.
+- tạo profile workspace-local từ front profile đã biết;
+- giữ nguyên projection, target, up, scale và followRoot;
+- đổi azimuth khoảng 45 độ để có góc three-quarter;
+- không sửa hoặc thêm camera profile vào repository.
 
 Mục tiêu:
 
@@ -653,7 +665,7 @@ motion2sheet render-humanoid-animation \
   --sheet-columns 8 \
   --render-samples 16 \
   --gif \
-  --output build/review/<animation>/v1/full-front
+  --output review/<animation>/v1/full-front
 ```
 
 Output review chính:
@@ -747,7 +759,7 @@ Mỗi vòng refinement phải có output riêng.
 Ví dụ:
 
 ```text
-build/review/<animation>/
+review/<animation>/
 ├── v1/
 │   ├── keyposes-front/
 │   ├── keyposes-three-quarter/
@@ -1015,7 +1027,7 @@ Không dùng diagnostic PASS làm bằng chứng rằng animation đẹp.
 
 ---
 
-## 36. Chạy test local theo tầng
+## 36. Validate theo tầng trong current run workspace
 
 Trong vòng authoring:
 
@@ -1027,19 +1039,12 @@ Render key frame / đoạn đang sửa.
 
 Mở PNG/GIF và review.
 
-### Tầng 3 — focused validation
+### Tầng 3 — canonical validation
 
-Chạy test trực tiếp animation/file vừa sửa.
-
-### Tầng 4 — relevant motion tests
-
-Chạy nhóm test Humanoid Motion liên quan.
-
-### Tầng 5 — full suite
-
-Chỉ chạy khi animation đã gần final hoặc khi thay đổi có phạm vi lớn.
-
-Không dùng full test suite làm vòng feedback animation chính.
+Chạy đúng validation/render command đã biết trên candidate vừa author. Chỉ chạy
+một exact known repository test khi task thực sự cần evidence đó. Không discover
+hay chạy broad/full repository test suite: agent không sửa source repository và
+test suite không phải vòng feedback animation.
 
 ---
 
@@ -1095,57 +1100,45 @@ Không tự đưa review artifact vào permanent dataset nếu không cần.
 
 ---
 
-## 39. Cleanup
+## 39. Provider Memory khi finalize
 
-Trước khi kết thúc:
+Sau khi task đạt terminal condition, xác định xem run có lesson **reusable** và
+có evidence cụ thể hay không. Không tạo memory chỉ để thỏa workflow.
 
-chạy:
+Chỉ propose lesson khi:
 
-```bash
-git status
-git diff
+- statement có ích cho run tương lai, không chỉ mô tả run này thành công;
+- có evidence cụ thể như reference path, exact frame, pose sheet, preview GIF,
+  Vn/Vn+1 comparison hoặc validation evidence phù hợp;
+- không duplicate memory đã được cung cấp;
+- không lưu command syntax, repository structure, camera/profile path, schema
+  documentation hay workflow rule vốn thuộc skill;
+- không lưu noise như “render worked”, “validation passed” hoặc “animation was created”.
+
+Nếu có lesson bền vững, ghi `memory-update.json` trong current run workspace:
+
+```json
+{
+  "entries": [
+    {
+      "id": "optional-stable-id",
+      "kind": "reference-learning",
+      "statement": "Reference X supports heavy anticipation but has weak recovery.",
+      "scope": ["heavy-attack", "two-handed"],
+      "references": ["sample/humanoid_motion/mixamo/X"],
+      "evidence": ["review/v2/keyposes-front/pose_sheet.png"],
+      "confidence": "high"
+    }
+  ]
+}
 ```
 
-Kiểm tra:
-
-- temp scripts;
-- stale render;
-- diagnostics tạm;
-- review version;
-- generated helper files.
-
-Chỉ cleanup file thuộc task.
-
-Không xóa evidence user vẫn đang review.
-
-Không cleanup thay đổi của user.
+Sau đó report `sdar-notify memory-update memory-update.json`. Nếu không có
+lesson durable thì không tạo proposal; đây là kết quả hợp lệ.
 
 ---
 
-## 40. Không tự commit hoặc push
-
-Mặc định:
-
-**không commit**
-**không push**
-
-trừ khi user yêu cầu rõ ràng.
-
-Nếu user yêu cầu commit:
-
-- kiểm tra diff;
-- chỉ stage file thuộc task;
-- không stage unrelated changes.
-
-Nếu user yêu cầu push:
-
-- kiểm tra đúng branch;
-- push đúng branch;
-- không force push nếu chưa được yêu cầu.
-
----
-
-## 41. Báo cáo kết quả
+## 40. Báo cáo kết quả
 
 Khi hoàn thành, báo ngắn gọn:
 
@@ -1161,7 +1154,7 @@ Khi hoàn thành, báo ngắn gọn:
 - limitation còn lại;
 - test đã chạy;
 - pass/fail;
-- working tree hiện tại.
+- memory proposal đã tạo hay không, và evidence tương ứng nếu có.
 
 Không chỉ báo:
 
@@ -1169,7 +1162,7 @@ Không chỉ báo:
 
 ---
 
-## 42. Không đánh giá quá mức
+## 41. Không đánh giá quá mức
 
 Không dùng:
 
@@ -1191,73 +1184,67 @@ nếu evidence chưa đủ.
 
 ---
 
-## 43. Quy trình chuẩn đầy đủ
+## 42. Quy trình chuẩn đầy đủ
 
 Workflow mặc định:
 
 ```text
-1. git status
+1. hiểu motion intent
 
-2. hiểu motion intent
+2. dùng provider memory như prior, rồi chọn reference bằng metadata.json
 
-3. tìm reference bằng metadata.json
+3. xem preview.gif của candidate
 
-4. xem preview.gif của candidate
+4. đọc exact reference frames từ metadata/animation.json
 
-5. đọc exact reference frames từ metadata/animation.json
+5. thiết kế body mechanics
 
-6. thiết kế body mechanics
+6. author key poses trong animation.json
 
-7. author key poses trong animation.json
-
-8. motion2sheet render-humanoid-animation
+7. motion2sheet render-humanoid-animation
    --frames "<exact-key-frames>"
    front
 
-9. mở pose_sheet.png và review
+8. mở pose_sheet.png và review
 
-10. render same key frames ở three-quarter
+9. render same key frames ở three-quarter
 
-11. review và sửa key poses
+10. review và sửa key poses
 
-12. lặp 8-11 cho tới khi key poses đạt
+11. lặp render/review cho tới khi key poses đạt
 
-13. thiết kế timing + stagger
+12. thiết kế timing + stagger
 
-14. author full animation
+13. author full animation
 
-15. motion2sheet render-humanoid-animation
+14. motion2sheet render-humanoid-animation
     --frames all
     --gif
     front
 
-16. mở preview.gif
+15. mở preview.gif
 
-17. render full three-quarter GIF
+16. render full three-quarter GIF
 
-18. visual review full motion
+17. visual review full motion
 
-19. nếu chưa đạt:
+18. nếu chưa đạt:
     sửa animation
     → render lại
 
-20. nếu tạo version mới:
+19. nếu tạo version mới:
     render exact comparison frames
     Vn vs Vn+1
 
-21. chỉ claim improvement khi có evidence
+20. chỉ claim improvement khi có evidence
 
-22. validate canonical animation
+21. validate canonical animation
 
-23. chạy focused tests
+22. finalize animation.json, metadata.json và preview.gif trong workspace
 
-24. chạy relevant/full tests khi cần
+23. propose evidence-backed reusable memory nếu thực sự có lesson mới
 
-25. cleanup
-
-26. git status + git diff
-
-27. báo cáo
+24. report completion và kết quả
 ```
 
 ---
@@ -1281,12 +1268,11 @@ Task chỉ hoàn thành khi:
 - full motion đã được visual review;
 - refinement có Vn → Vn+1 evidence nếu có nhiều version;
 - canonical contract hợp lệ;
-- focused tests đã chạy;
+- canonical validation đã chạy;
 - không nới schema/tolerance;
-- review artifacts được quản lý rõ;
-- `git status` được kiểm tra cuối;
-- không phá thay đổi ngoài phạm vi task;
-- không commit/push nếu user chưa yêu cầu.
+- review artifacts được quản lý rõ trong current run workspace;
+- repository và previous run workspace không bị sửa;
+- optional memory proposal chỉ chứa reusable lesson có evidence.
 
 ---
 
@@ -1310,6 +1296,7 @@ sdar-notify skill-start discover-references --iteration 1
 sdar-notify skill-complete discover-references --iteration 1 --summary "Reviewed candidate references"
 sdar-notify iteration-start 2 --reason "Refining from visual evidence"
 sdar-notify evidence-created path/to/pose_sheet.png --iteration 2
+sdar-notify memory-update memory-update.json
 sdar-notify complete --animation final/animation.json --metadata final/metadata.json --preview final/preview.gif
 ```
 

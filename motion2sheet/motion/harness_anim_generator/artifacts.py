@@ -7,7 +7,7 @@ from .contracts import HarnessError, RuntimeEvent
 from .redaction import SecretRedactor
 
 
-def owned_file(agent_workspace: Path, declared: str, redactor: SecretRedactor) -> Path:
+def confined_file(agent_workspace: Path, declared: str, redactor: SecretRedactor) -> Path:
     if not isinstance(declared, str) or not declared.strip():
         raise HarnessError("artifact path must be a non-empty string")
     if redactor.text(declared) != declared:
@@ -26,6 +26,11 @@ def owned_file(agent_workspace: Path, declared: str, redactor: SecretRedactor) -
         raise HarnessError(f"artifact escapes agent workspace: {declared}")
     if candidate.is_symlink() or not resolved.is_file():
         raise HarnessError(f"artifact must be a regular non-symlink file: {declared}")
+    return resolved
+
+
+def owned_file(agent_workspace: Path, declared: str, redactor: SecretRedactor) -> Path:
+    resolved = confined_file(agent_workspace, declared, redactor)
     if redactor.contains_file(resolved):
         raise HarnessError(f"artifact contains a runtime secret: {declared}")
     return resolved
