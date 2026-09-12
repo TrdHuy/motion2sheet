@@ -42,29 +42,47 @@ jobs:
         id: detect
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_ACTION: ${{ github.event.action }}
         run: |
           set -euo pipefail
-          mapfile -t CHANGED < <(
-            git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- sample/humanoid_motion/authored/
+
+          # pull_request path filters are evaluated against the whole PR diff. That means
+          # an evidence-only synchronize can still start this workflow while the PR also
+          # contains an authored animation. For synchronize events, inspect only the new
+          # commit delta so evidence/comment support commits do not re-run Blender.
+          if [[ "$EVENT_ACTION" == "synchronize" && -n "${BEFORE_SHA:-}" ]]; then
+            DIFF_BASE="$BEFORE_SHA"
+          else
+            DIFF_BASE="$BASE_SHA"
+          fi
+
+          mapfile -t REVIEW_INPUTS < <(
+            git diff --name-only "$DIFF_BASE" "$HEAD_SHA" \
+              | grep -E '^sample/humanoid_motion/authored/[^/]+/(animation(_temp)?\.json|render_config\.json)$' \
+              || true
           )
 
-          if [[ ${#CHANGED[@]} -eq 0 ]]; then
-            echo "No authored Humanoid Motion source changed."
+          if [[ ${#REVIEW_INPUTS[@]} -eq 0 ]]; then
+            echo "No authored Humanoid Motion review input changed in this PR update."
             echo "has_animation=false" >> "$GITHUB_OUTPUT"
             echo "animation_id=" >> "$GITHUB_OUTPUT"
             echo "clip_dir=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          printf 'Review inputs changed in this update:\n'
+          printf '  %s\n' "${REVIEW_INPUTS[@]}"
+
           mapfile -t CLIP_DIRS < <(
-            printf '%s\n' "${CHANGED[@]}" \
+            printf '%s\n' "${REVIEW_INPUTS[@]}" \
               | awk -F/ 'NF >= 5 {print $1"/"$2"/"$3"/"$4}' \
               | sort -u
           )
 
           if [[ ${#CLIP_DIRS[@]} -ne 1 ]]; then
-            echo "Exactly one sample/humanoid_motion/authored/<animation-id>/ directory may change per PR; found ${#CLIP_DIRS[@]}: ${CLIP_DIRS[*]}" >&2
+            echo "Exactly one sample/humanoid_motion/authored/<animation-id>/ directory may change per PR update; found ${#CLIP_DIRS[@]}: ${CLIP_DIRS[*]}" >&2
             exit 1
           fi
 
