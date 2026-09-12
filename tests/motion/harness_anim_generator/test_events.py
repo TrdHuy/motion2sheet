@@ -144,6 +144,23 @@ def test_heartbeat_and_sse_use_processed_event_store(repo_with_skill, tmp_path):
     active.wait()
 
 
+def test_report_without_trailing_slash_redirects_and_loads_assets(
+    repo_with_skill, tmp_path
+):
+    active, _request, release = blocking_run(repo_with_skill, tmp_path)
+    with urllib.request.urlopen(active.report_url.rstrip("/"), timeout=2) as response:
+        assert response.geturl() == active.report_url
+        assert b'./style.css' in response.read()
+    with urllib.request.urlopen(active.report_url + "style.css", timeout=2) as response:
+        assert response.headers.get_content_type() == "text/css"
+        assert b"background:#0d1117" in response.read()
+    with urllib.request.urlopen(active.report_url + "app.js", timeout=2) as response:
+        assert response.headers.get_content_type() == "text/javascript"
+        assert b"EventSource" in response.read()
+    release.set()
+    active.wait()
+
+
 def test_slow_sse_client_does_not_block_processor(repo_with_skill, tmp_path):
     active, request, release = blocking_run(repo_with_skill, tmp_path)
     stream = urllib.request.urlopen(active.report_url + "stream", timeout=2)

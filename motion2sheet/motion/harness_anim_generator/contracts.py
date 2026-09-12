@@ -39,6 +39,7 @@ class GenerationRequest:
     report_port: int = 0
     open_report: bool = True
     skill_directory: Path | None = None
+    keep_report_server: bool = False
 
     def __post_init__(self) -> None:
         prompt = self.prompt.strip()

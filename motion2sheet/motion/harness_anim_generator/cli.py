@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
+import threading
 import webbrowser
 from pathlib import Path
+from typing import Callable
 
-from .contracts import GenerationRequest
+from .contracts import GenerationRequest, HarnessError
 from .orchestrator import AnimationGenerationOrchestrator
 from .providers import PROVIDER_NAMES, create_provider
 from .workspace import graphical_environment
@@ -39,7 +42,21 @@ def generation_request_from_args(args: argparse.Namespace) -> GenerationRequest:
         resume_run_id=args.resume_run,
         report_port=args.report_port,
         open_report=not args.no_open_report,
+        keep_report_server=args.keep_report_server,
     )
+
+
+def _hold_report_server(active, wait_forever: Callable[[], None] | None = None) -> None:
+    print("Report remains available:")
+    print(active.report_url)
+    print("Press Ctrl+C to close the report server.")
+    wait = wait_forever or threading.Event().wait
+    try:
+        wait()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        active.close_report_server()
 
 
 def _generate(args: argparse.Namespace) -> int:
@@ -61,9 +78,22 @@ def _generate(args: argparse.Namespace) -> int:
             webbrowser.open(active.report_url)
         except webbrowser.Error:
             pass
-    result = active.wait()
-    print(f"motion2sheet: humanoid animation generation completed -> {result.output}")
-    print(f"Static report: {result.report_path}")
+    try:
+        result = active.wait()
+    except HarnessError as exc:
+        if not request.keep_report_server:
+            raise
+        print(f"Run failed: {exc}", file=sys.stderr)
+        _hold_report_server(active)
+        return 2
+    if request.keep_report_server:
+        print("Run completed.")
+        print(f"Output: {result.output}")
+        print(f"Static report: {result.report_path}")
+        _hold_report_server(active)
+    else:
+        print(f"motion2sheet: humanoid animation generation completed -> {result.output}")
+        print(f"Static report: {result.report_path}")
     return 0
 
 
@@ -84,5 +114,10 @@ def add_harness_anim_generator_subcommands(subparsers) -> None:
     )
     generate.add_argument("--resume-run")
     generate.add_argument("--report-port", type=_port, default=0)
+    generate.add_argument(
+        "--keep-report-server",
+        action="store_true",
+        help="Keep the terminal report available until Ctrl+C",
+    )
     generate.add_argument("--no-open-report", action="store_true")
     generate.set_defaults(func=_generate)

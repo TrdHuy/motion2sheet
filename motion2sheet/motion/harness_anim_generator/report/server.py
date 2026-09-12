@@ -56,6 +56,9 @@ class ReportServer:
         self.bus = bus
         self.state = state
         self.store = store
+        self._lifecycle_lock = threading.Lock()
+        self._accept_events = True
+        self._stopped = False
         self._server = ThreadingHTTPServer(("127.0.0.1", port), self._handler())
         self._server.daemon_threads = True
         self._thread = threading.Thread(
@@ -79,7 +82,23 @@ class ReportServer:
     def start(self) -> None:
         self._thread.start()
 
+    @property
+    def is_running(self) -> bool:
+        with self._lifecycle_lock:
+            return not self._stopped and self._thread.is_alive()
+
+    def enter_terminal_mode(self) -> None:
+        """Keep GET/SSE serving while rejecting events after processor shutdown."""
+
+        with self._lifecycle_lock:
+            self._accept_events = False
+
     def stop(self) -> None:
+        with self._lifecycle_lock:
+            if self._stopped:
+                return
+            self._stopped = True
+            self._accept_events = False
         self._server.shutdown()
         self._server.server_close()
         self._thread.join(timeout=5)
@@ -101,6 +120,13 @@ class ReportServer:
                 self.end_headers()
                 self.wfile.write(body)
 
+            def _redirect(self, location: str) -> None:
+                self.send_response(HTTPStatus.PERMANENT_REDIRECT)
+                self.send_header("Location", location)
+                self.send_header("Content-Length", "0")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+
             def do_POST(self) -> None:  # noqa: N802
                 if urlparse(self.path).path != f"/runs/{owner.run_id}/events":
                     self._send(HTTPStatus.NOT_FOUND, b'{"error":"unknown run"}', "application/json")
@@ -108,6 +134,16 @@ class ReportServer:
                 expected = f"Bearer {owner.token}"
                 if not hmac.compare_digest(self.headers.get("Authorization", ""), expected):
                     self._send(HTTPStatus.UNAUTHORIZED, b'{"error":"unauthorized"}', "application/json")
+                    return
+                with owner._lifecycle_lock:
+                    accept_events = owner._accept_events
+                if not accept_events:
+                    self.close_connection = True
+                    self._send(
+                        HTTPStatus.GONE,
+                        b'{"error":"run is terminal"}',
+                        "application/json",
+                    )
                     return
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
@@ -131,8 +167,12 @@ class ReportServer:
                 self._send(HTTPStatus.ACCEPTED, body, "application/json")
 
             def do_GET(self) -> None:  # noqa: N802
-                path = urlparse(self.path).path.rstrip("/")
+                requested_path = urlparse(self.path).path
                 base = f"/runs/{owner.run_id}"
+                if requested_path == base:
+                    self._redirect(f"{base}/")
+                    return
+                path = requested_path.rstrip("/")
                 if path == base:
                     self._send(HTTPStatus.OK, HTML.encode(), "text/html; charset=utf-8")
                 elif path == f"{base}/style.css":

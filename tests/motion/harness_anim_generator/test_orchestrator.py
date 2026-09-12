@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -158,6 +159,7 @@ def test_terminal_failures_preserve_diagnostics_without_publish(repo_with_skill,
     active = runtime.start(GenerationRequest("attack", "fake", tmp_path / "out", open_report=False))
     with pytest.raises(HarnessError):
         active.wait()
+    assert active.server.is_running is False
     assert not (tmp_path / "out").exists()
     assert (active.workspace.logs / "events.jsonl").is_file()
     assert (active.workspace.root / "history.json").is_file()
@@ -245,3 +247,86 @@ def test_completion_waits_for_process_exit_and_queue_drain(repo_with_skill, tmp_
     waiter.join(5)
     assert holder["result"].status == "completed"
     assert (tmp_path / "out/animation.json").is_file()
+
+
+def test_default_terminal_run_stops_report_server(repo_with_skill, tmp_path):
+    active = orchestrator(
+        repo_with_skill, tmp_path, FakeAgentProvider(successful_behavior)
+    ).start(GenerationRequest("attack", "fake", tmp_path / "out", open_report=False))
+    assert active.wait().status == "completed"
+    assert active.server.is_running is False
+
+
+def test_keep_report_server_retains_only_terminal_report_state(repo_with_skill, tmp_path):
+    provider = FakeAgentProvider(successful_behavior)
+    active = orchestrator(repo_with_skill, tmp_path, provider).start(
+        GenerationRequest(
+            "attack",
+            "fake",
+            tmp_path / "out",
+            open_report=False,
+            keep_report_server=True,
+        )
+    )
+    assert active.wait().status == "completed"
+    assert len(provider.requests) == 1
+    assert active.server.is_running is True
+    assert active.processor.is_running is False
+    assert active.pump.is_running is False
+    assert active.liveness.is_running is False
+    assert active.session.poll() == 0
+    with urllib.request.urlopen(active.report_url + "snapshot", timeout=2) as response:
+        snapshot = json.loads(response.read())
+    assert snapshot["state"]["status"] == "completed"
+    assert (tmp_path / "out/animation.json").is_file()
+    active.close_report_server()
+    active.close_report_server()
+    assert active.server.is_running is False
+
+
+def test_failed_run_keeps_terminal_snapshot_until_explicit_close(repo_with_skill, tmp_path):
+    def missing_completion(_request, session):
+        session.finish(0)
+
+    provider = FakeAgentProvider(missing_completion)
+    active = orchestrator(repo_with_skill, tmp_path, provider).start(
+        GenerationRequest(
+            "attack",
+            "fake",
+            tmp_path / "out",
+            open_report=False,
+            keep_report_server=True,
+        )
+    )
+    with pytest.raises(HarnessError, match="without an agent.completed event"):
+        active.wait()
+    assert len(provider.requests) == 1
+    assert active.server.is_running is True
+    assert active.processor.is_running is False
+    assert active.pump.is_running is False
+    assert active.liveness.is_running is False
+    with urllib.request.urlopen(active.report_url + "snapshot", timeout=2) as response:
+        snapshot = json.loads(response.read())
+    assert snapshot["state"]["status"] == "failed"
+    assert "without an agent.completed event" in snapshot["state"]["failure"]["message"]
+    with pytest.raises(RuntimeError, match="HTTP 410"):
+        client_for(provider.requests[0]).send("agent.heartbeat")
+    assert not (tmp_path / "out").exists()
+    active.close_report_server()
+    assert active.server.is_running is False
+
+
+def test_programmatic_run_does_not_retain_report_server(repo_with_skill, tmp_path):
+    provider = FakeAgentProvider(successful_behavior)
+    runtime = orchestrator(repo_with_skill, tmp_path, provider)
+    result = runtime.run(
+        GenerationRequest(
+            "attack",
+            "fake",
+            tmp_path / "out",
+            open_report=False,
+            keep_report_server=True,
+        )
+    )
+    assert result.status == "completed"
+    assert len(provider.requests) == 1

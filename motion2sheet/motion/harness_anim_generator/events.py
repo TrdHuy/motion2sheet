@@ -393,6 +393,10 @@ class EventProcessor:
     def error(self) -> Exception | None:
         return self._error
 
+    @property
+    def is_running(self) -> bool:
+        return self._thread.is_alive()
+
     def stop(self) -> None:
         self.drain()
         self._stop.set()

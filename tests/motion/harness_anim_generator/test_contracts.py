@@ -21,6 +21,7 @@ def test_generation_request_normalizes_runtime_inputs():
     assert request.report_port == 8123
     assert request.open_report is False
     assert request.skill_directory == Path("skills/custom")
+    assert request.keep_report_server is False
 
 
 @pytest.mark.parametrize("run_id", ["", "../old", "old/run", ".", ".."])

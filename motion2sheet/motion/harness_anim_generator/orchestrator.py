@@ -65,6 +65,11 @@ class ActiveRun:
     def report_url(self) -> str:
         return self.server.report_url
 
+    def close_report_server(self) -> None:
+        """Stop a retained terminal report server; safe to call more than once."""
+
+        self.server.stop()
+
     def wait(self) -> GenerationResult:
         failure: HarnessError | None = None
         result: GenerationResult | None = None
@@ -114,6 +119,7 @@ class ActiveRun:
         finally:
             self.liveness.stop()
             self.redactor.scrub_tree(self.workspace.root)
+            self.server.enter_terminal_mode()
             self.processor.stop()
             materialize_static_report(
                 self.workspace.report,
@@ -122,7 +128,8 @@ class ActiveRun:
                 redactor=self.redactor,
             )
             self.redactor.scrub_tree(self.workspace.root)
-            self.server.stop()
+            if not self.request.keep_report_server:
+                self.close_report_server()
         if failure is not None:
             raise failure
         assert result is not None
@@ -332,4 +339,10 @@ class AnimationGenerationOrchestrator:
         )
 
     def run(self, request: GenerationRequest) -> GenerationResult:
-        return self.start(request).wait()
+        active = self.start(request)
+        try:
+            return active.wait()
+        finally:
+            # Synchronous API calls never leak a retained HTTP server. The CLI
+            # owns the optional post-terminal hold lifecycle.
+            active.close_report_server()

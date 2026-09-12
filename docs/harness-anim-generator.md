@@ -122,7 +122,11 @@ motion2sheet generate-humanoid-animation \
 ```
 
 Use `--report-port` to request a port, `--no-open-report` to disable browser
-opening, and `--resume-run` to seed a new run from old history. The default
+opening, and `--resume-run` to seed a new run from old history. By default the
+realtime server stops after terminal state and the static report remains.
+`--keep-report-server` instead retains the terminal dashboard until Ctrl+C;
+the agent, liveness ticker, event processor, and provider stream have already
+stopped, and the event ingress rejects new pushes while retained. The default
 skill path is committed and not a mandatory CLI argument. Pass `--skill` to
 use another directory containing the same `SKILL.md` plus `skill.json`
 contract. Relative overrides are resolved from the caller's current working
@@ -141,7 +145,9 @@ motion2sheet generate-humanoid-animation \
   --skill tests/manual/sdar-smoke/skill \
   --provider codex-cli \
   --output build/sdar-smoke-output \
-  --report-port 8765
+  --report-port 8765 \
+  --keep-report-server \
+  --no-open-report
 ```
 
 ## Test philosophy

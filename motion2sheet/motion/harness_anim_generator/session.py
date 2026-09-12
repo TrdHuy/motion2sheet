@@ -24,6 +24,10 @@ class ProviderEventPump:
         self._thread.join(timeout)
         return not self._thread.is_alive()
 
+    @property
+    def is_running(self) -> bool:
+        return self._thread.is_alive()
+
     def _run(self) -> None:
         while True:
             event = self.session.next_event(timeout=0.1)
@@ -63,6 +67,10 @@ class LivenessTicker:
         self._stop.set()
         if self._thread.is_alive():
             self._thread.join(timeout)
+
+    @property
+    def is_running(self) -> bool:
+        return self._thread.is_alive()
 
     def _run(self) -> None:
         pending: str | None = None
