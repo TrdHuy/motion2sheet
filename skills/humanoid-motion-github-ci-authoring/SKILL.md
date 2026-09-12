@@ -14,13 +14,12 @@ Bạn chịu trách nhiệm toàn bộ quá trình:
 - tìm và phân tích reference;
 - thiết kế mechanics;
 - author Humanoid Motion;
-- tạo iteration;
+- tạo animation candidate;
 - dùng CI để render evidence;
 - tải và kiểm tra evidence;
 - publish evidence cần thiết để reviewer xem trực tiếp trong PR;
 - refinement;
 - finalization;
-- cleanup;
 - xác nhận final output.
 
 Không hỏi lại repository nào.
@@ -52,13 +51,17 @@ Animation do agent author:
 
 `sample/humanoid_motion/authored/<animation-id>/`
 
-Evidence tạm để reviewer xem trực tiếp:
+Presentation evidence dùng cho PR review:
 
 `review_evidence/humanoid_motion/<animation-id>/`
 
+Presentation evidence không nằm trên source PR branch. Nó được publish vào evidence-only branch riêng theo PR:
+
+`review-evidence/pr-<PR_NUMBER>`
+
 Không sửa trusted Mixamo reference.
 
-Mỗi PR chỉ xử lý một authored animation.
+Mỗi source PR chỉ xử lý một authored animation.
 
 ---
 
@@ -165,7 +168,7 @@ phải xảy ra trong một logical commit duy nhất.
 
 Không để commit trung gian có lifecycle không hợp lệ.
 
-Nếu cần nhiều file operation, ưu tiên Git data tree/commit/ref để tạo atomic commit thay vì nhiều Contents API commits tuần tự.
+Nếu cần nhiều file operation, ưu tiên Git data `create_tree -> create_commit -> update_ref` để tạo atomic commit thay vì nhiều Contents API commits tuần tự.
 
 ---
 
@@ -302,7 +305,9 @@ Review từng key pose về:
 
 Pose xấu phải sửa tại source, không dùng interpolation để che.
 
-Timing chỉ polish sau khi key-pose gate đạt.
+Timing chỉ được coi là đạt sau khi Key-Pose Gate đạt.
+
+Lưu ý: **Key-Pose Gate và Motion Gate là thứ tự review, không mặc định là hai CI render round.**
 
 ---
 
@@ -359,7 +364,70 @@ Không tự viết renderer khác, không đổi camera/model/canvas/render opti
 
 ---
 
-# 12. Artifact naming và provenance
+# 12. Animation Iteration khác Review Pass
+
+Đây là invariant quan trọng.
+
+## Animation Iteration
+
+Một animation iteration là một canonical motion candidate mới.
+
+Iteration number chỉ tăng khi nội dung animation thay đổi về motion data.
+
+Ví dụ:
+
+```text
+Iteration 03
+animation_temp.json hash = A
+
+Iteration 04
+animation_temp.json hash = B
+```
+
+Nếu chỉ đổi `render_config.json`, cách trình bày evidence hoặc comment mà `animation_temp.json` không đổi, **không được gọi đó là animation iteration mới**.
+
+## Review Pass
+
+Một animation candidate có thể có nhiều review pass logic:
+
+```text
+Candidate V3
+├── Key-Pose Review
+├── Motion Review
+└── targeted follow-up review
+```
+
+Các review pass nên dùng chung một CI artifact nếu artifact đó đã chứa evidence cần thiết.
+
+Không tạo CI round mới chỉ để “mở” Motion Gate sau khi Key-Pose Gate pass nếu GIF đã có trong artifact hiện tại.
+
+---
+
+# 13. Ba SHA/hash cần phân biệt
+
+## Source SHA
+
+Exact commit mà CI render.
+
+Commit này chứa animation candidate và optional `render_config.json`.
+
+## Animation SHA
+
+Hash của canonical animation content (`animation_temp.json` hoặc `animation.json`).
+
+Animation SHA mới là identity chính của motion candidate.
+
+Hai Source SHA khác nhau nhưng cùng Animation SHA có thể vẫn là cùng animation candidate nếu khác biệt chỉ nằm ở review config hoặc file không làm thay đổi motion.
+
+## Evidence Commit SHA
+
+Commit trên evidence-only branch chứa presentation PNG/GIF.
+
+Evidence Commit SHA không nằm trên source PR branch và không làm thay đổi PR HEAD.
+
+---
+
+# 14. Artifact naming và provenance
 
 Artifact:
 
@@ -371,12 +439,14 @@ Mọi visual claim phải trace được về:
 
 - repository;
 - PR;
-- exact source SHA;
+- exact Source SHA đã render;
+- Animation SHA;
 - workflow run;
 - artifact;
-- animation SHA.
+- render plan;
+- pinned review inputs.
 
-Không review artifact của commit cũ rồi claim cho source mới.
+Không review artifact của animation content cũ rồi claim cho candidate mới.
 
 Artifact có các file dạng:
 
@@ -392,15 +462,15 @@ renders/<request-id>/diagnostics/
 
 ---
 
-# 13. Cách lấy CI output qua GitHub Connector
+# 15. Cách lấy CI output qua GitHub Connector
 
-Sau mỗi source commit:
+Sau mỗi animation candidate source commit:
 
-1. lấy exact source SHA;
+1. lấy exact Source SHA;
 2. tìm workflow run của exact SHA;
 3. chọn `Authored Humanoid Motion Review`;
-4. đợi run complete;
-5. lấy artifact đúng tên;
+4. kiểm tra trạng thái ở mức workflow;
+5. khi completed, lấy artifact đúng tên;
 6. download artifact;
 7. inspect evidence;
 8. chỉ sau đó mới đưa visual verdict.
@@ -414,13 +484,49 @@ fetch_workflow_run_artifacts
 download_workflow_artifact
 ```
 
-Nếu CI fail, dùng jobs/steps/logs để tìm technical failure.
+Không polling từng step kiểu setup Python -> install package -> Blender -> render -> upload nếu workflow chưa fail.
+
+Không gọi jobs/logs liên tục để “theo dõi tiến độ”. Chỉ dùng jobs/steps/logs khi:
+
+- workflow đã fail/cancel;
+- artifact không xuất hiện như contract;
+- cần debug infrastructure.
 
 Chỉ inspect workflow implementation nếu CI hoạt động trái contract này hoặc user yêu cầu debug infrastructure.
 
 ---
 
-# 14. TEMP default review
+# 16. Nguyên tắc một candidate, một TEMP render round
+
+Mặc định mỗi animation candidate chỉ nên cần **một TEMP CI render round**.
+
+CI artifact của candidate nên chứa đủ visual data để review theo thứ tự:
+
+```text
+Key-Pose Gate
+-> nếu PASS
+Motion Gate
+```
+
+Không tách hai gate thành hai CI run chỉ vì reviewer muốn xem pose trước rồi mới xem GIF.
+
+CI có thể render pose sheet và GIF cùng lúc; reviewer vẫn phải giữ thứ tự đánh giá.
+
+Nếu Key-Pose Gate FAIL:
+
+- không dùng GIF để tuyên bố Motion Gate PASS;
+- sửa animation source;
+- tạo candidate mới;
+- chạy CI cho candidate mới.
+
+Nếu Key-Pose Gate PASS:
+
+- dùng GIF đã có trong cùng artifact để review Motion Gate;
+- không đổi `render_config.json` chỉ để bật GIF nếu GIF đã được request từ đầu.
+
+---
+
+# 17. TEMP default review
 
 Nếu chỉ có `animation_temp.json`, CI mặc định render:
 
@@ -429,13 +535,15 @@ Nếu chỉ có `animation_temp.json`, CI mặc định render:
 - không GIF;
 - request id `overview-front`.
 
-Mode này chỉ phù hợp sanity-check nhanh.
+Mode này chỉ phù hợp sanity-check hoặc bootstrap rất sớm.
 
-Nếu iteration cần PR comment review hoàn chỉnh theo format evidence của skill này, phải tạo `render_config.json` để có ít nhất một motion GIF và các frame evidence cần phân tích.
+Sau khi đã biết frame count/key phases, ưu tiên tạo `render_config.json` đầy đủ ngay trên cùng source commit với animation candidate để artifact đầu tiên của candidate có cả pose sheet và GIF cần thiết.
+
+Không dùng default no-GIF plan rồi tạo thêm một config-only iteration chỉ để lấy GIF.
 
 ---
 
-# 15. `render_config.json`
+# 18. `render_config.json`
 
 Chỉ dùng trong TEMP.
 
@@ -480,11 +588,11 @@ Không truyền arbitrary renderer options.
 
 ---
 
-# 16. Render plan khuyến nghị cho một iteration review
+# 19. Render plan khuyến nghị
 
-Mục tiêu là tạo evidence vừa đủ, dễ review.
+## Candidate <= 24 frames
 
-Ví dụ:
+Ưu tiên hai request có cùng frame range và `gif=true`:
 
 ```json
 {
@@ -494,45 +602,101 @@ Ví dụ:
     {
       "id": "motion-front",
       "view": "front",
-      "frames": "0-7",
+      "frames": "0-15",
       "gif": true
     },
     {
-      "id": "review-front",
-      "view": "front",
-      "frames": "0,5,6,7",
-      "gif": false
-    },
-    {
-      "id": "key-three-quarter",
+      "id": "motion-three-quarter",
       "view": "three-quarter-right",
-      "frames": "0,5,6,7",
-      "gif": false
+      "frames": "0-15",
+      "gif": true
     }
   ]
 }
 ```
 
-`motion-front/preview.gif` dùng để xem motion tổng thể.
+Mỗi request tạo cả:
 
-Selected pose sheets dùng để tạo PNG evidence đúng frame đang được phân tích.
+- `pose_sheet.png` để review/extract key frames;
+- `preview.gif` để review motion liên tục.
 
-Không request pose sheet dài vô nghĩa chỉ để nhúng thẳng vào PR comment.
+Vì vậy cùng một artifact đủ cho cả Key-Pose Gate và Motion Gate.
+
+Không cần thêm request key-pose riêng nếu key frames đã nằm trong pose sheet của motion request.
+
+## Candidate dài hơn 24 frames
+
+Không vượt contract 48 frame-view renders.
+
+Chọn critical contiguous phase windows và render cùng window ở front + 3/4 khi có thể.
+
+Ví dụ:
+
+```text
+phase A front + 3/4
+phase B front + 3/4
+```
+
+Tổng frame-view vẫn phải <= 48.
+
+Ưu tiên phase chứa:
+
+- anticipation;
+- main attack/impact;
+- follow-through;
+- recovery;
+- transition có rủi ro cao.
+
+FINAL CI sẽ là full proof sau finalization.
 
 ---
 
-# 17. Mỗi iteration phải có evidence
+# 20. Không rerender nếu evidence đã tồn tại
 
-Một source iteration chỉ hoàn thành khi đủ:
+Trước khi tạo CI round mới, kiểm tra xem artifact hiện có đã đủ evidence chưa.
+
+Không rerender chỉ vì:
+
+- muốn review gate tiếp theo;
+- muốn viết comment mới;
+- muốn publish lại evidence;
+- evidence branch chưa có file nhưng CI artifact đã có file gốc;
+- source branch chỉ có evidence-related activity ngoài animation.
+
+Có thể reuse artifact khi:
+
+- Animation SHA giống nhau;
+- evidence cần thiết đã tồn tại trong artifact;
+- render identity tương thích.
+
+Render identity phải xét ít nhất:
+
+- animation content hash;
+- render plan/view/frame range/gif intent;
+- pinned review character/asset hashes;
+- mapping/profile/camera inputs;
+- renderer/workflow revision hoặc provenance tương đương.
+
+Nếu không chứng minh được render identity tương thích thì rerender.
+
+Nếu phải mở rộng render plan vì artifact thực sự thiếu evidence, đó là **Review Plan Run của cùng candidate**, không phải animation iteration mới, miễn Animation SHA không đổi.
+
+---
+
+# 21. Một animation iteration hoàn thành khi nào
+
+Một animation iteration hoàn chỉnh cần:
 
 ```text
-source commit
--> CI run
--> artifact
--> visual inspection
+animation source commit
+-> CI artifact
+-> Key-Pose Review
+-> Motion Review nếu key pose pass
 -> selected evidence publication
 -> PR comment
 ```
+
+Key-Pose Review và Motion Review có thể diễn ra từ cùng artifact.
 
 Không bắt đầu refinement mới chỉ dựa vào source diff, quaternion data hoặc CI xanh.
 
@@ -540,29 +704,85 @@ CI PASS không phải Visual PASS.
 
 ---
 
-# 18. Source commit và Evidence commit là hai khái niệm khác nhau
+# 22. Evidence authority và presentation evidence
 
-## Source SHA
+GitHub Actions artifact là evidence authority gốc.
 
-Commit chứa animation candidate và optional render config.
+Presentation evidence chỉ giúp reviewer xem trực tiếp trong PR.
 
-CI artifact được sinh từ SHA này.
+Presentation evidence phải derive từ đúng artifact authority và giữ trace về Source SHA/Animation SHA/workflow run/artifact.
 
-## Evidence Commit SHA
-
-Commit tiếp theo chỉ publish visual evidence phục vụ human review dưới:
-
-`review_evidence/humanoid_motion/<animation-id>/iteration-<NN>/`
-
-Evidence commit không được sửa animation hoặc render config.
-
-Evidence publication commit không tăng iteration number.
-
-Nếu một commit vừa sửa animation vừa publish evidence thì workflow sai; animation change phải là iteration mới.
+Presentation evidence không phải canonical animation source.
 
 ---
 
-# 19. File được phép publish làm review evidence
+# 23. Evidence-only branch
+
+Không commit `review_evidence/` lên source PR branch.
+
+Mỗi PR dùng evidence branch riêng:
+
+`review-evidence/pr-<PR_NUMBER>`
+
+Lần publish đầu tiên:
+
+- tạo evidence branch từ PR base SHA hoặc một stable repo commit;
+- publish selected PNG/GIF vào branch này.
+
+Các lần sau:
+
+- append evidence commit mới lên cùng evidence branch;
+- không update source PR branch;
+- không trigger thêm animation CI chỉ vì evidence publication.
+
+Path:
+
+```text
+review_evidence/humanoid_motion/<animation-id>/iteration-<NN>/
+```
+
+Final evidence:
+
+```text
+review_evidence/humanoid_motion/<animation-id>/final/
+```
+
+Evidence branch có thể lưu nhiều iteration để reviewer compare.
+
+Evidence retention là policy riêng của repository; nó không phải Merge Cleanliness Gate của source PR.
+
+Nếu xóa evidence branch sau merge, historical raw URL theo commit SHA có thể không được đảm bảo tồn tại vĩnh viễn. Vì vậy không tự xóa evidence branch khi chưa có retention policy rõ ràng.
+
+---
+
+# 24. Evidence publication commit
+
+Evidence commit chỉ chứa presentation files hoặc thay đổi presentation evidence trên evidence branch.
+
+Nó không được sửa:
+
+- animation source;
+- render config trên source branch;
+- trusted reference;
+- CI workflow.
+
+Ưu tiên publish selected binary trong một evidence commit bằng Git data flow:
+
+```text
+extract selected files from CI artifact
+-> create_blob
+-> create_tree
+-> create_commit
+-> update_ref(review-evidence/pr-<N>)
+```
+
+Không base64/re-encode rồi vô tình làm thay đổi GIF/PNG nếu có thể copy bytes trực tiếp.
+
+Nếu cần presentation derivative, áp dụng rule ở phần tiếp theo.
+
+---
+
+# 25. File được phép publish làm review evidence
 
 Chỉ publish visual evidence cần cho reviewer:
 
@@ -575,16 +795,17 @@ Ví dụ:
 
 ```text
 review_evidence/humanoid_motion/<id>/iteration-04/
-├── preview.gif
-├── f0.png
-├── f5.png
-├── f6.png
-└── f7.png
+├── preview-front.gif
+├── preview-three-quarter.gif
+├── f0-front.png
+├── f5-front.png
+├── f6-front.png
+└── f7-front.png
 ```
 
-Không dump toàn bộ CI artifact vào repository.
+Không dump toàn bộ CI artifact vào evidence branch.
 
-Không commit:
+Không publish:
 
 ```text
 render.json
@@ -598,13 +819,11 @@ camera files
 temporary scripts
 ```
 
+Technical files ở lại CI artifact.
+
 ---
 
-# 20. Evidence authority và presentation derivative
-
-GitHub Actions artifact là evidence authority gốc.
-
-File trong `review_evidence/` chỉ là presentation evidence để reviewer xem trực tiếp trong PR.
+# 26. Presentation derivative
 
 Được phép:
 
@@ -612,7 +831,7 @@ File trong `review_evidence/` chỉ là presentation evidence để reviewer xem
 - copy nguyên single-frame PNG từ CI;
 - extract đúng frame cell từ CI `pose_sheet.png`;
 - reflow các frame thành layout dễ xem;
-- thêm label frame như `f0`, `f5`, `f6` nếu cần.
+- thêm label frame như `f0`, `f5`, `f6` ở vùng không che pose.
 
 Không được:
 
@@ -621,35 +840,25 @@ Không được:
 - paint-over;
 - thay đổi silhouette;
 - crop mất body;
-- resize từng pose theo scale khác nhau để tạo impression sai;
+- scale mỗi pose khác nhau để tạo impression sai;
+- thay background theo cách làm thay đổi readability;
 - regenerate bằng renderer khác.
 
-Nếu tạo presentation derivative, phải derive trực tiếp từ CI artifact và không thay đổi nội dung animation.
+Nếu tạo presentation derivative, phải derive trực tiếp từ CI artifact và không thay đổi nội dung pose/motion.
 
 GIF motion ưu tiên copy nguyên từ CI.
 
----
-
-# 21. Không dùng pose sheet dài làm comment evidence
-
-Không nhúng trực tiếp pose sheet 8x1 hoặc sheet quá dài nếu khi GitHub scale xuống reviewer không thể nhìn rõ từng pose.
-
-Thay vào đó:
-
-- publish GIF tổng thể;
-- extract đúng các frame liên quan tới claim;
-- mỗi claim có PNG evidence riêng;
-- nếu cần overview nhiều frame, reflow thành grid dễ đọc.
-
-Evidence tồn tại để reviewer thực sự review được, không chỉ để chứng minh file có tồn tại.
+Không nhúng pose sheet 8x1 quá dài làm evidence chính nếu GitHub scale khiến reviewer không đọc được.
 
 ---
 
-# 22. Format PR comment cho iteration
+# 27. Format PR comment cho animation iteration
 
-Từ Iteration 02 trở đi, mọi claim improvement phải compare trực tiếp với version trước.
+Comment phải ngắn, evidence-first, không biến thành CI log.
 
-Comment ưu tiên ngắn, evidence-first, không biến thành CI log.
+Iteration 01 không có previous candidate nên chỉ cần Current evidence.
+
+Từ Iteration 02, mọi claim improvement phải compare trực tiếp với previous candidate.
 
 Format:
 
@@ -657,8 +866,10 @@ Format:
 ## Animation Iteration <NN> — <title>
 
 **Current source:** `<current-source-sha>`
+**Current animation SHA:** `<hash>`
 **Previous source:** `<previous-source-sha>`
-**Evidence commit:** `<evidence-commit-sha>`
+**Evidence commit:** `<current-evidence-commit-sha>`
+**Previous evidence:** `<previous-evidence-commit-sha>`
 
 ### Motion
 
@@ -720,13 +931,11 @@ Format:
 **Verdict:** `REFINE | TEMP PASS | FINAL PASS`
 ```
 
-Iteration 01 không có previous candidate nên chỉ cần Current motion + evidence cho từng review item.
-
-Không claim `IMPROVED` nếu không có previous/current evidence cho đúng item đó.
+Không cần đưa toàn bộ validation/provenance/render-plan vào comment. Chỉ giữ identifiers đủ trace khi cần audit.
 
 ---
 
-# 23. Evidence phải gắn đúng từng review item
+# 28. Evidence phải gắn đúng từng review item
 
 Không viết một danh sách nhận xét dài rồi đặt một pose sheet chung bên dưới.
 
@@ -741,51 +950,84 @@ Ví dụ:
 
 Không được viết các claim kiểu “impact mạnh hơn”, “recovery tốt hơn”, “support arm ổn hơn” mà không chỉ ra frame/range cụ thể.
 
+Không claim `IMPROVED` nếu không có previous/current evidence cho đúng item đó.
+
 ---
 
-# 24. Raw URL cho evidence
+# 29. Raw URL cho evidence
 
-Evidence đã commit phải nhúng bằng raw URL khóa theo exact evidence commit SHA:
+Evidence phải nhúng bằng raw URL khóa theo exact evidence commit SHA:
 
 ```text
-https://raw.githubusercontent.com/TrdHuy/motion2sheet/<EVIDENCE-COMMIT-SHA>/<path>
+https://raw.githubusercontent.com/TrdHuy/motion2sheet/<EVIDENCE-COMMIT-SHA>/review_evidence/humanoid_motion/<animation-id>/iteration-<NN>/<file>
 ```
 
-Không dùng `master`, branch name hoặc `HEAD` trong raw evidence URL.
+Không dùng branch name, `master` hoặc `HEAD` trong raw evidence URL của comment.
 
-Nhờ đó historical PR comment vẫn trỏ đúng evidence sau khi branch tiếp tục thay đổi hoặc evidence bị cleanup ở HEAD mới.
+Previous evidence nên dùng exact previous Evidence Commit SHA của iteration đó.
 
 ---
 
-# 25. Visual review checklist
+# 30. Key-Pose Gate
 
-Mỗi iteration chỉ review những mục liên quan goal hiện tại, nhưng phải cân nhắc:
+Review exact key frames ở:
 
-- intent/readability;
+- front;
+- three-quarter-right hoặc three-quarter-left phù hợp.
+
+Kiểm tra:
+
 - silhouette;
+- pelvis/chest/shoulder relation;
 - limb identity;
 - attacking/support limb;
-- pelvis/torso participation;
-- lower body;
 - stance;
-- weight transfer;
-- depth ở 3/4;
+- weight bias;
+- lower-body mechanics;
 - body intersections;
-- foot sliding/contact;
-- timing;
-- snap/impact;
-- follow-through;
-- recovery.
+- depth readability.
 
-Không dùng pixel difference làm quality proof.
+Nếu key pose fail:
 
-Quality phải dựa vào motion readability và mechanics.
+- Verdict `REFINE`;
+- không tuyên bố Motion Gate PASS;
+- sửa animation source;
+- tạo animation candidate mới.
+
+Nếu key pose pass:
+
+- dùng GIF đã có trong cùng artifact để vào Motion Gate.
+
+Không rerender chỉ vì chuyển gate.
 
 ---
 
-# 26. Nếu CI fail
+# 31. Motion Gate
 
-Vẫn comment cho source iteration nhưng không fake visual evidence.
+Sau Key-Pose Gate PASS, review GIF từ cùng candidate artifact nếu đã có.
+
+Kiểm tra:
+
+- continuity;
+- timing;
+- anticipation;
+- acceleration/deceleration;
+- snap/impact;
+- weight transfer;
+- foot stability/sliding;
+- follow-through;
+- recovery;
+- loop seam nếu là loop.
+
+Nếu một transition chỉ rõ khi xem liên tục, evidence item nên dùng GIF range thay vì cố chứng minh bằng một PNG.
+
+Chỉ khi các phase chính đạt mới TEMP PASS/finalization.
+
+---
+
+# 32. Nếu CI fail
+
+Vẫn comment cho animation candidate nhưng không fake visual evidence.
 
 Ghi ngắn:
 
@@ -800,9 +1042,11 @@ Link workflow run và lỗi chính.
 
 Không claim visual result khi artifact không hợp lệ.
 
+Technical serialization/schema failure không cần evidence publication commit.
+
 ---
 
-# 27. Refinement Vn -> Vn+1
+# 33. Refinement Vn -> Vn+1
 
 Mỗi refinement phải có hypothesis trước.
 
@@ -817,34 +1061,13 @@ Sau CI phải chứng minh bằng previous/current evidence.
 
 Nếu evidence không cho thấy improvement, không claim improvement.
 
-Có thể revert hoặc thử iteration khác.
+Có thể revert hoặc thử candidate khác.
+
+Animation iteration chỉ tăng khi motion source thay đổi.
 
 ---
 
-# 28. Key-Pose Gate
-
-Trước timing polish:
-
-- review exact key frames ở front;
-- review key frames ở three-quarter-right hoặc three-quarter-left phù hợp.
-
-Nếu key pose fail, không chuyển sang timing polish.
-
----
-
-# 29. Motion Gate
-
-Sau key poses:
-
-- dùng contiguous TEMP ranges;
-- bật `gif=true` cho phase cần review;
-- review attack, transition, follow-through và recovery.
-
-Chỉ khi các phase chính đạt mới finalization.
-
----
-
-# 30. FINAL CI behavior
+# 34. FINAL CI behavior
 
 Khi folder chỉ còn:
 
@@ -862,11 +1085,13 @@ Không dùng `render_config.json` trong FINAL.
 
 FINAL PASS yêu cầu agent đã review full front và full 3/4 output cùng validation/provenance.
 
+Nếu finalization không thay đổi Animation SHA so với TEMP PASS, ghi rõ đây là semantic no-op source promotion; không fake claim visual improvement.
+
 ---
 
-# 31. FINAL evidence publication
+# 35. FINAL evidence publication
 
-Có thể publish tạm selected final evidence vào:
+Selected final evidence publish lên cùng evidence-only branch:
 
 ```text
 review_evidence/humanoid_motion/<animation-id>/final/
@@ -875,15 +1100,15 @@ review_evidence/humanoid_motion/<animation-id>/final/
 └── selected-key-frame.png ...
 ```
 
-Chỉ publish những file reviewer thực sự cần xem.
+Không publish technical CI artifacts.
 
-Không commit technical CI artifacts.
+Source PR branch vẫn không chứa `review_evidence/`.
 
-Nếu finalization không thay đổi motion so với TEMP PASS, không cần fake claim visual improvement so với previous version. Ghi rõ finalization không đổi motion và dùng FINAL CI output làm canonical final proof.
+Không cần cleanup evidence khỏi source branch trước merge vì evidence chưa từng được commit vào source branch.
 
 ---
 
-# 32. Metadata
+# 36. Metadata
 
 `metadata.json` optional và chỉ tạo sau khi motion final.
 
@@ -900,23 +1125,7 @@ Metadata không thay thế animation source.
 
 ---
 
-# 33. Cleanup evidence trước merge
-
-Sau khi reviewer/user approve final animation:
-
-xóa toàn bộ:
-
-`review_evidence/humanoid_motion/<animation-id>/`
-
-Historical raw URLs khóa theo commit SHA vẫn dùng được trong PR comments.
-
-Sau cleanup phải verify `animation.json` vẫn có cùng content/hash với version đã nhận FINAL PASS.
-
-Nếu motion thay đổi sau FINAL PASS, phải chạy FINAL CI + review lại.
-
----
-
-# 34. Merge Cleanliness Gate
+# 37. Merge Cleanliness Gate
 
 Khi merge, final diff của animation chỉ được còn:
 
@@ -925,7 +1134,7 @@ sample/humanoid_motion/authored/<animation-id>/animation.json
 sample/humanoid_motion/authored/<animation-id>/metadata.json    # optional
 ```
 
-Không được còn:
+Không được còn trên source PR branch:
 
 ```text
 animation_temp.json
@@ -942,11 +1151,13 @@ runtime.blend
 temporary scripts
 ```
 
+Evidence-only branch không thuộc source PR diff nên không làm fail Merge Cleanliness Gate.
+
 Không merge nếu user chưa yêu cầu.
 
 ---
 
-# 35. Không sửa CI để ép animation pass
+# 38. Không sửa CI để ép animation pass
 
 Nếu animation fail, sửa animation.
 
@@ -961,9 +1172,11 @@ Không:
 
 Chỉ sửa workflow khi task riêng yêu cầu infrastructure change.
 
+Runtime optimization như caching Blender/dependencies là infrastructure task riêng; không được làm thay đổi visual review semantics.
+
 ---
 
-# 36. Workflow tổng thể
+# 39. Workflow tổng thể tối ưu
 
 ```text
 1. Nhận yêu cầu motion
@@ -972,55 +1185,62 @@ Chỉ sửa workflow khi task riêng yêu cầu infrastructure change.
 4. Chọn exact reference frames/mechanics
 5. Thiết kế intent/phases/key poses/body mechanics/timing
 6. Tạo animation_temp.json
-7. Tạo Draft PR
-8. Source Iteration 01
-9. Chạy CI
-10. Download exact-SHA artifact
-11. Inspect evidence
-12. Nếu cần comment review hoàn chỉnh, dùng render_config để có motion GIF + selected frames
-13. Publish selected GIF/PNG vào review_evidence/iteration-01/
-14. Post evidence-first comment
-15. Refine source
-16. Source Iteration 02
-17. CI -> inspect -> publish evidence
-18. Compare previous/current cho từng review claim
-19. Post Iteration 02 comment
-20. Lặp đến Key-Pose Gate PASS
-21. Refine timing bằng contiguous range + GIF
-22. Motion Gate PASS
-23. TEMP PASS
-24. Atomic finalization: animation_temp.json -> animation.json, remove render_config.json
-25. FINAL CI
-26. Review full front + 3/4
-27. Publish selected final evidence nếu cần
-28. FINAL PASS
-29. Optional metadata.json
-30. User/reviewer approve
-31. Cleanup review_evidence/<animation-id>/
-32. Verify animation.json hash/content không đổi
-33. Verify Merge Cleanliness Gate
-34. Không merge nếu user chưa yêu cầu
+7. Tạo render_config đầy đủ cho candidate: front + 3/4 pose sheet/GIF trong cùng run khi contract cho phép
+8. Tạo Draft PR
+9. Animation Iteration 01 source commit
+10. Chạy ONE TEMP CI render round cho candidate
+11. Download exact-SHA artifact
+12. Key-Pose Gate trên pose sheets
+13. Nếu Key-Pose FAIL: refine animation -> Iteration 02
+14. Nếu Key-Pose PASS: dùng GIF CÙNG artifact cho Motion Gate
+15. Motion Gate
+16. Publish selected current evidence lên review-evidence/pr-<PR>
+17. Post evidence-first PR comment
+18. Nếu REFINE: sửa animation source -> candidate mới
+19. CI -> Key-Pose Review -> Motion Review trên cùng artifact
+20. Compare previous/current cho từng claim
+21. Lặp tới TEMP PASS
+22. Atomic finalization: animation_temp.json -> animation.json, remove render_config.json
+23. FINAL CI
+24. Review full front + 3/4
+25. Publish selected final evidence lên evidence branch
+26. FINAL PASS
+27. Optional metadata.json
+28. User/reviewer approve
+29. Verify Animation SHA/content không đổi sau FINAL PASS
+30. Verify Merge Cleanliness Gate trên source PR
+31. Evidence retention xử lý riêng, không sửa source PR chỉ để cleanup evidence
+32. Không merge nếu user chưa yêu cầu
 ```
+
+Nếu artifact hiện tại đã chứa evidence cần cho gate tiếp theo thì **reuse artifact, không rerender**.
+
+Nếu chỉ đổi review plan mà Animation SHA không đổi, đó là cùng animation iteration.
 
 ---
 
-# 37. Definition of Done
+# 40. Definition of Done
 
 Task chỉ hoàn thành khi:
 
 - đúng repo `TrdHuy/motion2sheet`;
-- một authored animation/PR;
+- một authored animation/source PR;
 - reference plan rõ;
 - key poses được thiết kế trước timing polish;
 - TEMP dùng `animation_temp.json`;
-- CI evidence được inspect cho mỗi source iteration;
-- mỗi review comment có motion GIF khi visual review yêu cầu;
+- animation iteration chỉ tăng khi motion source thay đổi;
+- Key-Pose Gate và Motion Gate là review gates, không mặc định là hai CI runs;
+- mỗi candidate ưu tiên một TEMP CI artifact chứa cả pose sheet + GIF ở front và 3/4 trong giới hạn contract;
+- không rerender nếu artifact cùng render identity đã có evidence cần thiết;
+- CI evidence được inspect cho mỗi animation candidate;
+- mỗi review comment có motion GIF khi Motion Review khả dụng;
 - mỗi claim quan trọng có PNG/GIF evidence tương ứng;
 - từ Iteration 02, mọi claim improvement có previous/current comparison;
-- evidence raw URL khóa theo exact evidence commit SHA;
-- evidence publication không sửa source;
+- presentation evidence nằm trên `review-evidence/pr-<N>`, không nằm trên source PR branch;
+- evidence raw URL khóa theo exact Evidence Commit SHA;
+- evidence publication không thay đổi source PR HEAD;
 - front + 3/4 key poses được review;
-- timing được review bằng GIF khi cần;
+- timing được review bằng GIF;
 - limb identity đúng;
 - support limb có vai trò;
 - lower body/weight transfer hợp lý;
@@ -1030,7 +1250,7 @@ Task chỉ hoàn thành khi:
 - FINAL CI render full front + three-quarter-right;
 - final evidence được review;
 - `animation.json` không thay đổi sau FINAL PASS;
-- evidence tạm đã cleanup trước merge;
+- source PR không chứa review evidence hoặc generated render artifacts;
 - final merged diff chỉ còn `animation.json` và optional `metadata.json`;
 - không sửa trusted Mixamo reference;
 - không sửa CI để ép animation pass;
