@@ -177,6 +177,7 @@ def initial_run_state(
         "evidence": [],
         "warnings": [],
         "completion": None,
+        "memoryWorkingSet": None,
         "memoryProposal": None,
         "memoryPersistence": None,
         "failure": None,
@@ -233,6 +234,8 @@ class RunState:
                 value["completion"] = payload
             elif kind == "agent.failed" and event.source == "agent_push":
                 value["failure"] = payload or {"message": "agent reported failure"}
+            elif kind == "memory.loaded" and event.source == "harness":
+                value["memoryWorkingSet"] = payload
             elif kind == "memory.proposed" and event.source == "agent_push":
                 if value["memoryProposal"] is not None:
                     warnings.append("multiple memory proposals reported; latest declaration retained")
@@ -480,6 +483,7 @@ class EventProcessor:
             "evidence": state["evidence"],
             "warnings": state["warnings"],
             "completion": state["completion"],
+            "memoryWorkingSet": state["memoryWorkingSet"],
             "memoryProposal": state["memoryProposal"],
             "memoryPersistence": state["memoryPersistence"],
         }

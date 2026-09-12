@@ -114,6 +114,7 @@ def test_codex_provider_launches_agent_session_with_isolated_runtime_context(
         "HARNESS_TOKEN",
         "HARNESS_EVENT_STATE",
         "SDAR_NOTIFY",
+        "SDAR_REPOSITORY",
         "PATH",
         "PYTHONPATH",
     ):
@@ -131,12 +132,13 @@ def test_codex_provider_launches_agent_session_with_isolated_runtime_context(
     assert environment["HARNESS_EVENT_URL"] == run_request.event_url
     assert environment["HARNESS_TOKEN"] == "secret-token"
     assert environment["SDAR_NOTIFY"] == str(run_request.notify_command)
+    assert environment["SDAR_REPOSITORY"] == str(run_request.repository)
     assert environment["PYTHONPATH"] == str(run_request.repository)
     assert environment["TMPDIR"] == str(run_request.workspace / ".tmp")
     assert run_request.skill_text in process.stdin.value
     assert "exact prompt" in process.stdin.value
     assert '"prior": "history"' in process.stdin.value
-    assert '"statement": "private prior lesson"' in process.stdin.value
+    assert '"statement":"private prior lesson"' in process.stdin.value
     event = session.next_event(timeout=1)
     assert event is not None and event.event_type == "command.completed"
 
@@ -157,6 +159,13 @@ def test_codex_prompt_requires_sdar_progress_protocol(tmp_path):
     assert run_request.skill_text in prompt
     assert "PROVIDER MEMORY" in prompt
     assert "private prior lesson" in prompt
+    compact_memory = json.dumps(
+        run_request.memory,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    assert compact_memory in prompt
 
 
 def test_resume_history_is_prompt_context_not_a_writable_root(tmp_path):

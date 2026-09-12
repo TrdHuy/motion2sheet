@@ -75,7 +75,8 @@ clients cannot block the sender. Agent `sequence` applies only to the
 The runtime provides `sdar-notify` so the agent reports semantic intent without
 constructing HTTP envelopes. The helper supplies IDs, timestamps, sequence,
 authorization, and retry/backoff. `HARNESS_RUN_ID`, `HARNESS_EVENT_URL`,
-`HARNESS_TOKEN`, and `SDAR_NOTIFY` are available to commands run by the agent.
+`HARNESS_TOKEN`, `SDAR_NOTIFY`, and the read-only root `SDAR_REPOSITORY` are
+available to commands run by the agent.
 The runtime instruction requires the agent to bracket its self-selected
 iterations and applicable manifest steps with the corresponding start,
 complete, or skip notifications, then declare final output paths. This is a
@@ -119,6 +120,13 @@ and confidence. Repository command syntax, directory structure, schema/workflow
 documentation, and one-run noise belong in the skill or run history, not memory.
 No proposal is a valid outcome.
 
+Every evidence locator is resolved inside the current agent workspace after an
+optional `#fragment` is removed. Its base must be a readable regular non-symlink
+file already snapshotted through `evidence.created`, `artifact.created`, or
+`artifact.updated` in that run. Missing or unreported evidence rejects only the
+optional memory update. Workspace escape or symlink evidence is a fail-closed
+runtime security violation. The harness checks no evidence semantics.
+
 After `agent.completed`, process exit zero, queue drain, and generic final-output
 validation, the harness generically validates and redacts the proposal, adds
 run/provider/skill provenance, rejects exact duplicates by stable hash, and
@@ -126,6 +134,29 @@ appends new entries. It never reads renders or invents domain lessons. Malformed
 optional proposals become warnings without corrupting the bank or failing valid
 animation output; traversal and symlink escape are security failures. Proposal
 files are size/count/string bounded and the bank is append-only.
+
+The persistent archive is never truncated for prompt budgeting. Injected
+working memory is limited to 32 entries and 65,536 compact UTF-8 JSON bytes.
+Selection scans newest-to-oldest, accepts entries that fit both remaining
+budgets, and presents the selected records in chronological order. The payload
+and report expose archive/injected counts, limits, policy, and `truncated`.
+Archive-wide exact dedupe still reads every persistent record.
+
+## Default Humanoid Motion review target
+
+The skill prepares the pinned, E2E-validated Character A v1 target with:
+
+```bash
+motion2sheet prepare-humanoid-review-target \
+  --output review-target/character-a-v1
+```
+
+The command downloads the immutable With-Skin release fixture, checks its
+declared size and SHA-256, reuses `export-character`, and validates compatibility
+with the canonical Mixamo mapping. It produces `model.glb`, `rig.json`, and
+`skin.json` at the exact output directory. Render commands use these workspace
+files plus mapping and camera paths rooted at `$SDAR_REPOSITORY`; the agent does
+not search the repository for a character target.
 
 ## History, paths, and reporting
 

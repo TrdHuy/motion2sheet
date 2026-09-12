@@ -25,6 +25,7 @@ _SHELL_ENVIRONMENT_ALLOWLIST = (
     "HARNESS_TOKEN",
     "HARNESS_EVENT_STATE",
     "SDAR_NOTIFY",
+    "SDAR_REPOSITORY",
 )
 
 
@@ -163,7 +164,12 @@ class CodexCLIProvider:
     @staticmethod
     def _prompt(request: AgentRunRequest) -> str:
         history = json.dumps(request.history, ensure_ascii=False, indent=2)
-        memory = json.dumps(request.memory, ensure_ascii=False, indent=2)
+        memory = json.dumps(
+            request.memory,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         manifest = json.dumps(request.skill_manifest.to_dict(), ensure_ascii=False, indent=2)
         return (
             "You are the domain-owning animation authoring agent in a Skill-Driven Agent Runtime.\n"
@@ -201,6 +207,7 @@ class CodexCLIProvider:
             "========================================================================\n"
             "Use this provider-private memory as prior experience, not ground truth. Do not broadly "
             "rediscover lessons already present unless the current task needs verification or contradicts them.\n"
+            "The payload is a bounded working set; inspect archiveEntryCount, injectedEntryCount and truncated.\n"
             f"{memory}\n\n"
             "PREVIOUS READ-ONLY HISTORY\n"
             "==========================\n"
@@ -228,6 +235,7 @@ class CodexCLIProvider:
                 "HARNESS_TOKEN": request.event_token,
                 "HARNESS_EVENT_STATE": str(request.workspace / ".sdar" / "sequence"),
                 "SDAR_NOTIFY": str(request.notify_command),
+                "SDAR_REPOSITORY": str(request.repository),
                 "PATH": f"{request.notify_command.parent}{os.pathsep}{environment.get('PATH', '')}",
                 "PYTHONPATH": str(request.repository),
                 "TMPDIR": str(temporary),

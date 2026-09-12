@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from .runner import export_humanoid_animation, render_humanoid_animation, verify_humanoid_animation_fidelity
+from .review_target import DEFAULT_REVIEW_TARGET_PROFILE, prepare_humanoid_review_target
 
 
 def _canvas(value: str) -> tuple[int, int]:
@@ -80,7 +81,29 @@ def _verify_fidelity(args) -> int:
     return 0
 
 
+def _prepare_review_target(args) -> int:
+    report = prepare_humanoid_review_target(
+        output=Path(args.output),
+        profile_path=Path(args.profile),
+        blender=args.blender,
+    )
+    print(
+        "motion2sheet: Humanoid Motion review target PASS; "
+        f"id={report['id']} output={Path(args.output).resolve()}"
+    )
+    return 0
+
+
 def add_humanoid_motion_subcommands(subparsers) -> None:
+    prepare = subparsers.add_parser(
+        "prepare-humanoid-review-target",
+        help="Download, verify and export the pinned default Humanoid Motion review character",
+    )
+    prepare.add_argument("--profile", default=str(DEFAULT_REVIEW_TARGET_PROFILE))
+    prepare.add_argument("--output", required=True)
+    prepare.add_argument("--blender", default="blender")
+    prepare.set_defaults(func=_prepare_review_target)
+
     export = subparsers.add_parser(
         "export-humanoid-animation",
         help="Convert Motion JSON Source Rig + Source Animation authorities into reusable semantic Humanoid Motion",

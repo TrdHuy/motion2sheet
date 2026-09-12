@@ -80,9 +80,25 @@ Runtime đã cung cấp current run workspace và repository read-only. Không c
 Các path authority đã biết:
 
 - reference: `sample/humanoid_motion/mixamo/<clip>/`;
-- semantic mapping: `profiles/humanoid_motion/mixamo_humanoid_v1.json`;
-- front camera: `profiles/cameras/front_humanoid_motion.json5`;
+- semantic mapping: `$SDAR_REPOSITORY/profiles/humanoid_motion/mixamo_humanoid_v1.json`;
+- front camera: `$SDAR_REPOSITORY/profiles/cameras/front_humanoid_motion.json5`;
 - executable/workflow: `motion2sheet` như mô tả trong skill này.
+
+Runtime export `$SDAR_REPOSITORY` là absolute read-only repository root. Chuẩn
+bị validated default Character A v1 target đúng một lần trong run:
+
+```bash
+motion2sheet prepare-humanoid-review-target \
+  --output review-target/character-a-v1
+```
+
+Command dùng pinned With-Skin fixture, verify size/SHA-256, export và validate
+mapping. Output authority cố định trong current run workspace:
+
+- model: `review-target/character-a-v1/model.glb`;
+- character rig: `review-target/character-a-v1/rig.json`;
+- skin: `review-target/character-a-v1/skin.json`;
+- preparation report: `review-target/character-a-v1/review-target.json`.
 
 Chỉ đọc file repository cụ thể khi workflow cần input/evidence, chẳng hạn
 metadata, animation hoặc preview của reference đã chọn, semantic mapping, model
@@ -322,20 +338,21 @@ Render command cần:
 - camera profile;
 - output directory.
 
-Template:
+Default validated render command:
 
 ```bash
 motion2sheet render-humanoid-animation \
-  --model <model.glb> \
-  --character-rig <rig.json> \
-  --skin <skin.json> \
-  --character-mapping <character-map.json> \
+  --model review-target/character-a-v1/model.glb \
+  --character-rig review-target/character-a-v1/rig.json \
+  --skin review-target/character-a-v1/skin.json \
+  --character-mapping "$SDAR_REPOSITORY/profiles/humanoid_motion/mixamo_humanoid_v1.json" \
   --animation <animation.json> \
-  --camera-profile <camera-profile.json5> \
+  --camera-profile "$SDAR_REPOSITORY/profiles/cameras/front_humanoid_motion.json5" \
   --output <review-output>
 ```
 
-Dùng một target character đã được repo validate.
+Dùng Character A v1 này làm default; không search model/rig/skin khác nếu task
+không có yêu cầu character-specific.
 
 Không thay character giữa các version so sánh nếu không có lý do rõ ràng.
 
@@ -389,12 +406,12 @@ Ví dụ:
 
 ```bash
 motion2sheet render-humanoid-animation \
-  --model <model.glb> \
-  --character-rig <rig.json> \
-  --skin <skin.json> \
-  --character-mapping <character-map.json> \
+  --model review-target/character-a-v1/model.glb \
+  --character-rig review-target/character-a-v1/rig.json \
+  --skin review-target/character-a-v1/skin.json \
+  --character-mapping "$SDAR_REPOSITORY/profiles/humanoid_motion/mixamo_humanoid_v1.json" \
   --animation <animation.json> \
-  --camera-profile profiles/cameras/front_humanoid_motion.json5 \
+  --camera-profile "$SDAR_REPOSITORY/profiles/cameras/front_humanoid_motion.json5" \
   --frames "0,7,10,16,22,25,31,42" \
   --canvas 320x320 \
   --sheet-columns 4 \
@@ -421,7 +438,7 @@ Key poses phải được kiểm tra ít nhất ở:
 
 Front dùng camera profile chuẩn của repo, ví dụ:
 
-`profiles/cameras/front_humanoid_motion.json5`
+`$SDAR_REPOSITORY/profiles/cameras/front_humanoid_motion.json5`
 
 Với three-quarter:
 
@@ -653,12 +670,12 @@ Ví dụ:
 
 ```bash
 motion2sheet render-humanoid-animation \
-  --model <model.glb> \
-  --character-rig <rig.json> \
-  --skin <skin.json> \
-  --character-mapping <character-map.json> \
+  --model review-target/character-a-v1/model.glb \
+  --character-rig review-target/character-a-v1/rig.json \
+  --skin review-target/character-a-v1/skin.json \
+  --character-mapping "$SDAR_REPOSITORY/profiles/humanoid_motion/mixamo_humanoid_v1.json" \
   --animation <animation.json> \
-  --camera-profile profiles/cameras/front_humanoid_motion.json5 \
+  --camera-profile "$SDAR_REPOSITORY/profiles/cameras/front_humanoid_motion.json5" \
   --frames "all" \
   --output-fps <presentation-fps> \
   --canvas 320x320 \
@@ -1133,8 +1150,11 @@ Nếu có lesson bền vững, ghi `memory-update.json` trong current run worksp
 }
 ```
 
-Sau đó report `sdar-notify memory-update memory-update.json`. Nếu không có
-lesson durable thì không tạo proposal; đây là kết quả hợp lệ.
+Mỗi evidence path phải là file đã tồn tại trong current run workspace và đã
+được report trước bằng `sdar-notify evidence-created <path>` (hoặc artifact
+created/updated khi phù hợp). Fragment như `#frame=12` được phép sau base path.
+Sau đó report `sdar-notify memory-update memory-update.json`. Nếu không có lesson
+durable thì không tạo proposal; đây là kết quả hợp lệ.
 
 ---
 

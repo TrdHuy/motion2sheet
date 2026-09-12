@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from .contracts import HarnessError, RuntimeEvent
+from .contracts import HarnessError, RuntimeEvent, WorkspacePathSecurityError
 from .redaction import SecretRedactor
 
 
@@ -17,15 +17,17 @@ def confined_file(agent_workspace: Path, declared: str, redactor: SecretRedactor
     root = Path(agent_workspace).resolve()
     lexical = candidate.resolve(strict=False)
     if not lexical.is_relative_to(root):
-        raise HarnessError(f"artifact escapes agent workspace: {declared}")
+        raise WorkspacePathSecurityError(f"artifact escapes agent workspace: {declared}")
     try:
         resolved = candidate.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
         raise HarnessError(f"artifact does not exist: {declared}") from exc
     if not resolved.is_relative_to(root):
-        raise HarnessError(f"artifact escapes agent workspace: {declared}")
+        raise WorkspacePathSecurityError(f"artifact escapes agent workspace: {declared}")
     if candidate.is_symlink() or not resolved.is_file():
-        raise HarnessError(f"artifact must be a regular non-symlink file: {declared}")
+        raise WorkspacePathSecurityError(
+            f"artifact must be a regular non-symlink file: {declared}"
+        )
     return resolved
 
 

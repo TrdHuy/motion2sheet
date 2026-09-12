@@ -18,7 +18,7 @@ def test_committed_skill_and_observability_manifest_load():
     loaded = load_skill(SKILL)
     assert loaded.text == (SKILL / "SKILL.md").read_text(encoding="utf-8")
     assert loaded.manifest.id == "humanoid-motion-local-authoring"
-    assert loaded.manifest.version == 2
+    assert loaded.manifest.version == 3
     assert [step.id for step in loaded.manifest.steps] == [
         "understand-intent",
         "discover-references",

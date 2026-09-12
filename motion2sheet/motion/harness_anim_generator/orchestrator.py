@@ -158,6 +158,13 @@ class ActiveRun:
                 manifest=self.skill_manifest,
                 provider=self.request.provider,
                 redactor=self.redactor,
+                reported_files=[
+                    item
+                    for bucket in (snapshot.get("evidence"), snapshot.get("artifacts"))
+                    if isinstance(bucket, list)
+                    for item in bucket
+                    if isinstance(item, dict)
+                ],
             )
         except MemorySecurityError:
             raise
@@ -322,6 +329,22 @@ class AnimationGenerationOrchestrator:
         processor.start()
         server.start()
         bus.submit_harness("run.started", {"reportUrl": server.report_url})
+        bus.submit_harness(
+            "memory.loaded",
+            {
+                key: memory[key]
+                for key in (
+                    "skillId",
+                    "skillVersion",
+                    "provider",
+                    "archiveEntryCount",
+                    "injectedEntryCount",
+                    "truncated",
+                    "selectionPolicy",
+                    "limits",
+                )
+            },
+        )
         agent_request = AgentRunRequest(
             run_id=run_id,
             prompt=request.prompt,

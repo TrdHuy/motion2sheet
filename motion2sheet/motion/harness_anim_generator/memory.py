@@ -8,7 +8,13 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .artifacts import confined_file
-from .contracts import HarnessError, MemorySecurityError, SkillManifest, utc_now
+from .contracts import (
+    HarnessError,
+    MemorySecurityError,
+    SkillManifest,
+    WorkspacePathSecurityError,
+    utc_now,
+)
 from .redaction import SecretRedactor
 
 
@@ -18,6 +24,9 @@ MAX_LIST_ITEMS = 32
 MAX_SHORT_TEXT = 128
 MAX_STATEMENT_TEXT = 4096
 MAX_LOCATOR_TEXT = 2048
+MAX_INJECTED_MEMORY_ENTRIES = 32
+MAX_INJECTED_MEMORY_BYTES = 65_536
+MEMORY_SELECTION_POLICY = "newest-fit-first-chronological-output"
 
 
 class MemoryProposalError(HarnessError):
@@ -89,15 +98,12 @@ def _entry(value: Any, index: int) -> dict[str, Any]:
                 MAX_LOCATOR_TEXT,
             )
         ],
-        "evidence": [
-            _locator(item, f"memory entry {index} evidence")
-            for item in _strings(
-                value["evidence"],
-                f"memory entry {index} evidence",
-                MAX_LOCATOR_TEXT,
-                required=True,
-            )
-        ],
+        "evidence": _strings(
+            value["evidence"],
+            f"memory entry {index} evidence",
+            MAX_LOCATOR_TEXT,
+            required=True,
+        ),
         "confidence": _text(
             value["confidence"], f"memory entry {index} confidence", MAX_SHORT_TEXT
         ),
@@ -144,7 +150,7 @@ class ProviderMemoryBank:
             raise MemorySecurityError("provider memory namespace escapes memory root")
         return current / "entries.jsonl"
 
-    def load(self, manifest: SkillManifest, provider: str) -> dict[str, Any]:
+    def _read_archive(self, manifest: SkillManifest, provider: str) -> list[dict[str, Any]]:
         path = self._store_path(manifest.id, provider, create=False)
         records: list[dict[str, Any]] = []
         if path.exists():
@@ -164,12 +170,70 @@ class ProviderMemoryBank:
                 raise MemoryStoreError(
                     f"cannot load provider memory {path}: line {line_number}: {exc}"
                 ) from exc
+        return records
+
+    @staticmethod
+    def _working_payload(
+        manifest: SkillManifest,
+        provider: str,
+        archive_count: int,
+        entries: list[dict[str, Any]],
+        *,
+        truncated: bool,
+    ) -> dict[str, Any]:
         return {
             "skillId": manifest.id,
             "skillVersion": manifest.version,
             "provider": provider,
-            "entries": records,
+            "archiveEntryCount": archive_count,
+            "injectedEntryCount": len(entries),
+            "truncated": truncated,
+            "selectionPolicy": MEMORY_SELECTION_POLICY,
+            "limits": {
+                "maxEntries": MAX_INJECTED_MEMORY_ENTRIES,
+                "maxBytes": MAX_INJECTED_MEMORY_BYTES,
+            },
+            "entries": entries,
         }
+
+    @staticmethod
+    def serialized_size(value: dict[str, Any]) -> int:
+        return len(
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+
+    def load(self, manifest: SkillManifest, provider: str) -> dict[str, Any]:
+        archive = self._read_archive(manifest, provider)
+        selected_newest_first: list[dict[str, Any]] = []
+        for record in reversed(archive):
+            if len(selected_newest_first) >= MAX_INJECTED_MEMORY_ENTRIES:
+                break
+            trial = list(reversed([*selected_newest_first, record]))
+            payload = self._working_payload(
+                manifest,
+                provider,
+                len(archive),
+                trial,
+                truncated=False,
+            )
+            if self.serialized_size(payload) <= MAX_INJECTED_MEMORY_BYTES:
+                selected_newest_first.append(record)
+        selected = list(reversed(selected_newest_first))
+        payload = self._working_payload(
+            manifest,
+            provider,
+            len(archive),
+            selected,
+            truncated=len(selected) != len(archive),
+        )
+        if self.serialized_size(payload) > MAX_INJECTED_MEMORY_BYTES:
+            raise MemoryStoreError("provider working memory exceeds its serialized byte limit")
+        return payload
 
     def persist_proposal(
         self,
@@ -180,14 +244,14 @@ class ProviderMemoryBank:
         manifest: SkillManifest,
         provider: str,
         redactor: SecretRedactor,
+        reported_files: list[dict[str, object]],
     ) -> dict[str, Any]:
         try:
             source = confined_file(agent_workspace, declared_path, redactor)
+        except WorkspacePathSecurityError as exc:
+            raise MemorySecurityError(str(exc)) from exc
         except HarnessError as exc:
-            message = str(exc)
-            if "escapes agent workspace" in message or "non-symlink" in message:
-                raise MemorySecurityError(message) from exc
-            raise MemoryProposalError(message) from exc
+            raise MemoryProposalError(str(exc)) from exc
         if source.stat().st_size > MAX_PROPOSAL_BYTES:
             raise MemoryProposalError(
                 f"memory proposal exceeds {MAX_PROPOSAL_BYTES} bytes: {declared_path}"
@@ -207,6 +271,22 @@ class ProviderMemoryBank:
                 f"memory proposal exceeds {MAX_PROPOSAL_ENTRIES} entries"
             )
         normalized = [_entry(value, index) for index, value in enumerate(entries)]
+        reported = {
+            Path(path).resolve()
+            for item in reported_files
+            if item.get("eventType")
+            in {"evidence.created", "artifact.created", "artifact.updated"}
+            and isinstance(path := item.get("path"), str)
+        }
+        for index, entry in enumerate(normalized):
+            for locator in entry["evidence"]:
+                self._validate_evidence(
+                    locator,
+                    index=index,
+                    agent_workspace=agent_workspace,
+                    redactor=redactor,
+                    reported=reported,
+                )
         return self._append(
             normalized,
             run_id=run_id,
@@ -214,6 +294,36 @@ class ProviderMemoryBank:
             provider=provider,
             redactor=redactor,
         )
+
+    @staticmethod
+    def _validate_evidence(
+        locator: str,
+        *,
+        index: int,
+        agent_workspace: Path,
+        redactor: SecretRedactor,
+        reported: set[Path],
+    ) -> None:
+        base = locator.split("#", 1)[0]
+        label = f"memory entry {index} evidence {locator!r}"
+        if not base or "\\" in base:
+            raise MemoryProposalError(f"{label} must use a relative POSIX-style path")
+        pure = PurePosixPath(base)
+        if pure.is_absolute():
+            raise MemorySecurityError(f"{label} must be inside the agent workspace")
+        try:
+            source = confined_file(agent_workspace, base, redactor)
+        except WorkspacePathSecurityError as exc:
+            raise MemorySecurityError(str(exc)) from exc
+        except HarnessError as exc:
+            raise MemoryProposalError(str(exc)) from exc
+        if ".." in pure.parts:
+            raise MemoryProposalError(f"{label} must not contain '..'")
+        if source not in reported:
+            raise MemoryProposalError(
+                f"{label} was not reported with evidence.created, "
+                "artifact.created or artifact.updated"
+            )
 
     def _append(
         self,
@@ -236,7 +346,7 @@ class ProviderMemoryBank:
         duplicates = 0
         with lock_path.open("a", encoding="ascii") as lock:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-            existing = self.load(manifest, provider)["entries"]
+            existing = self._read_archive(manifest, provider)
             hashes = {item["entryHash"] for item in existing}
             records = []
             for entry in entries:

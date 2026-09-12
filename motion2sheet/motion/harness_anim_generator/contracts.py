@@ -30,6 +30,10 @@ class OutputContractError(HarnessError):
     """The agent did not declare usable final files."""
 
 
+class WorkspacePathSecurityError(HarnessError):
+    """A declared workspace path crossed a filesystem security boundary."""
+
+
 class MemorySecurityError(HarnessError):
     """A provider-memory declaration crossed a runtime security boundary."""
 

@@ -9,6 +9,7 @@ def test_public_motion_cli_registers_core_and_humanoid_commands():
         "validate",
         "export-animation-json",
         "export-character",
+        "prepare-humanoid-review-target",
         "export-humanoid-animation",
         "verify-humanoid-animation-fidelity",
         "render-humanoid-animation",

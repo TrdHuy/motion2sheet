@@ -10,10 +10,17 @@ from motion2sheet.motion.harness_anim_generator.contracts import (
     GenerationRequest,
     HarnessError,
     MemorySecurityError,
+    SkillManifest,
+)
+from motion2sheet.motion.harness_anim_generator.memory import (
+    MAX_INJECTED_MEMORY_BYTES,
+    MAX_INJECTED_MEMORY_ENTRIES,
+    ProviderMemoryBank,
 )
 from motion2sheet.motion.harness_anim_generator.orchestrator import (
     AnimationGenerationOrchestrator,
 )
+from motion2sheet.motion.harness_anim_generator.providers.codex_cli import CodexCLIProvider
 
 
 def runtime(repo: Path, tmp_path: Path, provider) -> AnimationGenerationOrchestrator:
@@ -41,10 +48,20 @@ def proposal(statement: str = "Reusable lesson", *, evidence=None) -> dict:
     }
 
 
-def completing_behavior(*, memory=None, proposal_path="memory-update.json", code=0):
+def completing_behavior(
+    *, memory=None, proposal_path="memory-update.json", code=0, report_evidence=True
+):
     def behavior(request, session):
         client = client_for(request)
         if memory is not None:
+            if report_evidence:
+                for entry in memory.get("entries", []):
+                    for locator in entry.get("evidence", []):
+                        base = locator.split("#", 1)[0]
+                        evidence = request.workspace / base
+                        evidence.parent.mkdir(parents=True, exist_ok=True)
+                        evidence.write_bytes(b"evidence")
+                        client.send("evidence.created", payload={"path": base})
             path = request.workspace / proposal_path
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(memory), encoding="utf-8")
@@ -69,10 +86,19 @@ def test_first_run_injects_empty_provider_memory(repo_with_skill, tmp_path):
         "skillId": "humanoid-motion-local-authoring",
         "skillVersion": 1,
         "provider": "codex-cli",
+        "archiveEntryCount": 0,
+        "injectedEntryCount": 0,
+        "truncated": False,
+        "selectionPolicy": "newest-fit-first-chronological-output",
+        "limits": {"maxEntries": 32, "maxBytes": 65536},
         "entries": [],
     }
     saved = json.loads((result.workspace / "request.json").read_text())
     assert saved["memory"] == provider.requests[0].memory
+    state = json.loads((result.workspace / "run.json").read_text())
+    assert state["memoryWorkingSet"]["archiveEntryCount"] == 0
+    assert state["memoryWorkingSet"]["injectedEntryCount"] == 0
+    assert state["memoryWorkingSet"]["truncated"] is False
 
 
 def test_successful_run_persists_and_next_matching_run_loads_memory(
@@ -91,6 +117,7 @@ def test_successful_run_persists_and_next_matching_run_loads_memory(
     ]
     memory_events = [item for item in events if item["type"].startswith("memory.")]
     assert [(item["type"], item["source"]) for item in memory_events] == [
+        ("memory.loaded", "harness"),
         ("memory.proposed", "agent_push"),
         ("memory.persisted", "harness"),
     ]
@@ -107,6 +134,9 @@ def test_successful_run_persists_and_next_matching_run_loads_memory(
     assert records[0]["entry"]["statement"] == "Reusable lesson"
     assert records[0]["provider"] == "codex-cli"
     assert records[0]["runId"] == first.run_id
+    assert records[0]["entry"]["evidence"] == [
+        "review/v2/pose-sheet.png#frame=12"
+    ]
 
 
 def test_memory_is_isolated_by_provider(repo_with_skill, tmp_path):
@@ -162,6 +192,83 @@ def test_no_memory_proposal_is_valid(repo_with_skill, tmp_path):
     assert state["memoryProposal"] is None
     assert state["memoryPersistence"] is None
     assert not (tmp_path / "memory").exists()
+
+
+@pytest.mark.parametrize("mode", ["missing", "unreported"])
+def test_missing_or_unreported_evidence_rejects_memory_but_keeps_output(
+    repo_with_skill, tmp_path, mode
+):
+    memory = proposal(evidence=["review/evidence.png"])
+
+    def behavior(request, session):
+        if mode == "unreported":
+            evidence = request.workspace / "review/evidence.png"
+            evidence.parent.mkdir(parents=True)
+            evidence.write_bytes(b"real but unreported")
+        (request.workspace / "memory-update.json").write_text(
+            json.dumps(memory), encoding="utf-8"
+        )
+        client = client_for(request)
+        client.send("memory.proposed", payload={"path": "memory-update.json"})
+        client.send("agent.completed", payload={"outputs": create_outputs(request.workspace)})
+        session.finish(0)
+
+    result = runtime(repo_with_skill, tmp_path, FakeAgentProvider(behavior)).run(
+        run_request(tmp_path / "out")
+    )
+    state = json.loads((result.workspace / "run.json").read_text())
+    assert state["status"] == "completed"
+    assert state["memoryPersistence"]["status"] == "rejected"
+    assert not (tmp_path / "memory").exists()
+    assert (tmp_path / "out/animation.json").is_file()
+
+
+def test_evidence_outside_workspace_is_security_failure(repo_with_skill, tmp_path):
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(b"outside")
+    memory = proposal(evidence=["../outside.png"])
+
+    def behavior(request, session):
+        (request.workspace / "memory-update.json").write_text(
+            json.dumps(memory), encoding="utf-8"
+        )
+        client = client_for(request)
+        client.send("memory.proposed", payload={"path": "memory-update.json"})
+        client.send("agent.completed", payload={"outputs": create_outputs(request.workspace)})
+        session.finish(0)
+
+    active = runtime(repo_with_skill, tmp_path, FakeAgentProvider(behavior)).start(
+        run_request(tmp_path / "out")
+    )
+    with pytest.raises(MemorySecurityError, match="escapes agent workspace"):
+        active.wait()
+    assert not (tmp_path / "out").exists()
+
+
+def test_symlink_evidence_is_security_failure(repo_with_skill, tmp_path):
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(b"outside")
+    memory = proposal(evidence=["review/evidence.png"])
+
+    def behavior(request, session):
+        evidence = request.workspace / "review/evidence.png"
+        evidence.parent.mkdir(parents=True)
+        evidence.symlink_to(outside)
+        (request.workspace / "memory-update.json").write_text(
+            json.dumps(memory), encoding="utf-8"
+        )
+        client = client_for(request)
+        client.send("evidence.created", payload={"path": "review/evidence.png"})
+        client.send("memory.proposed", payload={"path": "memory-update.json"})
+        client.send("agent.completed", payload={"outputs": create_outputs(request.workspace)})
+        session.finish(0)
+
+    active = runtime(repo_with_skill, tmp_path, FakeAgentProvider(behavior)).start(
+        run_request(tmp_path / "out")
+    )
+    with pytest.raises(MemorySecurityError, match="escapes agent workspace"):
+        active.wait()
+    assert not (tmp_path / "out").exists()
 
 
 def test_malformed_proposal_warns_without_corrupting_bank(repo_with_skill, tmp_path):
@@ -234,10 +341,16 @@ def test_memory_proposal_symlink_escape_fails_run(repo_with_skill, tmp_path):
 def test_memory_is_redacted_before_persistence(repo_with_skill, tmp_path):
     def behavior(request, session):
         value = proposal(f"Lesson accidentally echoed {request.event_token}")
+        evidence = request.workspace / "review/v2/pose-sheet.png"
+        evidence.parent.mkdir(parents=True)
+        evidence.write_bytes(b"evidence")
         (request.workspace / "memory-update.json").write_text(
             json.dumps(value), encoding="utf-8"
         )
         client = client_for(request)
+        client.send(
+            "evidence.created", payload={"path": "review/v2/pose-sheet.png"}
+        )
         client.send("memory.proposed", payload={"path": "memory-update.json"})
         client.send("agent.completed", payload={"outputs": create_outputs(request.workspace)})
         session.finish(0)
@@ -279,3 +392,102 @@ def test_failed_process_does_not_promote_memory(repo_with_skill, tmp_path):
         active.wait()
     assert not (tmp_path / "memory").exists()
     assert not (tmp_path / "out").exists()
+
+
+def _archive_records(count: int, *, statement_size: int = 20) -> list[dict]:
+    return [
+        {
+            "runId": f"run-{index}",
+            "createdAt": f"2026-09-12T00:00:{index:02d}+00:00",
+            "provider": "codex-cli",
+            "skillId": "skill",
+            "skillVersion": 3,
+            "entryHash": f"{index:064x}",
+            "entry": {
+                "id": f"lesson-{index}",
+                "kind": "learning",
+                "statement": f"{index:03d}-" + ("x" * statement_size),
+                "scope": ["test"],
+                "references": [],
+                "evidence": ["review/evidence.png"],
+                "confidence": "high",
+            },
+        }
+        for index in range(count)
+    ]
+
+
+def _seed_archive(
+    bank: ProviderMemoryBank,
+    records: list[dict],
+    *,
+    skill_id: str = "skill",
+    provider: str = "codex-cli",
+) -> Path:
+    path = bank.path_for(skill_id, provider)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "".join(json.dumps(record, sort_keys=True) + "\n" for record in records),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_small_archive_is_injected_in_full(tmp_path):
+    bank = ProviderMemoryBank(tmp_path / "memory")
+    records = _archive_records(3)
+    _seed_archive(bank, records)
+    payload = bank.load(SkillManifest("skill", 3, ()), "codex-cli")
+    assert payload["entries"] == records
+    assert payload["archiveEntryCount"] == payload["injectedEntryCount"] == 3
+    assert payload["truncated"] is False
+
+
+def test_large_archive_is_count_bounded_without_truncating_persistence(tmp_path):
+    bank = ProviderMemoryBank(tmp_path / "memory")
+    records = _archive_records(40)
+    archive = _seed_archive(bank, records)
+    before = archive.read_bytes()
+    payload = bank.load(SkillManifest("skill", 3, ()), "codex-cli")
+    assert payload["injectedEntryCount"] == MAX_INJECTED_MEMORY_ENTRIES
+    assert [item["entry"]["id"] for item in payload["entries"]] == [
+        f"lesson-{index}" for index in range(8, 40)
+    ]
+    assert payload["truncated"] is True
+    assert archive.read_bytes() == before
+    assert len(archive.read_text().splitlines()) == 40
+
+
+def test_large_entries_are_byte_bounded_and_selection_is_deterministic(tmp_path):
+    bank = ProviderMemoryBank(tmp_path / "memory")
+    records = _archive_records(40, statement_size=4096)
+    archive = _seed_archive(bank, records)
+    first = bank.load(SkillManifest("skill", 3, ()), "codex-cli")
+    second = bank.load(SkillManifest("skill", 3, ()), "codex-cli")
+    assert first == second
+    assert first["truncated"] is True
+    assert first["injectedEntryCount"] < MAX_INJECTED_MEMORY_ENTRIES
+    assert bank.serialized_size(first) <= MAX_INJECTED_MEMORY_BYTES
+    assert len(archive.read_text().splitlines()) == 40
+
+
+def test_codex_prompt_receives_only_bounded_working_memory(repo_with_skill, tmp_path):
+    bank = ProviderMemoryBank(tmp_path / "memory")
+    _seed_archive(
+        bank,
+        _archive_records(100, statement_size=4096),
+        skill_id="humanoid-motion-local-authoring",
+    )
+    provider = FakeAgentProvider(completing_behavior())
+    runtime(repo_with_skill, tmp_path, provider).run(run_request(tmp_path / "out"))
+    request = provider.requests[0]
+    encoded = json.dumps(
+        request.memory,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    assert len(encoded.encode("utf-8")) <= MAX_INJECTED_MEMORY_BYTES
+    assert request.memory["archiveEntryCount"] == 100
+    assert request.memory["truncated"] is True
+    assert encoded in CodexCLIProvider._prompt(request)
