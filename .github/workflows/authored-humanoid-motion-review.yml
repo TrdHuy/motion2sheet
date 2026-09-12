@@ -1,0 +1,403 @@
+name: Authored Humanoid Motion Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'sample/humanoid_motion/authored/**'
+      - '.github/workflows/authored-humanoid-motion-review.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: authored-humanoid-motion-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    name: detect authored animation
+    runs-on: ubuntu-latest
+    outputs:
+      has_animation: ${{ steps.detect.outputs.has_animation }}
+      animation_id: ${{ steps.detect.outputs.animation_id }}
+      animation_path: ${{ steps.detect.outputs.animation_path }}
+      clip_dir: ${{ steps.detect.outputs.clip_dir }}
+    steps:
+      - name: Checkout exact PR HEAD
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact checkout
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          echo "Exact HEAD: $ACTUAL_SHA"
+
+      - name: Detect one authored animation
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          mapfile -t CHANGED < <(
+            git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- sample/humanoid_motion/authored/
+          )
+
+          if [[ ${#CHANGED[@]} -eq 0 ]]; then
+            echo "No authored Humanoid Motion source changed."
+            echo "has_animation=false" >> "$GITHUB_OUTPUT"
+            echo "animation_id=" >> "$GITHUB_OUTPUT"
+            echo "animation_path=" >> "$GITHUB_OUTPUT"
+            echo "clip_dir=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          printf 'Authored paths changed:\n'
+          printf '  %s\n' "${CHANGED[@]}"
+
+          mapfile -t CLIP_DIRS < <(
+            printf '%s\n' "${CHANGED[@]}" \
+              | awk -F/ 'NF >= 5 {print $1"/"$2"/"$3"/"$4}' \
+              | sort -u
+          )
+
+          if [[ ${#CLIP_DIRS[@]} -ne 1 ]]; then
+            echo "Exactly one sample/humanoid_motion/authored/<animation-id>/ directory may change per PR; found ${#CLIP_DIRS[@]}: ${CLIP_DIRS[*]}" >&2
+            exit 1
+          fi
+
+          CLIP_DIR="${CLIP_DIRS[0]}"
+          ANIMATION_ID="$(basename "$CLIP_DIR")"
+          ANIMATION_PATH="$CLIP_DIR/animation.json"
+
+          if [[ ! -s "$ANIMATION_PATH" ]]; then
+            echo "Authored animation directory must contain a non-empty animation.json: $ANIMATION_PATH" >&2
+            exit 1
+          fi
+
+          echo "has_animation=true" >> "$GITHUB_OUTPUT"
+          echo "animation_id=$ANIMATION_ID" >> "$GITHUB_OUTPUT"
+          echo "animation_path=$ANIMATION_PATH" >> "$GITHUB_OUTPUT"
+          echo "clip_dir=$CLIP_DIR" >> "$GITHUB_OUTPUT"
+
+  render:
+    name: render / ${{ needs.detect.outputs.animation_id }}
+    needs: detect
+    if: needs.detect.outputs.has_animation == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ROOT: build/review/authored-humanoid-motion
+      ANIMATION_ID: ${{ needs.detect.outputs.animation_id }}
+      ANIMATION: ${{ needs.detect.outputs.animation_path }}
+      CLIP_DIR: ${{ needs.detect.outputs.clip_dir }}
+      FIXTURES: tests/motion/humanoid_motion/fixtures/release_assets.json
+      MAPPING: profiles/humanoid_motion/mixamo_humanoid_v1.json
+      FRONT_CAMERA: profiles/cameras/front_humanoid_motion.json5
+    steps:
+      - name: Checkout exact PR HEAD
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify exact checkout
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          echo "Exact HEAD: $ACTUAL_SHA"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install package
+        run: python -m pip install -e '.[dev]'
+
+      - name: Validate authored source layout and animation contract
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROOT"
+
+          while IFS= read -r entry; do
+            name="$(basename "$entry")"
+            if [[ -L "$entry" ]]; then
+              echo "Symlinks are not allowed in authored animation directories: $entry" >&2
+              exit 1
+            fi
+            if [[ -d "$entry" ]]; then
+              echo "Nested directories are not allowed in authored animation directories: $entry" >&2
+              exit 1
+            fi
+            case "$name" in
+              animation.json|metadata.json) ;;
+              *)
+                echo "Only animation.json and optional metadata.json are allowed in $CLIP_DIR; found $name" >&2
+                exit 1
+                ;;
+            esac
+          done < <(find "$CLIP_DIR" -mindepth 1 -maxdepth 1 -print | sort)
+
+          python - "$ANIMATION" "$ANIMATION_ID" "$ROOT/validation.json" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          from motion2sheet.motion.humanoid_motion.schema import read_animation
+
+          animation_path = Path(sys.argv[1])
+          expected_id = sys.argv[2]
+          output_path = Path(sys.argv[3])
+          animation = read_animation(animation_path)
+          if animation["id"] != expected_id:
+              raise SystemExit(
+                  f"animation.id must match authored directory name: "
+                  f"animation.id={animation['id']!r} directory={expected_id!r}"
+              )
+          sha256 = hashlib.sha256(animation_path.read_bytes()).hexdigest()
+          report = {
+              "schema": "motion2sheet.authored-humanoid-motion.validation",
+              "version": 1,
+              "pass": True,
+              "animationId": animation["id"],
+              "animationSha256": sha256,
+              "frameCount": animation["frameCount"],
+              "fps": animation["fps"],
+              "durationSeconds": animation["durationSeconds"],
+              "loop": animation["loop"],
+              "canonicalSkeleton": animation["canonicalSkeleton"],
+          }
+          output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(
+              "Authored Humanoid Motion validation PASS; "
+              f"id={animation['id']} frames={animation['frameCount']} "
+              f"fps={animation['fps']} sha256={sha256}"
+          )
+          PY
+
+          cp "$ANIMATION" "$ROOT/animation.json"
+
+      - name: Install Blender headless runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 xvfb
+
+      - name: Setup Blender 4.5 LTS
+        uses: bradyajohnston/setup-blender@v5
+        with:
+          version: '4.5.12'
+
+      - name: Verify Blender
+        run: blender --version
+
+      - name: Prepare pinned Character A review target
+        run: |
+          set -euo pipefail
+          REVIEW_TARGET="$RUNNER_TEMP/humanoid-motion-review-target"
+          SOURCE_FBX="$RUNNER_TEMP/character-a.fbx"
+          rm -rf "$REVIEW_TARGET"
+          mkdir -p "$REVIEW_TARGET"
+
+          mapfile -t META < <(python - "$FIXTURES" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          asset = manifest["assets"]["character-a"]
+          print(asset["url"])
+          print(asset["sha256"])
+          print(asset["size"])
+          PY
+          )
+          URL="${META[0]}"
+          SHA="${META[1]}"
+          SIZE="${META[2]}"
+
+          case "$URL" in
+            "https://github.com/TrdHuy/motion2sheet/releases/download/e2e_gh_action_asset/"*) ;;
+            *) echo "Unexpected review fixture URL: $URL" >&2; exit 1 ;;
+          esac
+
+          curl -fL --retry 3 --retry-delay 2 -o "$SOURCE_FBX" "$URL"
+          echo "$SHA  $SOURCE_FBX" | sha256sum -c -
+          test "$(stat -c %s "$SOURCE_FBX")" -eq "$SIZE"
+
+          motion2sheet export-character "$SOURCE_FBX" --output "$REVIEW_TARGET"
+          rm -f "$SOURCE_FBX"
+
+          test -s "$REVIEW_TARGET/model.glb"
+          test -s "$REVIEW_TARGET/rig.json"
+          test -s "$REVIEW_TARGET/skin.json"
+          echo "REVIEW_TARGET=$REVIEW_TARGET" >> "$GITHUB_ENV"
+          echo "REVIEW_FIXTURE_URL=$URL" >> "$GITHUB_ENV"
+          echo "REVIEW_FIXTURE_SHA256=$SHA" >> "$GITHUB_ENV"
+          echo "REVIEW_FIXTURE_SIZE=$SIZE" >> "$GITHUB_ENV"
+
+      - name: Create temporary three-quarter camera
+        run: |
+          set -euo pipefail
+          THREE_QUARTER_CAMERA="$RUNNER_TEMP/authored_humanoid_motion_three_quarter.json"
+          cat > "$THREE_QUARTER_CAMERA" <<'JSON'
+          {
+            "schema": "motion2sheet.camera",
+            "version": 1,
+            "id": "authored_humanoid_motion_three_quarter",
+            "projection": "ORTHO",
+            "location": [4.2, -4.2, 1.05],
+            "target": [0.0, 0.0, 1.05],
+            "upAxis": [0.0, 0.0, 1.0],
+            "orthoScale": 3.0,
+            "followRoot": false,
+            "margin": 1.0
+          }
+          JSON
+          echo "THREE_QUARTER_CAMERA=$THREE_QUARTER_CAMERA" >> "$GITHUB_ENV"
+
+      - name: Render complete animation from front and three-quarter views
+        run: |
+          set -euo pipefail
+          BEFORE_SHA="$(sha256sum "$ANIMATION" | awk '{print $1}')"
+
+          render_view() {
+            local camera="$1"
+            local output="$2"
+            motion2sheet render-humanoid-animation \
+              --model "$REVIEW_TARGET/model.glb" \
+              --character-rig "$REVIEW_TARGET/rig.json" \
+              --skin "$REVIEW_TARGET/skin.json" \
+              --character-mapping "$MAPPING" \
+              --animation "$ANIMATION" \
+              --camera-profile "$camera" \
+              --frames all \
+              --canvas 224x224 \
+              --sheet-columns 8 \
+              --render-samples 1 \
+              --gif \
+              --output "$output"
+          }
+
+          render_view "$FRONT_CAMERA" "$ROOT/front"
+          render_view "$THREE_QUARTER_CAMERA" "$ROOT/three-quarter"
+
+          AFTER_SHA="$(sha256sum "$ANIMATION" | awk '{print $1}')"
+          if [[ "$BEFORE_SHA" != "$AFTER_SHA" ]]; then
+            echo "animation.json changed during review rendering" >&2
+            exit 1
+          fi
+          echo "ANIMATION_SHA=$BEFORE_SHA" >> "$GITHUB_ENV"
+
+      - name: Verify review artifacts
+        run: |
+          set -euo pipefail
+          for view in front three-quarter; do
+            test -s "$ROOT/$view/pose_sheet.png"
+            test -s "$ROOT/$view/preview.gif"
+            test -s "$ROOT/$view/render.json"
+          done
+
+          python - "$ROOT" "$ANIMATION_SHA" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          expected_sha = sys.argv[2]
+          validation = json.loads((root / "validation.json").read_text(encoding="utf-8"))
+          if validation["animationSha256"] != expected_sha:
+              raise SystemExit("validation SHA does not match rendered animation SHA")
+
+          for view in ("front", "three-quarter"):
+              report = json.loads((root / view / "render.json").read_text(encoding="utf-8"))
+              if report["animationSha256Before"] != expected_sha:
+                  raise SystemExit(f"{view}: render input SHA does not match animation source")
+              if report["animationSha256After"] != expected_sha or report["animationMutated"]:
+                  raise SystemExit(f"{view}: animation authority mutated during render")
+              if len(report["renderedSamples"]) != report["frameCount"]:
+                  raise SystemExit(f"{view}: review must render every canonical animation sample")
+          print("Authored Humanoid Motion review artifacts PASS")
+          PY
+
+      - name: Write exact review provenance
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          cp "$THREE_QUARTER_CAMERA" "$ROOT/three-quarter-camera.json"
+
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["ROOT"])
+          review_target = Path(os.environ["REVIEW_TARGET"])
+
+          def sha256(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          value = {
+              "schema": "motion2sheet.authored-humanoid-motion.review-proof",
+              "version": 1,
+              "repository": "TrdHuy/motion2sheet",
+              "pullRequest": int(os.environ["PR_NUMBER"]),
+              "headSha": os.environ["HEAD_SHA"],
+              "baseSha": os.environ["BASE_SHA"],
+              "workflowRunId": int(os.environ["RUN_ID"]),
+              "workflowRunAttempt": int(os.environ["RUN_ATTEMPT"]),
+              "source": {
+                  "path": os.environ["ANIMATION"],
+                  "animationId": os.environ["ANIMATION_ID"],
+                  "sha256": os.environ["ANIMATION_SHA"],
+              },
+              "reviewTarget": {
+                  "fixtureUrl": os.environ["REVIEW_FIXTURE_URL"],
+                  "fixtureSha256": os.environ["REVIEW_FIXTURE_SHA256"],
+                  "fixtureSize": int(os.environ["REVIEW_FIXTURE_SIZE"]),
+                  "modelSha256": sha256(review_target / "model.glb"),
+                  "rigSha256": sha256(review_target / "rig.json"),
+                  "skinSha256": sha256(review_target / "skin.json"),
+              },
+              "views": {
+                  "front": {
+                      "camera": os.environ["FRONT_CAMERA"],
+                      "poseSheet": "front/pose_sheet.png",
+                      "previewGif": "front/preview.gif",
+                      "renderReport": "front/render.json",
+                  },
+                  "threeQuarter": {
+                      "camera": "three-quarter-camera.json",
+                      "poseSheet": "three-quarter/pose_sheet.png",
+                      "previewGif": "three-quarter/preview.gif",
+                      "renderReport": "three-quarter/render.json",
+                  },
+              },
+          }
+          root.joinpath("provenance.json").write_text(
+              json.dumps(value, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload authored Humanoid Motion review proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: authored-humanoid-motion-${{ needs.detect.outputs.animation_id }}-${{ github.event.pull_request.head.sha }}
+          path: build/review/authored-humanoid-motion/
+          if-no-files-found: warn
+          retention-days: 14
