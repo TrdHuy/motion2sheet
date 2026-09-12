@@ -1,1 +1,1 @@
-{"schema":"motion2sheet.humanoid-motion.review-config","version":1,"renders":[{"id":"motion-front","view":"front","frames":"0-11","gif":true},{"id":"motion-three-quarter","view":"three-quarter-right","frames":"0-11","gif":true}]}
+{"schema":"motion2sheet.humanoid-motion.review-config","version":1,"renders":[{"id":"motion-front","view":"front","frames":"0-9","gif":true},{"id":"motion-three-quarter","view":"three-quarter-right","frames":"0-9","gif":true}]}
