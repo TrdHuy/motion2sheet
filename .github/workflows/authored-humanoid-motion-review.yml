@@ -1,0 +1,597 @@
+name: Authored Humanoid Motion Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'sample/humanoid_motion/authored/**'
+      - '.github/workflows/authored-humanoid-motion-review.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: authored-humanoid-motion-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    name: detect authored animation
+    runs-on: ubuntu-latest
+    outputs:
+      has_animation: ${{ steps.detect.outputs.has_animation }}
+      animation_id: ${{ steps.detect.outputs.animation_id }}
+      clip_dir: ${{ steps.detect.outputs.clip_dir }}
+    steps:
+      - name: Checkout exact PR HEAD
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact checkout
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          echo "Exact HEAD: $ACTUAL_SHA"
+
+      - name: Detect one authored animation directory
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mapfile -t CHANGED < <(
+            git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- sample/humanoid_motion/authored/
+          )
+
+          if [[ ${#CHANGED[@]} -eq 0 ]]; then
+            echo "No authored Humanoid Motion source changed."
+            echo "has_animation=false" >> "$GITHUB_OUTPUT"
+            echo "animation_id=" >> "$GITHUB_OUTPUT"
+            echo "clip_dir=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          mapfile -t CLIP_DIRS < <(
+            printf '%s\n' "${CHANGED[@]}" \
+              | awk -F/ 'NF >= 5 {print $1"/"$2"/"$3"/"$4}' \
+              | sort -u
+          )
+
+          if [[ ${#CLIP_DIRS[@]} -ne 1 ]]; then
+            echo "Exactly one sample/humanoid_motion/authored/<animation-id>/ directory may change per PR; found ${#CLIP_DIRS[@]}: ${CLIP_DIRS[*]}" >&2
+            exit 1
+          fi
+
+          CLIP_DIR="${CLIP_DIRS[0]}"
+          ANIMATION_ID="$(basename "$CLIP_DIR")"
+          test -d "$CLIP_DIR"
+
+          echo "has_animation=true" >> "$GITHUB_OUTPUT"
+          echo "animation_id=$ANIMATION_ID" >> "$GITHUB_OUTPUT"
+          echo "clip_dir=$CLIP_DIR" >> "$GITHUB_OUTPUT"
+
+  render:
+    name: review / ${{ needs.detect.outputs.animation_id }}
+    needs: detect
+    if: needs.detect.outputs.has_animation == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ROOT: build/review/authored-humanoid-motion
+      ANIMATION_ID: ${{ needs.detect.outputs.animation_id }}
+      CLIP_DIR: ${{ needs.detect.outputs.clip_dir }}
+      FIXTURES: tests/motion/humanoid_motion/fixtures/release_assets.json
+      MAPPING: profiles/humanoid_motion/mixamo_humanoid_v1.json
+      FRONT_CAMERA: profiles/cameras/front_humanoid_motion.json5
+    steps:
+      - name: Checkout exact PR HEAD
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify exact checkout
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          echo "Exact HEAD: $ACTUAL_SHA"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install package
+        run: python -m pip install -e '.[dev]'
+
+      - name: Validate lifecycle, animation and temp render config
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROOT"
+
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import shutil
+          from pathlib import Path
+
+          from motion2sheet.motion.humanoid_motion.schema import read_animation
+
+          clip_dir = Path(os.environ["CLIP_DIR"])
+          animation_id = os.environ["ANIMATION_ID"]
+          root = Path(os.environ["ROOT"])
+          final_path = clip_dir / "animation.json"
+          temp_path = clip_dir / "animation_temp.json"
+          config_path = clip_dir / "render_config.json"
+          metadata_path = clip_dir / "metadata.json"
+
+          for entry in clip_dir.iterdir():
+              if entry.is_symlink():
+                  raise SystemExit(f"symlinks are not allowed: {entry}")
+              if entry.is_dir():
+                  raise SystemExit(f"nested directories are not allowed: {entry}")
+
+          has_final = final_path.is_file()
+          has_temp = temp_path.is_file()
+          if has_final == has_temp:
+              raise SystemExit(
+                  "exactly one lifecycle source is required: animation_temp.json (TEMP) or animation.json (FINAL)"
+              )
+
+          if has_temp:
+              mode = "temp"
+              source = temp_path
+              allowed = {"animation_temp.json", "render_config.json"}
+              if metadata_path.exists():
+                  raise SystemExit("metadata.json is FINAL-only")
+          else:
+              mode = "final"
+              source = final_path
+              allowed = {"animation.json", "metadata.json"}
+              if config_path.exists():
+                  raise SystemExit("render_config.json is TEMP-only and must be removed before FINAL")
+
+          unexpected = sorted(entry.name for entry in clip_dir.iterdir() if entry.name not in allowed)
+          if unexpected:
+              raise SystemExit(f"unexpected files for {mode.upper()} mode: {unexpected}")
+
+          animation = read_animation(source)
+          if animation["id"] != animation_id:
+              raise SystemExit(
+                  f"animation.id must match directory name: animation.id={animation['id']!r} directory={animation_id!r}"
+              )
+
+          def sha256(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          def parse_frames(value: str) -> list[int]:
+              if not isinstance(value, str) or not value.strip():
+                  raise ValueError("frames must be a non-empty string")
+              if value.strip().lower() in {"all", "*"}:
+                  raise ValueError("TEMP render_config cannot request all frames")
+              selected: list[int] = []
+              for token in value.split(","):
+                  token = token.strip()
+                  if not token:
+                      continue
+                  if "-" in token:
+                      first, last = token.split("-", 1)
+                      start, end = int(first), int(last)
+                      step = 1 if end >= start else -1
+                      selected.extend(range(start, end + step, step))
+                  else:
+                      selected.append(int(token))
+              if not selected:
+                  raise ValueError("frames selected no samples")
+              if len(set(selected)) != len(selected):
+                  raise ValueError("frames contains duplicates")
+              outside = [frame for frame in selected if frame < 0 or frame >= animation["frameCount"]]
+              if outside:
+                  raise ValueError(
+                      f"frames outside 0..{animation['frameCount'] - 1}: {outside}"
+                  )
+              return selected
+
+          views = {
+              "front",
+              "three-quarter-left",
+              "three-quarter-right",
+              "side-left",
+              "side-right",
+          }
+          request_id = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
+
+          if mode == "temp" and config_path.is_file():
+              try:
+                  config = json.loads(config_path.read_text(encoding="utf-8"))
+              except json.JSONDecodeError as exc:
+                  raise SystemExit(f"invalid render_config.json: {exc}") from exc
+              if not isinstance(config, dict) or set(config) != {"schema", "version", "renders"}:
+                  raise SystemExit("render_config.json must contain exactly schema, version and renders")
+              if config["schema"] != "motion2sheet.humanoid-motion.review-config" or config["version"] != 1:
+                  raise SystemExit("unsupported render_config.json schema/version")
+              renders = config["renders"]
+              if not isinstance(renders, list) or not 1 <= len(renders) <= 4:
+                  raise SystemExit("render_config.renders must contain 1..4 requests")
+
+              plan = []
+              ids = set()
+              total_frame_views = 0
+              for index, request in enumerate(renders):
+                  if not isinstance(request, dict) or set(request) != {"id", "view", "frames", "gif"}:
+                      raise SystemExit(
+                          f"render_config.renders[{index}] must contain exactly id, view, frames and gif"
+                      )
+                  rid = request["id"]
+                  view = request["view"]
+                  gif = request["gif"]
+                  if not isinstance(rid, str) or not request_id.fullmatch(rid):
+                      raise SystemExit(f"invalid render request id: {rid!r}")
+                  if rid in ids:
+                      raise SystemExit(f"duplicate render request id: {rid}")
+                  ids.add(rid)
+                  if view not in views:
+                      raise SystemExit(f"unsupported render view {view!r}; allowed={sorted(views)}")
+                  if not isinstance(gif, bool):
+                      raise SystemExit(f"render request {rid!r}: gif must be boolean")
+                  try:
+                      frames = parse_frames(request["frames"])
+                  except (TypeError, ValueError) as exc:
+                      raise SystemExit(f"render request {rid!r}: {exc}") from exc
+                  if len(frames) > 24:
+                      raise SystemExit(f"render request {rid!r}: maximum 24 frames, got {len(frames)}")
+                  total_frame_views += len(frames)
+                  plan.append(
+                      {
+                          "id": rid,
+                          "view": view,
+                          "selection": {"kind": "frames", "value": request["frames"]},
+                          "selectedFrameCount": len(frames),
+                          "gif": gif,
+                      }
+                  )
+              if total_frame_views > 48:
+                  raise SystemExit(
+                      f"TEMP render budget exceeded: maximum 48 total frame-view renders, got {total_frame_views}"
+                  )
+              shutil.copy2(config_path, root / "render_config.json")
+          elif mode == "temp":
+              plan = [
+                  {
+                      "id": "overview-front",
+                      "view": "front",
+                      "selection": {"kind": "sample-count", "value": 8},
+                      "selectedFrameCount": min(animation["frameCount"], 8),
+                      "gif": False,
+                  }
+              ]
+          else:
+              plan = [
+                  {
+                      "id": "front",
+                      "view": "front",
+                      "selection": {"kind": "frames", "value": "all"},
+                      "selectedFrameCount": animation["frameCount"],
+                      "gif": True,
+                  },
+                  {
+                      "id": "three-quarter-right",
+                      "view": "three-quarter-right",
+                      "selection": {"kind": "frames", "value": "all"},
+                      "selectedFrameCount": animation["frameCount"],
+                      "gif": True,
+                  },
+              ]
+
+          source_sha = sha256(source)
+          validation = {
+              "schema": "motion2sheet.authored-humanoid-motion.validation",
+              "version": 1,
+              "pass": True,
+              "mode": mode,
+              "animationId": animation["id"],
+              "sourcePath": source.as_posix(),
+              "animationSha256": source_sha,
+              "frameCount": animation["frameCount"],
+              "fps": animation["fps"],
+              "durationSeconds": animation["durationSeconds"],
+              "loop": animation["loop"],
+              "canonicalSkeleton": animation["canonicalSkeleton"],
+          }
+          (root / "validation.json").write_text(
+              json.dumps(validation, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          (root / "render-plan.json").write_text(
+              json.dumps({"mode": mode, "renders": plan}, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          shutil.copy2(source, root / source.name)
+
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as handle:
+              handle.write(f"MODE={mode}\n")
+              handle.write(f"ANIMATION={source.as_posix()}\n")
+              handle.write(f"ANIMATION_SHA={source_sha}\n")
+
+          print(
+              f"Authored Humanoid Motion {mode.upper()} validation PASS; "
+              f"id={animation['id']} frames={animation['frameCount']} sha256={source_sha}"
+          )
+          PY
+
+      - name: Install Blender headless runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 xvfb
+
+      - name: Setup Blender 4.5 LTS
+        uses: bradyajohnston/setup-blender@v5
+        with:
+          version: '4.5.12'
+
+      - name: Verify Blender
+        run: blender --version
+
+      - name: Prepare pinned Character A review target
+        run: |
+          set -euo pipefail
+          REVIEW_TARGET="$RUNNER_TEMP/humanoid-motion-review-target"
+          SOURCE_FBX="$RUNNER_TEMP/character-a.fbx"
+          rm -rf "$REVIEW_TARGET"
+          mkdir -p "$REVIEW_TARGET"
+
+          mapfile -t META < <(python - "$FIXTURES" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          asset = manifest["assets"]["character-a"]
+          print(asset["url"])
+          print(asset["sha256"])
+          print(asset["size"])
+          PY
+          )
+          URL="${META[0]}"
+          SHA="${META[1]}"
+          SIZE="${META[2]}"
+
+          case "$URL" in
+            "https://github.com/TrdHuy/motion2sheet/releases/download/e2e_gh_action_asset/"*) ;;
+            *) echo "Unexpected review fixture URL: $URL" >&2; exit 1 ;;
+          esac
+
+          curl -fL --retry 3 --retry-delay 2 -o "$SOURCE_FBX" "$URL"
+          echo "$SHA  $SOURCE_FBX" | sha256sum -c -
+          test "$(stat -c %s "$SOURCE_FBX")" -eq "$SIZE"
+
+          motion2sheet export-character "$SOURCE_FBX" --output "$REVIEW_TARGET"
+          rm -f "$SOURCE_FBX"
+          test -s "$REVIEW_TARGET/model.glb"
+          test -s "$REVIEW_TARGET/rig.json"
+          test -s "$REVIEW_TARGET/skin.json"
+
+          echo "REVIEW_TARGET=$REVIEW_TARGET" >> "$GITHUB_ENV"
+          echo "REVIEW_FIXTURE_URL=$URL" >> "$GITHUB_ENV"
+          echo "REVIEW_FIXTURE_SHA256=$SHA" >> "$GITHUB_ENV"
+          echo "REVIEW_FIXTURE_SIZE=$SIZE" >> "$GITHUB_ENV"
+
+      - name: Create fixed review cameras
+        run: |
+          set -euo pipefail
+          CAMERA_ROOT="$RUNNER_TEMP/authored-humanoid-motion-cameras"
+          mkdir -p "$CAMERA_ROOT"
+
+          camera() {
+            local id="$1"
+            local x="$2"
+            local y="$3"
+            cat > "$CAMERA_ROOT/$id.json" <<JSON
+          {
+            "schema": "motion2sheet.camera",
+            "version": 1,
+            "id": "$id",
+            "projection": "ORTHO",
+            "location": [$x, $y, 1.05],
+            "target": [0.0, 0.0, 1.05],
+            "upAxis": [0.0, 0.0, 1.0],
+            "orthoScale": 3.0,
+            "followRoot": false,
+            "margin": 1.0
+          }
+          JSON
+          }
+
+          camera three-quarter-right 4.2 -4.2
+          camera three-quarter-left -4.2 -4.2
+          camera side-right 6.0 0.0
+          camera side-left -6.0 0.0
+
+          mkdir -p "$ROOT/cameras"
+          cp "$FRONT_CAMERA" "$ROOT/cameras/front.json5"
+          cp "$CAMERA_ROOT"/*.json "$ROOT/cameras/"
+          echo "CAMERA_ROOT=$CAMERA_ROOT" >> "$GITHUB_ENV"
+
+      - name: Render requested review evidence
+        run: |
+          set -euo pipefail
+          BEFORE_SHA="$(sha256sum "$ANIMATION" | awk '{print $1}')"
+          test "$BEFORE_SHA" = "$ANIMATION_SHA"
+
+          python - "$ROOT/render-plan.json" <<'PY' > "$RUNNER_TEMP/render-plan.tsv"
+          import json
+          import sys
+          from pathlib import Path
+          plan = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          for request in plan["renders"]:
+              selection = request["selection"]
+              print(
+                  request["id"],
+                  request["view"],
+                  selection["kind"],
+                  selection["value"],
+                  "true" if request["gif"] else "false",
+                  sep="\t",
+              )
+          PY
+
+          camera_for() {
+            case "$1" in
+              front) printf '%s\n' "$FRONT_CAMERA" ;;
+              three-quarter-right) printf '%s\n' "$CAMERA_ROOT/three-quarter-right.json" ;;
+              three-quarter-left) printf '%s\n' "$CAMERA_ROOT/three-quarter-left.json" ;;
+              side-right) printf '%s\n' "$CAMERA_ROOT/side-right.json" ;;
+              side-left) printf '%s\n' "$CAMERA_ROOT/side-left.json" ;;
+              *) echo "Unsupported view: $1" >&2; return 1 ;;
+            esac
+          }
+
+          while IFS=$'\t' read -r request_id view selection_kind selection_value want_gif; do
+            camera="$(camera_for "$view")"
+            output="$ROOT/renders/$request_id"
+            args=(
+              motion2sheet render-humanoid-animation
+              --model "$REVIEW_TARGET/model.glb"
+              --character-rig "$REVIEW_TARGET/rig.json"
+              --skin "$REVIEW_TARGET/skin.json"
+              --character-mapping "$MAPPING"
+              --animation "$ANIMATION"
+              --camera-profile "$camera"
+              --canvas 160x160
+              --sheet-columns 8
+              --render-samples 1
+              --output "$output"
+            )
+            if [[ "$selection_kind" == "frames" ]]; then
+              args+=(--frames "$selection_value")
+            else
+              args+=(--sample-count "$selection_value")
+            fi
+            if [[ "$want_gif" == "true" ]]; then
+              args+=(--gif)
+            fi
+            "${args[@]}"
+          done < "$RUNNER_TEMP/render-plan.tsv"
+
+          AFTER_SHA="$(sha256sum "$ANIMATION" | awk '{print $1}')"
+          test "$AFTER_SHA" = "$BEFORE_SHA"
+
+      - name: Verify review artifacts
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from motion2sheet.motion.humanoid_motion.runner import parse_samples, select_even_samples
+
+          root = Path(os.environ["ROOT"])
+          expected_sha = os.environ["ANIMATION_SHA"]
+          validation = json.loads((root / "validation.json").read_text(encoding="utf-8"))
+          plan = json.loads((root / "render-plan.json").read_text(encoding="utf-8"))
+          frame_count = validation["frameCount"]
+
+          for request in plan["renders"]:
+              rid = request["id"]
+              output = root / "renders" / rid
+              pose_sheet = output / "pose_sheet.png"
+              render_json = output / "render.json"
+              if not pose_sheet.is_file() or pose_sheet.stat().st_size == 0:
+                  raise SystemExit(f"{rid}: missing pose_sheet.png")
+              if not render_json.is_file() or render_json.stat().st_size == 0:
+                  raise SystemExit(f"{rid}: missing render.json")
+              if request["gif"]:
+                  preview = output / "preview.gif"
+                  if not preview.is_file() or preview.stat().st_size == 0:
+                      raise SystemExit(f"{rid}: missing preview.gif")
+
+              report = json.loads(render_json.read_text(encoding="utf-8"))
+              if report["animationSha256Before"] != expected_sha:
+                  raise SystemExit(f"{rid}: render input SHA mismatch")
+              if report["animationSha256After"] != expected_sha or report["animationMutated"]:
+                  raise SystemExit(f"{rid}: animation authority mutated")
+
+              selection = request["selection"]
+              if selection["kind"] == "frames":
+                  expected = parse_samples(str(selection["value"]), frame_count)
+              else:
+                  expected = select_even_samples(frame_count, int(selection["value"]))
+              if report["renderedSamples"] != expected:
+                  raise SystemExit(
+                      f"{rid}: rendered samples mismatch; actual={report['renderedSamples']} expected={expected}"
+                  )
+
+          if plan["mode"] == "final":
+              for request in plan["renders"]:
+                  if len(request["id"]) and request["selection"]["value"] != "all":
+                      raise SystemExit("FINAL mode must render all frames")
+
+          print(f"Authored Humanoid Motion {plan['mode'].upper()} review artifacts PASS")
+          PY
+
+      - name: Write exact review provenance
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["ROOT"])
+          review_target = Path(os.environ["REVIEW_TARGET"])
+
+          def sha256(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          value = {
+              "schema": "motion2sheet.authored-humanoid-motion.review-proof",
+              "version": 1,
+              "repository": "TrdHuy/motion2sheet",
+              "pullRequest": int(os.environ["PR_NUMBER"]),
+              "headSha": os.environ["HEAD_SHA"],
+              "baseSha": os.environ["BASE_SHA"],
+              "workflowRunId": int(os.environ["RUN_ID"]),
+              "workflowRunAttempt": int(os.environ["RUN_ATTEMPT"]),
+              "mode": os.environ["MODE"],
+              "source": {
+                  "path": os.environ["ANIMATION"],
+                  "animationId": os.environ["ANIMATION_ID"],
+                  "sha256": os.environ["ANIMATION_SHA"],
+              },
+              "reviewTarget": {
+                  "fixtureUrl": os.environ["REVIEW_FIXTURE_URL"],
+                  "fixtureSha256": os.environ["REVIEW_FIXTURE_SHA256"],
+                  "fixtureSize": int(os.environ["REVIEW_FIXTURE_SIZE"]),
+                  "modelSha256": sha256(review_target / "model.glb"),
+                  "rigSha256": sha256(review_target / "rig.json"),
+                  "skinSha256": sha256(review_target / "skin.json"),
+              },
+              "renderPlan": "render-plan.json",
+          }
+          (root / "provenance.json").write_text(
+              json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Upload authored Humanoid Motion review proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: authored-humanoid-motion-${{ needs.detect.outputs.animation_id }}-${{ github.event.pull_request.head.sha }}
+          path: build/review/authored-humanoid-motion/
+          if-no-files-found: warn
+          retention-days: 14
