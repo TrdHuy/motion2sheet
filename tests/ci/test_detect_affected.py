@@ -138,6 +138,16 @@ def test_legacy_manual_workflow_changes_do_not_expand_main_ci():
         assert targets == set(), path
 
 
+def test_manual_sdar_smoke_fixture_is_not_an_automated_ci_target():
+    for path in (
+        "tests/manual/sdar-smoke/skill/SKILL.md",
+        "tests/manual/sdar-smoke/skill/skill.json",
+    ):
+        components, targets = resolve(path)
+        assert components == set(), path
+        assert targets == set(), path
+
+
 def test_current_repo_discovers_canonical_clips_without_manifest_whitelist():
     manifest = load_manifest()
     assert discover_animation_clips(ROOT) == ["gale_slash", "sword_idle"]

@@ -186,7 +186,6 @@ class AnimationGenerationOrchestrator:
         provider: AgentProvider,
         repo_root: Path,
         workspace_root: Path,
-        skill_directory: Path | None = None,
         processing_hook=None,
         liveness_idle_seconds: float = 15.0,
         liveness_stalled_seconds: float = 60.0,
@@ -195,11 +194,6 @@ class AnimationGenerationOrchestrator:
         self.provider = provider
         self.repo_root = Path(repo_root).resolve()
         self.workspace_root = Path(workspace_root).resolve()
-        self.skill_directory = (
-            Path(skill_directory).resolve()
-            if skill_directory is not None
-            else (self.repo_root / DEFAULT_SKILL).resolve()
-        )
         self.processing_hook = processing_hook
         self.liveness_idle_seconds = liveness_idle_seconds
         self.liveness_stalled_seconds = liveness_stalled_seconds
@@ -207,7 +201,12 @@ class AnimationGenerationOrchestrator:
 
     def start(self, request: GenerationRequest) -> ActiveRun:
         # All configuration and resume validation happens before launching an agent.
-        skill = load_skill(self.skill_directory)
+        skill_directory = (
+            request.skill_directory.resolve()
+            if request.skill_directory is not None
+            else (self.repo_root / DEFAULT_SKILL).resolve()
+        )
+        skill = load_skill(skill_directory)
         output = preflight_output(request.output)
         history = load_resume_history(self.workspace_root, request.resume_run_id)
         run_id = uuid.uuid4().hex

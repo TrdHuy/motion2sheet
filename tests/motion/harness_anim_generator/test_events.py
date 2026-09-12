@@ -214,6 +214,7 @@ def test_liveness_transitions_reach_report_without_new_agent_events(repo_with_sk
 
     assert "idle" in observed
     assert observed[-1] == "possibly_stalled"
+    active.processor.drain()
     liveness_events = [
         item for item in active.store.snapshot() if item["type"] == "runtime.liveness.changed"
     ]

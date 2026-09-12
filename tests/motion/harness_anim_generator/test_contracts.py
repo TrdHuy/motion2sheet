@@ -13,12 +13,14 @@ def test_generation_request_normalizes_runtime_inputs():
         resume_run_id="old-run",
         report_port=8123,
         open_report=False,
+        skill_directory="skills/custom",
     )
     assert request.prompt == "attack"
     assert request.provider == "codex-cli"
     assert request.resume_run_id == "old-run"
     assert request.report_port == 8123
     assert request.open_report is False
+    assert request.skill_directory == Path("skills/custom")
 
 
 @pytest.mark.parametrize("run_id", ["", "../old", "old/run", ".", ".."])

@@ -35,6 +35,7 @@ def generation_request_from_args(args: argparse.Namespace) -> GenerationRequest:
         prompt=prompt,
         provider=args.provider,
         output=Path(args.output),
+        skill_directory=Path(args.skill) if args.skill is not None else None,
         resume_run_id=args.resume_run,
         report_port=args.report_port,
         open_report=not args.no_open_report,
@@ -76,6 +77,11 @@ def add_harness_anim_generator_subcommands(subparsers) -> None:
     prompt.add_argument("--prompt-file")
     generate.add_argument("--provider", choices=PROVIDER_NAMES, default="codex-cli")
     generate.add_argument("--output", required=True)
+    generate.add_argument(
+        "--skill",
+        metavar="DIRECTORY",
+        help="Use a skill directory containing SKILL.md and skill.json",
+    )
     generate.add_argument("--resume-run")
     generate.add_argument("--report-port", type=_port, default=0)
     generate.add_argument("--no-open-report", action="store_true")

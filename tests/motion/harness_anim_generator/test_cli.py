@@ -29,6 +29,7 @@ def test_cli_parser_creates_sdar_request():
     assert request.resume_run_id == "previous-run"
     assert request.report_port == 8123
     assert request.open_report is False
+    assert request.skill_directory is None
 
 
 def test_cli_reads_prompt_file_and_has_default_skill_implicitly(tmp_path):
@@ -40,7 +41,23 @@ def test_cli_reads_prompt_file_and_has_default_skill_implicitly(tmp_path):
     request = generation_request_from_args(args)
     assert request.prompt == "walk carefully"
     assert request.provider == "codex-cli"
-    assert not hasattr(args, "skill")
+    assert request.skill_directory is None
+
+
+def test_cli_parses_skill_directory_override():
+    args = parser().parse_args(
+        [
+            "generate-humanoid-animation",
+            "--prompt",
+            "smoke test",
+            "--skill",
+            "tests/manual/sdar-smoke/skill",
+            "--output",
+            "out",
+        ]
+    )
+    request = generation_request_from_args(args)
+    assert request.skill_directory == Path("tests/manual/sdar-smoke/skill")
 
 
 def test_cli_rejects_invalid_report_port():

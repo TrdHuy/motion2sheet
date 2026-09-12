@@ -1,0 +1,14 @@
+{
+  "id": "sdar-smoke-test",
+  "version": 1,
+  "steps": [
+    {
+      "id": "create-note",
+      "title": "Create test note"
+    },
+    {
+      "id": "finalize",
+      "title": "Create mock final outputs"
+    }
+  ]
+}

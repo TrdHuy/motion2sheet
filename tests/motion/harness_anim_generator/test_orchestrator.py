@@ -105,6 +105,19 @@ def test_resume_creates_new_run_and_does_not_mutate_parent(repo_with_skill, tmp_
         GenerationRequest("original", "fake", tmp_path / "out1", open_report=False)
     )
     before = {p.relative_to(first.workspace): p.read_bytes() for p in first.workspace.rglob("*") if p.is_file()}
+    override = tmp_path / "resume-skill"
+    override.mkdir()
+    (override / "SKILL.md").write_text("# Resume override\n", encoding="utf-8")
+    (override / "skill.json").write_text(
+        json.dumps(
+            {
+                "id": "resume-override",
+                "version": 1,
+                "steps": [{"id": "finalize", "title": "Finalize"}],
+            }
+        ),
+        encoding="utf-8",
+    )
     second_provider = FakeAgentProvider(successful_behavior)
     second = orchestrator(repo_with_skill, tmp_path, second_provider).run(
         GenerationRequest(
@@ -113,11 +126,13 @@ def test_resume_creates_new_run_and_does_not_mutate_parent(repo_with_skill, tmp_
             tmp_path / "out2",
             resume_run_id=first.run_id,
             open_report=False,
+            skill_directory=override,
         )
     )
     assert second.run_id != first.run_id
     assert second.parent_run_id == first.run_id
     assert second_provider.requests[0].history["originalPrompt"] == "original"
+    assert second_provider.requests[0].skill_manifest.id == "resume-override"
     after = {p.relative_to(first.workspace): p.read_bytes() for p in first.workspace.rglob("*") if p.is_file()}
     assert after == before
 

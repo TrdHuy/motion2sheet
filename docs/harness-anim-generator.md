@@ -123,8 +123,26 @@ motion2sheet generate-humanoid-animation \
 
 Use `--report-port` to request a port, `--no-open-report` to disable browser
 opening, and `--resume-run` to seed a new run from old history. The default
-skill path is committed and not a mandatory CLI argument; a missing or invalid
-`SKILL.md` or `skill.json` fails before agent launch.
+skill path is committed and not a mandatory CLI argument. Pass `--skill` to
+use another directory containing the same `SKILL.md` plus `skill.json`
+contract. Relative overrides are resolved from the caller's current working
+directory, and the resolved skill path and manifest are retained in
+`request.json`. A resumed run uses the new request's skill selection; it does
+not implicitly reuse the parent run's skill. A missing or invalid skill fails
+before agent launch.
+
+The repository includes a non-animation manual smoke skill. It runs through
+the real Codex provider and SDAR event/report/output path, but it is not an
+automated test or CI target:
+
+```bash
+motion2sheet generate-humanoid-animation \
+  --prompt "Thực hiện smoke test theo skill được cung cấp." \
+  --skill tests/manual/sdar-smoke/skill \
+  --provider codex-cli \
+  --output build/sdar-smoke-output \
+  --report-port 8765
+```
 
 ## Test philosophy
 

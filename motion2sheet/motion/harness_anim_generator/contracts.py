@@ -38,6 +38,7 @@ class GenerationRequest:
     resume_run_id: str | None = None
     report_port: int = 0
     open_report: bool = True
+    skill_directory: Path | None = None
 
     def __post_init__(self) -> None:
         prompt = self.prompt.strip()
@@ -56,6 +57,11 @@ class GenerationRequest:
         object.__setattr__(self, "prompt", prompt)
         object.__setattr__(self, "provider", provider)
         object.__setattr__(self, "output", Path(self.output))
+        object.__setattr__(
+            self,
+            "skill_directory",
+            Path(self.skill_directory) if self.skill_directory is not None else None,
+        )
         object.__setattr__(self, "resume_run_id", resume)
 
 

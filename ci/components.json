@@ -17,7 +17,8 @@
     ".github/workflows/source-character-render.yml",
     "tests/motion/humanoid_motion/ci/**",
     "tests/motion/humanoid_motion/run_e2e.sh",
-    "tests/motion/humanoid_motion/verify_local_acceptance.py"
+    "tests/motion/humanoid_motion/verify_local_acceptance.py",
+    "tests/manual/sdar-smoke/**"
   ],
   "components": {
     "motion-common": {"paths": ["motion2sheet/motion/common/**"], "depends_on": []},
