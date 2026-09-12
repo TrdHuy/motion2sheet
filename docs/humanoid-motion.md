@@ -228,6 +228,19 @@ Motion cross-animation/model-render POC workflows are not PR13 portability gates
 
 ## Export and playback
 
+Prepare the pinned Character A v1 review target without searching for generated
+character assets:
+
+```bash
+motion2sheet prepare-humanoid-review-target \
+  --output build/motion/humanoid-review-target/character-a-v1
+```
+
+The command verifies the immutable With-Skin fixture size and SHA-256 before it
+reuses `export-character`. It produces `model.glb`, `rig.json`, `skin.json`, and
+`review-target.json` in that output directory and validates compatibility with
+`profiles/humanoid_motion/mixamo_humanoid_v1.json`.
+
 Export one reusable Humanoid Motion authority from Motion JSON:
 
 ```bash

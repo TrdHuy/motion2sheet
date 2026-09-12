@@ -1,0 +1,16 @@
+{
+  "id": "humanoid-motion-local-authoring",
+  "version": 3,
+  "steps": [
+    {"id": "understand-intent", "title": "Understand motion intent"},
+    {"id": "discover-references", "title": "Discover references"},
+    {"id": "design-mechanics", "title": "Design body mechanics"},
+    {"id": "author-key-poses", "title": "Author key poses"},
+    {"id": "review-key-poses", "title": "Review key poses"},
+    {"id": "author-full-motion", "title": "Author full animation"},
+    {"id": "review-full-motion", "title": "Review full animation"},
+    {"id": "refine", "title": "Refine animation"},
+    {"id": "validate", "title": "Validate final animation"},
+    {"id": "finalize", "title": "Produce final artifacts"}
+  ]
+}

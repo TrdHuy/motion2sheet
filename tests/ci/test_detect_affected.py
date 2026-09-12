@@ -138,6 +138,16 @@ def test_legacy_manual_workflow_changes_do_not_expand_main_ci():
         assert targets == set(), path
 
 
+def test_manual_sdar_smoke_fixture_is_not_an_automated_ci_target():
+    for path in (
+        "tests/manual/sdar-smoke/skill/SKILL.md",
+        "tests/manual/sdar-smoke/skill/skill.json",
+    ):
+        components, targets = resolve(path)
+        assert components == set(), path
+        assert targets == set(), path
+
+
 def test_current_repo_discovers_canonical_clips_without_manifest_whitelist():
     manifest = load_manifest()
     assert discover_animation_clips(ROOT) == ["gale_slash", "sword_idle"]
@@ -232,15 +242,39 @@ def test_roundtrip_test_change_selects_roundtrip_unit_only():
 def test_humanoid_motion_change_routes_only_its_unit_in_main_ci():
     manifest = load_manifest()
     components, targets = resolve("motion2sheet/motion/humanoid_motion/schema.py", manifest=manifest)
-    assert components == {"motion-humanoid-motion"}
-    assert targets == {"motion-humanoid-motion-unit"}
+    assert components == {"motion-humanoid-motion", "motion-harness-anim-generator"}
+    assert targets == {"motion-humanoid-motion-unit", "motion-harness-anim-generator-unit"}
     assert not anim_e2e_targets(manifest, targets)
 
 
 def test_humanoid_motion_profile_change_uses_humanoid_component():
     components, targets = resolve("profiles/humanoid_motion/mixamo_humanoid_v1.json")
-    assert components == {"motion-humanoid-motion"}
-    assert targets == {"motion-humanoid-motion-unit"}
+    assert components == {"motion-humanoid-motion", "motion-harness-anim-generator"}
+    assert targets == {"motion-humanoid-motion-unit", "motion-harness-anim-generator-unit"}
+
+
+def test_harness_change_selects_only_harness_unit():
+    components, targets = resolve(
+        "motion2sheet/motion/harness_anim_generator/orchestrator.py"
+    )
+    assert components == {"motion-harness-anim-generator"}
+    assert targets == {"motion-harness-anim-generator-unit"}
+
+
+def test_harness_default_skill_change_selects_only_harness_unit():
+    components, targets = resolve(
+        "skills/humanoid-motion-local-authoring/SKILL.md"
+    )
+    assert components == {"motion-harness-anim-generator"}
+    assert targets == {"motion-harness-anim-generator-unit"}
+
+
+def test_harness_test_change_selects_only_harness_unit():
+    components, targets = resolve(
+        "tests/motion/harness_anim_generator/test_orchestrator.py"
+    )
+    assert components == set()
+    assert targets == {"motion-harness-anim-generator-unit"}
 
 
 def test_humanoid_motion_test_change_selects_only_humanoid_unit():

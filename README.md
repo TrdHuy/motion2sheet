@@ -197,10 +197,12 @@ The generated pose is **not resized independently per frame**. `motion2sheet` pr
 
 `.github/workflows/ci.yml` uses dependency-aware target selection on pull requests. Motion component changes run only their affected unit/E2E targets, while VFX-only changes do not run motion tests. Sprite-workflow-only changes run a lightweight deterministic contract test and do not install Blender. Pushes to `master` and manual workflow dispatches run the complete graph.
 
-## AI sprite generation skills
+## AI generation skills
 
 ```text
 skills/
+├── humanoid-motion-local-authoring/
+│   └── SKILL.md
 ├── storybook-rpg-sprite-pipeline/
 │   └── SKILL.md
 ├── pose-frame-to-sprite-frame/
@@ -209,6 +211,7 @@ skills/
     └── SKILL.md
 ```
 
+- `humanoid-motion-local-authoring`: local Humanoid Motion authoring workflow with reference-guided body mechanics, exact-frame review, full GIF review, Vn→Vn+1 evidence, and canonical validation using `motion2sheet`.
 - `storybook-rpg-sprite-pipeline`: orchestrates the production flow from pose references to a normalized production sprite asset.
 - `pose-frame-to-sprite-frame`: default pose-lock workflow; converts exactly one Pose Reference plus its matching Action Description and Character Reference into one raw sprite frame.
 - `pose-sheet-to-sprite-sheet`: legacy/experimental whole-sheet generation workflow retained for A/B comparison.
