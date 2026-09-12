@@ -751,7 +751,7 @@ Evidence branch có thể lưu nhiều iteration để reviewer compare.
 
 Evidence retention là policy riêng của repository; nó không phải Merge Cleanliness Gate của source PR.
 
-Nếu xóa evidence branch sau merge, historical raw URL theo commit SHA có thể không được đảm bảo tồn tại vĩnh viễn. Vì vậy không tự xóa evidence branch khi chưa có retention policy rõ ràng.
+Không tự xóa evidence branch sau merge. Historical raw URL khóa theo exact commit SHA chỉ nên được coi là bền khi commit còn reachable theo retention policy của repository.
 
 ---
 
