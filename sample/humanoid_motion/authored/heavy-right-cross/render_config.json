@@ -3,16 +3,10 @@
   "version": 1,
   "renders": [
     {
-      "id": "key-front",
+      "id": "invalid-all",
       "view": "front",
-      "frames": "0,2,4,6",
+      "frames": "all",
       "gif": false
-    },
-    {
-      "id": "impact-three-quarter",
-      "view": "three-quarter-right",
-      "frames": "3-7",
-      "gif": true
     }
   ]
 }
