@@ -776,7 +776,7 @@ extract selected files from CI artifact
 -> update_ref(review-evidence/pr-<N>)
 ```
 
-Không base64/re-encode rồi vô tình làm thay đổi GIF/PNG nếu có thể copy bytes trực tiếp.
+Không re-encode PNG/GIF chỉ để upload. Nếu connector/API bắt buộc truyền binary dưới dạng base64, base64 chỉ là transport encoding; bytes sau decode phải giống file nguồn, trừ khi đang tạo presentation derivative có chủ đích.
 
 Nếu cần presentation derivative, áp dụng rule ở phần tiếp theo.
 
