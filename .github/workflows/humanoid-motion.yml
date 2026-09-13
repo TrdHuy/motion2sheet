@@ -10,6 +10,8 @@ on:
       - 'motion2sheet/motion/skin/**'
       - 'profiles/humanoid_motion/**'
       - 'profiles/cameras/front_humanoid_motion.json5'
+      - 'sample/humanoid_motion/**'
+      - 'scripts/build_humanoid_reference_samples.py'
       - 'tests/motion/humanoid_motion/**'
       - 'tests/motion/roundtrip/test_contract.py'
       - '.github/workflows/humanoid-motion.yml'
@@ -70,6 +72,43 @@ jobs:
           version: '4.5.12'
       - name: Verify Blender
         run: blender --version
+      - name: Smoke Mixamo reference wrapper, duplicate filter, and cache skip
+        run: |
+          set -euo pipefail
+          INPUT="$RUNNER_TEMP/reference-input"
+          OUTPUT="$RUNNER_TEMP/reference-output"
+          FIRST_LOG="$RUNNER_TEMP/reference-first.log"
+          CACHE_LOG="$RUNNER_TEMP/reference-cache.log"
+          mkdir -p "$INPUT"
+          cp sample/walk_mixamo.fbx "$INPUT/a-walk.fbx"
+          cp sample/walk_mixamo.fbx "$INPUT/z-duplicate.fbx"
+
+          python scripts/build_humanoid_reference_samples.py "$INPUT" --output-root "$OUTPUT" | tee "$FIRST_LOG"
+          grep -F 'Successful: 1' "$FIRST_LOG"
+          grep -F 'Skipped:    1' "$FIRST_LOG"
+          grep -F 'Failed:     0' "$FIRST_LOG"
+
+          test -s "$OUTPUT/a-walk/animation.json"
+          test -s "$OUTPUT/a-walk/preview.gif"
+          python - "$OUTPUT" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          directories = sorted(path.name for path in root.iterdir() if path.is_dir())
+          assert directories == ["a-walk"], directories
+          animation = json.loads((root / "a-walk" / "animation.json").read_text(encoding="utf-8"))
+          assert animation["loop"] is True
+          assert (root / "a-walk" / "preview.gif").stat().st_size > 0
+          assert not (root / "z-duplicate").exists()
+          PY
+
+          python scripts/build_humanoid_reference_samples.py "$INPUT" --output-root "$OUTPUT" | tee "$CACHE_LOG"
+          grep -F 'Successful: 0' "$CACHE_LOG"
+          grep -F 'Skipped:    2' "$CACHE_LOG"
+          grep -F 'Failed:     0' "$CACHE_LOG"
+          grep -F 'cached output already complete' "$CACHE_LOG"
       - name: Run Humanoid Motion acceptance
         run: |
           set -euo pipefail
